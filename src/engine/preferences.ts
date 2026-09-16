@@ -5,6 +5,7 @@ import type { Preferences, SavedHost } from '../shared/types';
 import { validateConnection } from './transport';
 
 export const defaultPreferences = (): Preferences => ({
+  notifications: { enabled: false, sound: true, whenFocused: false, onComplete: true },
   sidebar: { expandOnHover: true },
   hosts: [{ id: 'local', label: 'This Mac', source: 'local', enabled: true, defaultDirectory: '~' }],
   terminal: { fontSize: 13, fontFamily: '"MesloLGS NF", "JetBrainsMono Nerd Font", Menlo, Monaco, monospace', cursorBlink: true }
@@ -32,7 +33,9 @@ export function validatePreferences(value: Preferences): Preferences {
   if (!Number.isInteger(fontSize) || fontSize < 9 || fontSize > 28 || !text(fontFamily, 300) || !fontFamily.trim() || typeof cursorBlink !== 'boolean') throw new Error('Invalid terminal preferences.');
   const sidebar = value.sidebar ?? defaultPreferences().sidebar;
   if (typeof sidebar.expandOnHover !== 'boolean') throw new Error('Invalid sidebar preferences.');
-  return { sidebar: { expandOnHover: sidebar.expandOnHover }, hosts, terminal: { fontSize, fontFamily, cursorBlink } };
+  const notifications = value.notifications ?? defaultPreferences().notifications;
+  if (['enabled','sound','whenFocused','onComplete'].some(key => typeof notifications[key as keyof typeof notifications] !== 'boolean')) throw new Error('Invalid notification preferences.');
+  return { notifications: { ...notifications }, sidebar: { expandOnHover: sidebar.expandOnHover }, hosts, terminal: { fontSize, fontFamily, cursorBlink } };
 }
 export class PreferencesStore {
   value = defaultPreferences();

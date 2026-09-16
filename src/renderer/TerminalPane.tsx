@@ -6,7 +6,7 @@ import { RefreshCw, TerminalSquare, X } from 'lucide-react';
 import type { Preferences, Session } from '../shared/types';
 import '@xterm/xterm/css/xterm.css';
 
-export function TerminalPane({ session, onClose, report, preferences, reconnectKey = 0, showHeader = false }: { session: Session; onClose?: () => void; report: (message: string) => void; preferences: Preferences['terminal']; reconnectKey?: number; showHeader?: boolean }) {
+export function TerminalPane({ session, onClose, onReconnect, report, preferences, reconnectKey = 0, showHeader = false }: { session: Session; onClose?: () => void; onReconnect?: () => void; report: (message: string) => void; preferences: Preferences['terminal']; reconnectKey?: number; showHeader?: boolean }) {
   const element = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -58,6 +58,10 @@ export function TerminalPane({ session, onClose, report, preferences, reconnectK
     const surface = element.current!; surface.addEventListener('paste', paste, true);
     terminal.attachCustomKeyEventHandler(event => {
       if (document.querySelector('[aria-modal="true"]')) return false;
+      if (event.metaKey && event.key === 'Backspace') {
+        if (event.type === 'keydown' && connected) inputQueue = inputQueue.then(() => window.harbor.input(session.id, '\u0015')).catch(err => reportRef.current(err.message));
+        event.preventDefault(); return false;
+      }
       if ((event.metaKey || event.ctrlKey) && ['n', 'k', 'f'].includes(event.key.toLowerCase())) return false;
       if (event.metaKey && ['b', 'c', 'v', 'a'].includes(event.key.toLowerCase())) return false;
       return true;
@@ -69,7 +73,7 @@ export function TerminalPane({ session, onClose, report, preferences, reconnectK
     window.addEventListener('online', online);
     void connect();
     return () => { disposed = true; clearTimeout(timer); clearTimeout(resizeTimer); observer.disconnect(); unsubscribe(); input.dispose(); surface.removeEventListener('paste', paste, true); window.removeEventListener('online', online); void window.harbor.detach(session.id); terminal.dispose(); terminalRef.current = null; fitRef.current = null; };
-  }, [session.id, reconnectKey]);
+  }, [session.id, session.generation, reconnectKey]);
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
@@ -80,8 +84,8 @@ export function TerminalPane({ session, onClose, report, preferences, reconnectK
     void window.harbor.resize(session.id, terminal.cols, terminal.rows).catch(() => {});
   }, [preferences.fontSize, preferences.fontFamily, preferences.cursorBlink, session.id]);
   return <section className="terminal-pane" aria-label={`Terminal: ${session.name}`}>
-    {showHeader ? <div className="terminal-bar"><span className={`status-dot ${state === 'Connected' ? session.status : 'checking'}`} /><TerminalSquare size={14} /><strong>{session.name}</strong><span className="terminal-host">{session.host === 'local' ? 'This Mac' : session.host}</span><div className="spacer" /><span className="connection-label">{state}</span><button className="icon-button" aria-label={`Reconnect ${session.name}`} title="Reconnect terminal" onClick={() => reconnect.current()}><RefreshCw size={14} /></button>{onClose && <button className="icon-button" aria-label="Close split" onClick={onClose}><X size={15} /></button>}</div> : <span className="sr-only connection-label">{state}</span>}
-    {error && <div className="connection-error"><span>{error}</span><button onClick={() => reconnect.current()}>Reconnect</button></div>}
+    {showHeader ? <div className="terminal-bar"><span className={`status-dot ${state === 'Connected' ? session.status : 'checking'}`} /><TerminalSquare size={14} /><strong>{session.name}</strong><span className="terminal-host">{session.host === 'local' ? 'This Mac' : session.host}</span><div className="spacer" /><span className="connection-label">{state}</span><button className="icon-button" aria-label={`Reconnect ${session.name}`} title="Reconnect terminal" onClick={() => onReconnect ? onReconnect() : reconnect.current()}><RefreshCw size={14} /></button>{onClose && <button className="icon-button" aria-label="Close split" onClick={onClose}><X size={15} /></button>}</div> : <span className="sr-only connection-label">{state}</span>}
+    {error && <div className="connection-error"><span>{error}</span><button onClick={() => onReconnect ? onReconnect() : reconnect.current()}>Reconnect</button></div>}
     <div className="terminal-surface" ref={element} />
   </section>;
 }

@@ -94,8 +94,8 @@ for (const host of ['local', ...(process.env.HARBOR_TEST_SSH ? [process.env.HARB
     await engine.attach(session.id, 100, 28);
     await eventually(() => output.includes('SURVIVED_DETACH'), 'Background work must continue while the app is closed');
     await engine.input(session.id, 'exit\r');
-    await eventually(async () => { await engine.refresh(); return engine.snapshot().sessions[0].status === 'exited'; }, 'Exited pane should be retained with its scrollback');
-    await engine.terminate(session.id); await engine.refresh(); assert.equal(engine.snapshot().sessions[0].status, 'missing', engine.snapshot().sessions[0].detail);
+    await eventually(async () => { await engine.refresh(); return engine.snapshot().sessions[0].status === 'closed'; }, 'Exited chat should be marked closed');
+    await engine.terminate(session.id); await engine.refresh(); assert.equal(engine.snapshot().sessions[0].status, 'closed', engine.snapshot().sessions[0].detail);
   });
 }
 test('unreachable host never triggers a mutation or kills its sessions', async () => {

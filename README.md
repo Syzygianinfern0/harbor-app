@@ -1,120 +1,87 @@
 # Harbor
 
-A macOS desktop home for persistent **Codex, Claude Code, and shell sessions**, locally and over SSH.
+A macOS home for projects and persistent Codex, Claude Code, and terminal chats, on your Mac and over SSH.
 
-Harbor keeps the processes in tmux on the machine where they run. Quitting the app, closing a tab, archiving a session, or losing the network does **not** terminate them. Reopen Harbor to reconnect, with restored scrollback. A machine reboot or explicit process exit still ends the process; this is session persistence, not job checkpointing.
+Open `~/Applications/Harbor.app` or `release/mac-arm64/Harbor.app`.
 
-## Run the app
+## Projects and chats
 
-Open `release/mac-arm64/Harbor.app` (or the copy in `~/Applications/Harbor.app` if installed). This is a locally built, unsigned app, not a notarized distribution.
+Use **Add project** to choose a saved host and an existing directory. Harbor discovers that directory’s existing Codex and Claude conversations, including ones created in standalone terminals. **Refresh past chats** picks up later changes. History stays with the original agent on its host; Harbor stores its conversation ID, title, and project association.
 
-Prerequisites on every session host:
+- The **+** beside a project creates a Codex, Claude Code, or Terminal chat in that directory. **⌘ N** uses the selected project.
+- Agent-generated titles appear automatically. **Right-click → Rename chat…** sets a persistent Harbor name that takes precedence over later automatic titles.
+- Right-click a chat to **pin**, **rename**, **close**, **resume**, or **reconnect & resume** it.
+- **Close chat**, including the tab’s **×** and a split pane’s close button, terminates that chat’s tmux session. The closed chat remains gray in its project. Closing does not delete the agent conversation.
+- **Resume chat** creates a new tmux session and resumes the exact saved conversation ID. **Reconnect & resume** first closes the old tmux session, then resumes in a new one.
+- A closed shell reopens as a fresh shell in the project directory; shells don’t have agent conversation history to restore.
+- Conversations with an active writer outside Harbor must be closed there before resuming here. Harbor checks again at resume time.
+- **Remove from sidebar…** removes only Harbor’s index entry after confirmation. Refreshing project history can discover it again.
 
-- **tmux 3.2 or newer** (`brew install tmux` on a Mac; use the host's package manager on Linux).
-- **bash**, plus your usual login shell. Bash and Zsh are supported; custom shell launch commands assume POSIX syntax.
-- `codex` and/or `claude` installed and authenticated if you use those launchers. Harbor runs those existing CLI tools; it doesn't require its own API key or send prompts to a hosted service.
-- For remote hosts, a working noninteractive `ssh your-alias` connection. Establish host trust or unlock your SSH key in Terminal first. Harbor honors system SSH config, ProxyJump, ProxyCommand, and SSH-agent authentication. Password/MFA dialogs inside Harbor are not implemented.
+**Quitting Harbor or closing its macOS window does not close chats.** Their tmux sessions keep running. Network reconnects reattach automatically without restarting the agent. Host reboots still stop processes; saved agent conversations can be resumed afterward.
 
-Click **New session**, select a launcher and a host, and choose an existing working directory. `~` refers to the target host's home. **Check host & tools** checks tmux and launcher paths before launching. Use **Custom** for another command or launcher flags.
+## Keyboard and layout
 
-- **⌘ N** creates a session; **⌘ K** searches names, hosts, paths, tags, and groups.
-- **Split view** opens a second session alongside the current terminal.
-- Closing a tab detaches it. Select the session from the sidebar to reattach.
-- **Archive** hides a session but leaves its process running. Restore it from Archive.
-- **Terminate session…** stops that session after an explicit confirmation. Its metadata stays in Archive.
-- **Remove from Harbor…** removes only the index entry after confirmation; it never stops tmux.
-- **Edit details** provides an attach command you can run in another terminal.
-- Status reports **Running, Exited, Ended, Checking, or Unreachable**. Running means the process is alive; it doesn't infer whether an agent is busy, waiting for input, or asking for approval.
+- **⌘ Backspace:** delete back to the beginning of the terminal input line (Ctrl-U).
+- **⌘ N:** new chat in the selected project.
+- **⌘ K / ⌘ F:** search chat and project names.
+- **⌘ B:** collapse/pin the sidebar. Hover over its collapsed rail to peek without resizing the terminal.
+- **⌘ ,:** Preferences.
+- **⌘ C / ⌘ V:** terminal copy and paste.
 
-## Preferences and hosts
+The terminal fills the right side below a compact tab bar. Split view displays another running chat beside it.
 
-Open **Preferences** from the sidebar or **Harbor → Preferences…** (`⌘ ,`). Only **This Mac** is available initially; Harbor no longer imports SSH aliases at startup or during status refresh.
+## Preferences
 
-- **Import from SSH config:** inspect the aliases, select only the ones you want, then import and save. Effective hostname, username, and port are resolved with `ssh -G`; your SSH config file is never edited.
-- **Add manually:** enter an alias or address. Customize its display name, hostname override, username, port, identity-file path, and default working directory.
-- **Show in launcher:** turn a host on or off without deleting it. Removing a host is also available. Both operations preserve its existing sessions.
-- **Edit an imported host:** select it in Preferences and change its fields. Clear an override to use the target alias's current SSH configuration. Explicit identity files are optional; otherwise your SSH config and agent supply authentication.
-- **Terminal:** change font size, font family, and cursor blinking. Saved changes apply to open terminals without restarting their processes.
+**Hosts:** only This Mac is present initially. Import selected SSH aliases or add hosts manually. Imported hosts remain editable: display name, address, username, port, identity file, and default folder. SSH config is never edited. Host profile edits apply to new projects; existing projects and chats retain their connection settings.
 
-New sessions record their connection settings, so editing a saved host later cannot accidentally redirect an existing session to another machine. Old sessions from 0.1.0 remain accessible even if you haven't added their hosts to Preferences.
+**Terminal:** font size/family and cursor blinking update open terminals. New launches clear inherited color-disabling variables and advertise full color. Colors and ⌘ Backspace are tested inside the actual Codex and Claude interfaces.
 
-The active workspace uses one 42-pixel tab/action bar; the terminal fills the remainder of the right side. Split controls, pinning, editing, and reconnect are available from the bar. There is no Hosts section in the sidebar.
+**Sidebar:** enable or disable hover expansion. Harbor remembers whether the sidebar is collapsed.
 
-### Sidebar
+**Notifications:** enable desktop notifications, sound, notifications while Harbor is focused, and completion notifications. Use **Send test notification** to check macOS delivery. Allow Harbor under **System Settings → Notifications** if needed; macOS Focus rules apply. Notifications work while Harbor is running, including with its window closed.
 
-The sidebar toggle (⌘ B) switches between the full session list and a compact icon rail. Hovering over the rail temporarily reveals the sidebar without resizing the terminal. Turn this off in **Preferences → Sidebar**; the collapsed state and hover preference survive restarting Harbor.
+**Agent updates:** check installed Codex and Claude versions on enabled hosts and project machines against their official npm release channels. Results distinguish current, update available, missing, and unavailable. Checks never install updates or interrupt chats. Pinned/preview release channels may differ.
 
-### Agent colors
+## Agent integration
 
-Harbor 0.2.0 fixes inherited `NO_COLOR=1`, which could disable colors in Codex and Claude Code even while shell prompt colors worked. New sessions clear inherited color overrides and advertise `TERM=xterm-256color` and `COLORTERM=truecolor`. Both agents' actual screens were checked locally and on devbox, including after reconnect.
+Each new Codex chat has a private local app-server socket on its host and the normal Codex TUI. Harbor reads the exact thread ID, title, and runtime activity through the [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server). No network listener, separate account, or API key is added.
 
-**Already-running agents retain their original environment.** Start a new session or restart the CLI when convenient to pick up the fix. Reconnecting alone cannot change an existing process's environment. Harbor never restarts a running agent automatically.
+Claude launches with an explicit conversation ID and session-scoped [lifecycle hooks](https://code.claude.com/docs/en/hooks). Hooks record status and timestamps, not prompts or tool arguments. Saved names and history are read from Claude’s host-local session metadata. The normal [Claude resume command](https://code.claude.com/docs/en/sessions) restores the conversation.
 
-## Develop
+Activity indicators distinguish **Working**, **Needs attention**, **Ready**, **Closed**, and **Status unavailable**. Shells only report availability. Existing pre-0.3 terminal processes remain intact; their live activity becomes available after a managed resume. When an old running terminal’s conversation ID can be identified through its process’s writer lock, Harbor links it; otherwise use its imported project-history entry. Harbor never guesses an ID from the most recently modified chat.
 
-Use Node.js 22.12+ (tested with Node 26.8.2) and npm:
+The host adapter is a Python standard-library script, deployed under `~/.local/share/harbor/`. It preserves agent configuration, credentials, and history. Codex sockets live in a private per-user temporary directory. Stopping a managed tmux session also stops its dedicated Codex app server.
+
+## Requirements
+
+- macOS on Apple Silicon for the included build (locally built and unsigned).
+- tmux 3.2+, Python 3.8+, bash, and a POSIX login shell on each host.
+- Installed/authenticated Codex and/or Claude Code. Tested with Codex 0.154.0 and Claude Code 2.1.263 locally / 2.1.257 on devbox. Codex’s remote-TUI/app-server interface is required for managed chats.
+- Noninteractive system SSH authentication for remote machines. Configure initial host trust, keys, ProxyJump, and SSH agent outside Harbor.
+
+History adapters are version-sensitive. An unreadable history source is reported on its project without modifying the source files. Custom `CODEX_HOME` / `CLAUDE_CONFIG_DIR` are respected when present in the host adapter’s environment.
+
+## Development
+
+Node.js 22.12+ and npm:
 
 ```sh
 npm ci
-npm run dev       # Electron + Vite; renderer hot reload
-npm run build     # Typecheck and build renderer, main, and preload
-npm start         # Run the built app
-npm test          # Unit tests and real, isolated local tmux integration tests
-npm run test:e2e  # Real Electron UI tests; run build first
-npm run package  # Build release/mac-arm64/Harbor.app on Apple Silicon
+npm run dev
+npm run build
+npm start
+npm test
+npm run test:e2e
+npm run package
 ```
 
-Changes to the engine or Electron main/preload require restarting `npm run dev`.
-
-Remote integration testing is opt-in. The target directory must already exist:
+Engine/main/preload changes require restarting the dev app. Build before UI tests. Tests use isolated indexes and their own tmux sessions; real CLI and SSH checks are opt-in:
 
 ```sh
-HARBOR_TEST_SSH=devbox npm test
+HARBOR_TEST_AGENTS=1 HARBOR_TEST_SSH=devbox npm test
+HARBOR_TEST_AGENTS=1 HARBOR_TEST_SSH=devbox npm run test:e2e
 ```
 
-The remote test uses `~/harbor-smoke-test-20260916`, an isolated `harbor-test-*` tmux socket, and disposable sessions. It terminates only sessions on that test socket. Desktop tests use a temporary data directory and clean up only the sessions they created. Screenshots are written to `test-results/screenshots/`.
+Live agent tests submit a short echo-only prompt in dedicated test directories. Remote test directories are created under `~/harbor-smoke-test-20260916/`. See [VALIDATION.md](VALIDATION.md).
 
-To test the actual packaged app, set `HARBOR_TEST_APP` to the absolute path of `Harbor.app/Contents/MacOS/Harbor` when running `npm run test:e2e`. Set `HARBOR_TEST_SSH=devbox` as well to include the remote desktop test. `HARBOR_TEST_SSH=devbox npx tsx scripts/check-launchers.ts` starts the actual Codex and Claude Code CLIs on both hosts, checks for their startup screens, and terminates those disposable sessions without submitting prompts or approving trust dialogs.
-
-## Architecture
-
-```text
-src/shared/     Browser-safe types and the narrow engine API
-src/engine/     Pure Node: SSH, tmux control protocol, host discovery, persistence
-src/desktop/    Electron IPC adapter, sandboxed preload, menus, confirmations
-src/renderer/   React workspace and xterm.js terminals
-```
-
-The engine has no Electron or React imports. `Transport` is injectable, so the engine can be tested without a GUI. A future web or CLI adapter can reuse it; no network API server is enabled in this version.
-
-- **tmux control mode:** `tmux -C` over pipes; no native PTY module. `-CC` is unnecessary without a terminal whose canonical mode needs changing. Control output is decoded as bytes, preserving Unicode split across chunks. A capture primes scrollback; real pane output then streams to xterm. Input is sent in bounded hexadecimal chunks. Clipboard paste goes through `tmux paste-buffer -p` so tmux applies the correct bracketed-paste behavior even on older hosts.
-- **Dedicated tmux server:** `tmux -L harbor` uses an app-specific socket and ignores your normal tmux config at server startup. Harbor's settings do not change your regular tmux sessions. Each managed session has one pane. Manage splits in Harbor rather than creating extra windows/panes inside its tmux sessions.
-- **SSH:** `/usr/bin/ssh`, noninteractive authentication, private short ControlMaster socket paths, keepalives, and timeouts. General scripts go through stdin. Control-mode bootstrap uses fixed arguments and POSIX shell quoting because stdin remains reserved for the protocol. Read-only commands may retry without multiplexing; ambiguous mutations are never automatically replayed.
-- **Launch:** starts the command directly inside the login shell rather than injecting keystrokes before the prompt is ready. Existing CLI preferences, authentication, and approval behavior remain in force.
-- **Persistence:** versioned JSON, serialized writes, temporary file plus atomic rename, user-only permissions. Invalid indexes are preserved and cause a clear startup error rather than being silently overwritten.
-- **Security:** sandboxed renderer, context isolation, no Node integration, sender-checked narrow IPC, CSP, no remote navigation, and HTTP(S)-only terminal link opening. No telemetry or cloud synchronization.
-
-## Storage and recovery
-
-The session index is at `~/Library/Application Support/Harbor/sessions.json`; selected hosts and terminal preferences are in `preferences.json` alongside it. Open its directory from **Settings**. The index contains session names, paths, commands, tags, and connection metadata. Environment values are not written to it, but anything you put literally into a custom command is saved as part of that command. A running process and tmux necessarily retain their launch environment; this isn't a secret vault.
-
-The durable processes live on their target hosts, independently of the index. If needed:
-
-```sh
-tmux -L harbor list-sessions
-tmux -L harbor attach -t harbor-SESSION_UUID
-# On a remote host:
-ssh -t your-alias tmux -L harbor attach -t harbor-SESSION_UUID
-```
-
-Only the explicit import screen reads `~/.ssh/config` and recursive `Include` files to discover literal `Host` aliases, skipping wildcard/negated patterns. SSH still resolves the underlying connection configuration for your selected target; explicit saved overrides are passed as separate arguments.
-
-## Current boundaries
-
-No agent-specific conversation resume, worktree automation, cost tracking, remote file transfer, session sharing, mobile/web client, cloud backup, or auto-updater. Starting a new session starts a new CLI invocation; use Custom with a launcher's own resume command when needed. Reconnecting an existing running tmux session preserves the existing CLI process.
-
-Scrollback restoration is a rendered snapshot of up to 2,000 lines, not a full recording of terminal modes and events. Full-screen applications are best kept attached during active interaction. Lost network connections retry with backoff; unreachable hosts never cause session termination.
-
-Design references: [tmux control protocol](https://github.com/tmux/tmux/wiki/Control-Mode), [tmux manual](https://man.openbsd.org/tmux), and [Electron security guidance](https://www.electronjs.org/docs/latest/tutorial/security).
-
-Agent UI color verification is opt-in: `HARBOR_TEST_AGENTS=1 HARBOR_TEST_SSH=devbox npm run test:e2e`. These tests launch the actual CLIs, inspect their rendered color sequences, and save screenshots without submitting prompts or accepting workspace-trust dialogs.
+Session/project state is stored atomically in `~/Library/Application Support/Harbor/sessions.json` (schema 2); preferences use `preferences.json`. Earlier indexes migrate without changing running tmux identities. No telemetry is added.

@@ -5,9 +5,11 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { ControlClient } from './control';
 import { discoverHosts } from './hosts';
+import { checkAgentUpdates } from './updates';
+import { AgentBridge } from './bridge';
 import { PreferencesStore } from './preferences';
 import { Transport, quote, validateHost, validateConnection } from './transport';
-import type { Connection, CreateSession, Diagnostics, Preferences, SshConnection, Session, Snapshot } from '../shared/types';
+import type { Connection, CreateSession, Diagnostics, Preferences, Project, SshConnection, Session, Snapshot, AgentUpdate } from '../shared/types';
 
 function bounded(value: unknown, label: string, max = 500) {
   if (typeof value !== 'string' || value.length > max || /[\x00-\x08\x0b-\x1f]/.test(value)) throw new Error(`Invalid ${label}.`);
@@ -37,6 +39,10 @@ export function validateCreate(input: CreateSession) {
 }
 export class HarborEngine extends EventEmitter {
   private sessions: Session[] = [];
+  private projects: Project[] = [];
+  private bridge: AgentBridge;
+  private operations = new Set<string>();
+  private importing = new Set<string>();
   private preferencesStore: PreferencesStore;
   private clients = new Map<string, ControlClient>();
   private attaching = new Map<string, Promise<void>>();
@@ -46,24 +52,37 @@ export class HarborEngine extends EventEmitter {
   private refreshing = false;
   private disposed = false;
   private launches = new Set<Promise<Session>>();
-  constructor(readonly dataDir: string, readonly transport = new Transport()) { super(); this.preferencesStore = new PreferencesStore(dataDir); }
+  constructor(readonly dataDir: string, readonly transport = new Transport()) { super(); this.preferencesStore = new PreferencesStore(dataDir); this.bridge = new AgentBridge(transport); }
   async init(poll = true) {
     await mkdir(this.dataDir, { recursive: true, mode: 0o700 });
     await this.transport.init();
     try {
       const parsed = JSON.parse(await readFile(path.join(this.dataDir, 'sessions.json'), 'utf8'));
-      if (parsed.version !== 1 || !Array.isArray(parsed.sessions) || !parsed.sessions.every((s: Session) => typeof s.id === 'string' && /^harbor-[a-f0-9-]+$/.test(s.tmuxName) && /^%\d+$/.test(s.paneId) && typeof s.name === 'string' && typeof s.cwd === 'string' && typeof s.group === 'string' && Array.isArray(s.tags) && ['shell', 'codex', 'claude', 'custom'].includes(s.launcher))) throw new Error('Invalid session index.');
-      this.sessions = parsed.sessions.map((session: Session) => { validateHost(session.host); if (session.connection) validateConnection(session.connection); return { ...session, status: 'checking' }; });
+      if (![1, 2].includes(parsed.version) || !Array.isArray(parsed.sessions) || !parsed.sessions.every((s: Session) => typeof s.id === 'string' && /^harbor-[a-f0-9-]+$/.test(s.tmuxName) && /^%\d+$/.test(s.paneId) && typeof s.name === 'string' && typeof s.cwd === 'string' && typeof s.group === 'string' && Array.isArray(s.tags) && ['shell', 'codex', 'claude', 'custom'].includes(s.launcher))) throw new Error('Invalid session index.');
+      this.projects = Array.isArray(parsed.projects) ? parsed.projects : [];
+      this.sessions = parsed.sessions.map((session: Session) => { validateHost(session.host); if (session.connection) validateConnection(session.connection); return { ...session, status: session.status === 'closed' ? 'closed' : 'checking', activity: session.status === 'closed' ? 'closed' : 'unknown' }; });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`Cannot read the session index at ${this.dataDir}. It has been preserved. ${String(error)}`);
     }
     await this.preferencesStore.load();
-    if (poll) { void this.refresh(); this.polling = setInterval(() => { void this.refresh(); }, 10000); this.polling.unref(); }
+    let migrated = false;
+    for (const session of this.sessions) {
+      if (session.projectId && this.projects.some(p => p.id === session.projectId)) continue;
+      let project = this.projects.find(p => p.cwd === session.cwd && JSON.stringify(p.connection) === JSON.stringify(this.connection(session)));
+      if (!project) { project = { id: randomUUID(), name: session.cwd === '~' ? 'Home' : path.basename(session.cwd), cwd: session.cwd, hostId: session.hostId, hostLabel: session.hostLabel || session.host, connection: this.connection(session), createdAt: session.createdAt }; this.projects.push(project); }
+      session.projectId = project.id;
+      const defaultName = /^(Codex|Claude Code|Shell) · /.test(session.name);
+      session.nameSource = defaultName ? 'auto' : 'manual';
+      if (defaultName) session.name = session.launcher === 'shell' ? 'Terminal' : 'Untitled chat';
+      migrated = true;
+    }
+    if (migrated) await this.persist();
+    if (poll) { void this.refresh(); this.polling = setInterval(() => { void this.refresh(); }, 2500); this.polling.unref(); }
     return this.snapshot();
   }
   snapshot(): Snapshot {
     const preferences = structuredClone(this.preferencesStore.value);
-    return { sessions: structuredClone(this.sessions), hosts: preferences.hosts.filter(host => host.enabled), preferences, home: homedir(), dataDir: this.dataDir };
+    return { projects: structuredClone(this.projects), sessions: structuredClone(this.sessions), hosts: preferences.hosts.filter(host => host.enabled), preferences, home: homedir(), dataDir: this.dataDir };
   }
   async savePreferences(preferences: Preferences) { await this.preferencesStore.save(preferences); this.changed(); }
   async sshCandidates() { return (await discoverHosts()).filter(host => host.source !== 'local'); }
@@ -75,9 +94,70 @@ export class HarborEngine extends EventEmitter {
   }
   private connection(session: Session): Connection { return session.connection ?? session.host; }
 
+  async checkUpdates() { return checkAgentUpdates(this.transport, this.preferencesStore.value.hosts, this.projects); }
+  async addProject(input: {name:string; host:string; cwd:string}) {
+    bounded(input.name, 'project name', 100); directory(bounded(input.cwd, 'folder',4096));
+    const profile = this.preferencesStore.value.hosts.find(h => h.id === input.host && h.enabled);
+    if (!profile) throw new Error('Choose an enabled host.');
+    const connection = profile.connection ?? 'local';
+    const cwd = (await this.transport.run(connection, this.transport.setup()+`cd -- ${directory(input.cwd)} && pwd -P`)).trim();
+    const existing = this.projects.find(p => p.cwd === cwd && JSON.stringify(p.connection) === JSON.stringify(connection));
+    if (existing) return structuredClone(existing);
+    const project: Project = { id:randomUUID(), name:input.name.trim() || path.basename(cwd) || 'Home', cwd, hostId:profile.id, hostLabel:profile.label, connection:structuredClone(connection), createdAt:new Date().toISOString() };
+    this.projects.push(project); await this.persist(); this.changed();
+    await this.importHistory(project.id); return structuredClone(project);
+  }
+  async updateProject(id:string, name:string) { const project = this.projects.find(p=>p.id===id); if (!project) throw new Error('Project not found.'); bounded(name,'project name',100); if (!name.trim()) throw new Error('Enter a project name.'); project.name=name.trim(); await this.persist(); this.changed(); }
+  async importHistory(projectId:string) {
+    if (this.importing.has(projectId)) return;
+    const project = this.projects.find(p=>p.id===projectId); if (!project) throw new Error('Project not found.');
+    this.importing.add(projectId);
+    try {
+      await this.refreshMetadata();
+      for (const session of this.sessions.filter(s=>s.projectId===projectId && !s.conversationId && !s.generation && s.status!=='closed' && (s.launcher==='codex'||s.launcher==='claude'))) {
+        try {
+          const pid=Number((await this.transport.run(project.connection,this.transport.setup()+this.transport.tmux(['display-message','-p','-t',`=${session.tmuxName}:`,'#{pane_pid}']))).trim());
+          if(Number.isInteger(pid)&&pid>0) { const identity=await this.bridge.identify(project.connection,session.launcher,pid); if(identity) {session.conversationId=identity;session.resumable=true;} }
+        } catch { /* Never guess which conversation belongs to an old terminal. */ }
+      }
+      const {conversations,errors} = await this.bridge.history(project.connection, project.cwd);
+      project.historyError = errors.join('\n') || undefined;
+      for (const conversation of conversations) {
+        if (!/^[a-f0-9-]{36}$/i.test(conversation.conversationId)) continue;
+        const existing = this.sessions.find(s=>s.conversationId === conversation.conversationId && s.launcher === conversation.launcher && JSON.stringify(this.connection(s))===JSON.stringify(project.connection));
+        if (existing) { if (existing.nameSource !== 'manual') existing.name=conversation.name; if (existing.status === 'closed') existing.externalActive=conversation.externalActive; continue; }
+        const id=randomUUID(); const connection=project.connection;
+        this.sessions.push({id,tmuxName:`harbor-${id}`,paneId:'%0',projectId,name:conversation.name,nameSource:'auto',host:typeof connection==='string'?connection:connection.target,hostId:project.hostId,hostLabel:project.hostLabel,...(typeof connection==='object'?{connection:structuredClone(connection)}:{}),cwd:conversation.cwd,launcher:conversation.launcher,command:conversation.launcher,group:project.name,tags:[],pinned:false,archived:false,createdAt:new Date(conversation.createdAt*1000).toISOString(),updatedAt:new Date(conversation.updatedAt*1000).toISOString(),status:'closed',activity:'closed',conversationId:conversation.conversationId,resumable:true,imported:true,externalActive:conversation.externalActive});
+      }
+      await this.persist(); this.changed();
+    } catch(error) { project.historyError=(error as Error).message; this.changed(); }
+    finally { this.importing.delete(projectId); }
+  }
+  private async refreshMetadata() {
+    const relevant=this.sessions.filter(s=>s.generation && (s.launcher==='codex'||s.launcher==='claude') );
+    const connections=new Map(relevant.map(s=>[JSON.stringify(this.connection(s)),this.connection(s)]));
+    await Promise.all([...connections].map(async([key,connection])=>{
+      const sessions=relevant.filter(s=>JSON.stringify(this.connection(s))===key);
+      try {
+        const metadata=await this.bridge.metadata(connection,sessions.map(s=>s.id));
+        for(const session of sessions) {
+          const meta=metadata[session.id]; if(!meta || meta.generation!==session.generation) continue;
+          const previous=session.activity; const previousAt=session.activityAt;
+          if(meta.conversationId && /^[a-f0-9-]{36}$/i.test(meta.conversationId)) session.conversationId=meta.conversationId;
+          if(meta.resumable!==undefined) session.resumable=meta.resumable;
+          if(meta.name && session.nameSource!=='manual') session.name=meta.name.slice(0,100);
+          if(session.status !== 'closed' && meta.activity && ['starting','working','attention','idle','closed','error','unknown'].includes(meta.activity)) session.activity=meta.activity;
+          session.activityDetail=meta.reason; session.activityAt=meta.updatedAt;
+          const attention=Number(meta.attentionAt||0)>Number(session.attentionAt||0), completed=Number(meta.completedAt||0)>Number(session.completedAt||0);
+          if(session.status==='running'&&previousAt&&(attention||completed)) this.emit('attention',{session:structuredClone(session),completed:!attention&&completed});
+          session.attentionAt=meta.attentionAt;session.completedAt=meta.completedAt;
+        }
+      } catch { /* Connection failures are represented by the terminal status, never fabricated as idle. */ }
+    }));
+  }
   private changed() { if (!this.disposed) this.emit('snapshot', this.snapshot()); }
   private persist() {
-    const payload = JSON.stringify({ version: 1, sessions: this.sessions }, null, 2);
+    const payload = JSON.stringify({ version: 2, sessions: this.sessions, projects: this.projects }, null, 2);
     const task = this.writes.catch(() => {}).then(async () => {
       const temp = path.join(this.dataDir, `sessions.${randomUUID()}.tmp`);
       await writeFile(temp, payload, { mode: 0o600, flush: true });
@@ -113,11 +193,15 @@ printf 'HARBOR_CLAUDE='; command -v claude || true
   }
   private async createInternal(input: CreateSession) {
     validateCreate(input);
+    const project = input.projectId ? this.projects.find(p => p.id === input.projectId) : undefined;
+    if (input.projectId && !project) throw new Error('Project not found.');
     const profile = this.preferencesStore.value.hosts.find(host => host.id === input.host && host.enabled);
-    if (!profile) throw new Error('Choose an enabled host from Preferences first.');
-    const connection: Connection = profile.connection ? structuredClone(profile.connection) : 'local';
-    const id = randomUUID(); const tmuxName = `harbor-${id}`;
-    const launch = input.launcher === 'custom' ? input.command! : input.launcher === 'shell' ? '' : input.launcher;
+    if (!project && !profile) throw new Error('Choose an enabled host from Preferences first.');
+    const connection: Connection = structuredClone(project?.connection ?? profile?.connection ?? 'local');
+    if (project) input = { ...input, cwd: project.cwd };
+    const id = randomUUID(); const tmuxName = `harbor-${id}`; const generation = randomUUID();
+    const agent = input.launcher === 'codex' || input.launcher === 'claude';
+    const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${input.launcher} ${quote(id)} ${quote(generation)}` : input.launcher === 'custom' ? input.command! : '';
     const variables = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${quote(value)}`).join(' ');
     const inner = `cd -- ${directory(input.cwd)} || exit 1\n${launch ? launch : 'exec "${SHELL:-/bin/bash}" -l'}`;
     // Start the intended command directly, after the login shell initializes: no send-keys readiness race.
@@ -131,7 +215,12 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     const paneId = result.match(/^HARBOR_PANE=(%\d+)$/m)?.[1];
     if (!paneId) throw new Error(`The host did not return a pane ID. A session may exist as ${tmuxName}; do not automatically retry.`);
     const now = new Date().toISOString();
-    const session: Session = { id, tmuxName, paneId, name: input.name.trim(), host: typeof connection === 'string' ? connection : connection.target, hostId: profile.id, hostLabel: profile.label, ...(typeof connection === 'object' ? { connection } : {}), cwd: input.cwd || '~', launcher: input.launcher, command: launch, group: input.group?.trim() || 'Ungrouped', tags: input.tags ?? [], pinned: false, archived: false, createdAt: now, updatedAt: now, status: 'running' };
+    const session: Session = { id, tmuxName, paneId, name: input.name.trim(), host: typeof connection === 'string' ? connection : connection.target, hostId: project?.hostId ?? profile?.id, hostLabel: project?.hostLabel ?? profile?.label, projectId: project?.id, generation, activity: agent ? 'starting' : 'idle', nameSource: /^New (chat|terminal)$/.test(input.name) ? 'auto' : 'manual', ...(typeof connection === 'object' ? { connection } : {}), cwd: input.cwd || '~', launcher: input.launcher, command: launch, group: input.group?.trim() || 'Ungrouped', tags: input.tags ?? [], pinned: false, archived: false, createdAt: now, updatedAt: now, status: 'running' };
+    if (!session.projectId) {
+      let inferred = this.projects.find(p => p.cwd === input.cwd && JSON.stringify(p.connection) === JSON.stringify(connection));
+      if (!inferred) { inferred = { id: randomUUID(), name: input.cwd === '~' ? 'Home' : path.basename(input.cwd), cwd: input.cwd, hostId: profile?.id, hostLabel: profile?.label || 'This Mac', connection, createdAt: now }; this.projects.push(inferred); }
+      session.projectId = inferred.id;
+    }
     this.sessions.push(session);
     try { await this.persist(); } catch (error) { this.changed(); throw new Error(`Session ${tmuxName} is running, but its index could not be saved: ${String(error)}`); }
     this.changed(); return structuredClone(session);
@@ -141,29 +230,32 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     for (const key of ['name', 'group'] as const) if (patch[key] !== undefined) { bounded(patch[key], key, 100); if (!patch[key]?.trim()) throw new Error(`${key} cannot be empty.`); session[key] = patch[key]!.trim(); }
     if (patch.tags !== undefined) { if (!Array.isArray(patch.tags) || patch.tags.length > 20) throw new Error('Invalid tags.'); patch.tags.forEach(tag => bounded(tag, 'tag', 50)); session.tags = patch.tags; }
     for (const key of ['pinned', 'archived'] as const) if (patch[key] !== undefined) { if (typeof patch[key] !== 'boolean') throw new Error(`Invalid ${key}.`); session[key] = patch[key]!; }
+    if (patch.name !== undefined) session.nameSource = 'manual';
     session.updatedAt = new Date().toISOString(); await this.persist(); this.changed();
   }
   async refresh() {
     if (this.refreshing || this.disposed) return;
     this.refreshing = true;
     try {
-      const connections = new Map(this.sessions.map(session => [JSON.stringify(this.connection(session)), this.connection(session)]));
+      const connections = new Map(this.sessions.filter(s => s.status !== 'closed').map(session => [JSON.stringify(this.connection(session)), this.connection(session)]));
       await Promise.all([...connections].map(async ([key, host]) => {
         try {
           const result = await this.transport.run(host, this.transport.setup() + `command -v tmux >/dev/null || { echo 'tmux is missing' >&2; exit 127; }\n` + `${this.transport.tmux(['list-panes', '-a', '-F', 'HARBOR_STATUS=#{session_name}|#{pane_id}|#{pane_dead}|#{pane_current_command}|#{pane_dead_status}'])} 2>&1\n`, { retry: true, timeout: 12000 });
           const panes = result.split('\n').filter(line => line.startsWith('HARBOR_STATUS=')).map(line => line.slice(14).split('|'));
-          for (const session of this.sessions.filter(s => JSON.stringify(this.connection(s)) === key)) {
+          for (const session of this.sessions.filter(s => s.status !== 'closed' && JSON.stringify(this.connection(s)) === key)) {
             const pane = panes.find(p => p[0] === session.tmuxName && p[1] === session.paneId);
-            session.status = !pane ? 'missing' : pane[2] === '1' ? 'exited' : 'running';
+            session.status = !pane || pane[2] === '1' ? 'closed' : 'running';
+            if (session.status === 'closed') { session.activity = 'closed'; this.detach(session.id); }
             session.detail = !pane ? 'The tmux session no longer exists on this host.' : pane[2] === '1' ? `Process exited${pane[4] ? ` with code ${pane[4]}` : ''}. Scrollback is still available.` : pane[3];
           }
         } catch (error) {
           const message = (error as Error).message;
           const missing = /no server running|error connecting to .*No such file|no sessions/.test(message);
-          for (const session of this.sessions.filter(s => JSON.stringify(this.connection(s)) === key)) { session.status = missing ? 'missing' : 'unreachable'; session.detail = missing ? 'The tmux server is no longer running on this host.' : message; }
+          for (const session of this.sessions.filter(s => s.status !== 'closed' && JSON.stringify(this.connection(s)) === key)) { session.status = missing ? 'closed' : 'unreachable'; session.detail = missing ? 'The tmux server is no longer running on this host.' : message; }
         }
       }));
-      this.changed();
+      await this.refreshMetadata();
+      await this.persist(); this.changed();
     } finally { this.refreshing = false; }
   }
   async attach(id: string, cols: number, rows: number) {
@@ -209,10 +301,46 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
   private dimensions(cols: number, rows: number) { if (![cols, rows].every(n => Number.isInteger(n) && n >= 2 && n <= 1000)) throw new Error('Invalid terminal dimensions.'); }
   async resize(id: string, cols: number, rows: number) { this.dimensions(cols, rows); await this.clients.get(id)?.resize(cols, rows); }
   async terminate(id: string) {
-    const session = this.get(id);
-    await this.transport.run(this.connection(session), this.transport.setup() + this.transport.tmux(['kill-session', '-t', `=${session.tmuxName}`]));
-    this.detach(id); session.status = 'missing'; session.archived = true; session.detail = 'Terminated by you.';
+    if (this.operations.has(id)) throw new Error('This chat is already changing state.');
+    this.operations.add(id);
+    try { await this.closeInternal(this.get(id)); } finally { this.operations.delete(id); }
+  }
+  private async closeInternal(session: Session) {
+    if (session.status === 'closed') return;
+    await this.refreshMetadata();
+    await this.transport.run(this.connection(session), this.transport.setup() + `if ${this.transport.tmux(['has-session','-t',`=${session.tmuxName}`])} 2>/dev/null; then ${this.transport.tmux(['kill-session','-t',`=${session.tmuxName}`])}; fi`);
+    this.detach(session.id); session.status = 'closed'; session.activity = 'closed'; session.archived = false; session.detail = 'Closed. Conversation history is preserved.';
     await this.persist(); this.changed();
+  }
+  async resume(id: string, restart = false) {
+    if (this.operations.has(id)) throw new Error('This chat is already changing state.');
+    this.operations.add(id);
+    try {
+      const session = this.get(id);
+
+      if (session.status === 'running' && !restart) return structuredClone(session);
+      const agent = session.launcher === 'codex' || session.launcher === 'claude';
+      if (agent && !session.conversationId && (session.imported || !session.generation)) throw new Error('The conversation ID is missing; refresh the project history first.');
+      if (restart) await this.closeInternal(session);
+      const connection = this.connection(session); const generation = randomUUID();
+      if (agent && session.conversationId) {
+        let available = await this.bridge.available(connection, session.launcher, session.conversationId);
+        for (let attempt=0; !available && (restart || !!session.generation) && attempt<20; attempt++) { await new Promise(resolve=>setTimeout(resolve,250)); available=await this.bridge.available(connection,session.launcher,session.conversationId); }
+        if (!available) {session.externalActive=true;this.changed();throw new Error('This conversation still has an active writer. Close it in the other terminal before resuming here.');}
+        session.externalActive=false;
+      }
+      await this.transport.run(connection, this.transport.setup() + `if ${this.transport.tmux(['has-session','-t',`=${session.tmuxName}`])} 2>/dev/null; then ${this.transport.tmux(['kill-session','-t',`=${session.tmuxName}`])}; fi`);
+      const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${session.launcher} ${quote(id)} ${quote(generation)}${session.conversationId && session.resumable !== false ? ` --resume ${quote(session.conversationId)}` : ''}` : session.launcher === 'custom' ? session.command : '';
+      const inner = `cd -- ${directory(session.cwd)} || exit 1\n${launch || 'exec "${SHELL:-/bin/bash}" -l'}`;
+      const command = `exec env -u TMUX -u TMUX_PANE -u NO_COLOR -u FORCE_COLOR -u CLICOLOR -u CLICOLOR_FORCE TERM=xterm-256color COLORTERM=truecolor "\${SHELL:-/bin/bash}" -lic ${quote(inner)}`;
+      // A new tmux name per incarnation prevents a delayed detach/kill from touching its successor.
+      const tmuxName = `harbor-${randomUUID()}`;
+      const result = await this.transport.run(connection, this.transport.setup() + `set -e\ncd -- ${directory(session.cwd)}\n${this.transport.tmux(['-f','/dev/null','new-session','-d','-P','-F','HARBOR_PANE=#{pane_id}','-s',tmuxName,'-x','120','-y','32',command,';','set-option','-w','-t',`=${tmuxName}:`,'remain-on-exit','on',';','set-option','-t',tmuxName,'status','off'])}`);
+      const paneId = result.match(/^HARBOR_PANE=(%\d+)$/m)?.[1];
+      if (!paneId) throw new Error(`The session may have started as ${tmuxName}; do not automatically retry.`);
+      Object.assign(session, { paneId, tmuxName, generation, status:'running', activity: agent ? 'starting' : 'idle', archived:false, updatedAt:new Date().toISOString() });
+      await this.persist(); this.changed(); return structuredClone(session);
+    } finally { this.operations.delete(id); }
   }
   async forget(id: string) {
     this.get(id); this.detach(id); this.sessions = this.sessions.filter(s => s.id !== id); await this.persist(); this.changed();
