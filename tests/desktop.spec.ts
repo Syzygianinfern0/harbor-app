@@ -110,7 +110,10 @@ test('desktop creates real terminals, edits metadata, splits, archives, and surv
     expect(before.sessions.every(s => s.status === 'running')).toBeTruthy();
     expect(before.sessions.find(s => s.name === 'Desktop smoke test')?.tags).toEqual(['tested', 'persistent']);
     expect(errors).toEqual([]);
-    await application.close(); application = await launch(); page = await application.firstWindow();
+    const processBeforeQuit = application.process();
+    await application.evaluate(({ app }) => { setTimeout(() => app.quit(), 0); });
+    await expect.poll(() => processBeforeQuit.exitCode, { timeout: 10000 }).toBe(0);
+    application = await launch(); page = await application.firstWindow();
     await expect(page.getByRole('heading', { name: 'Desktop smoke test', exact: true })).toBeVisible();
     await expect(page.locator('.connection-label')).toHaveText('Connected');
     await expect.poll(() => page.evaluate(async () => { await window.harbor.refresh(); return (await window.harbor.snapshot()).sessions.map(s => s.status); })).toEqual(['running', 'running']);

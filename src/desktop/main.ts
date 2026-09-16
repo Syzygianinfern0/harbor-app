@@ -71,6 +71,7 @@ else {
   app.on('before-quit', event => {
     if (quitting || !engine) return;
     event.preventDefault(); quitting = true;
-    engine.dispose().finally(() => app.quit());
+    // Leave the cancelled before-quit callback before asking Electron to quit again.
+    engine.dispose().finally(() => setImmediate(() => app.quit()));
   });
 }
