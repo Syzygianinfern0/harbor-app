@@ -1,0 +1,27 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import type { HarborApi, Snapshot, TerminalEvent } from '../shared/types';
+function subscribe<T>(channel: string, callback: (value: T) => void) {
+  const listener = (_event: Electron.IpcRendererEvent, value: T) => callback(value);
+  ipcRenderer.on(channel, listener); return () => ipcRenderer.removeListener(channel, listener);
+}
+const api: HarborApi = {
+  snapshot: () => ipcRenderer.invoke('harbor:snapshot'),
+  create: input => ipcRenderer.invoke('harbor:create', input),
+  update: (id, patch) => ipcRenderer.invoke('harbor:update', id, patch),
+  terminate: id => ipcRenderer.invoke('harbor:terminate', id),
+  forget: id => ipcRenderer.invoke('harbor:forget', id),
+  attach: (id, cols, rows) => ipcRenderer.invoke('harbor:attach', id, cols, rows),
+  detach: id => ipcRenderer.invoke('harbor:detach', id),
+  input: (id, data) => ipcRenderer.invoke('harbor:input', id, data),
+  paste: (id, data) => ipcRenderer.invoke('harbor:paste', id, data),
+  resize: (id, cols, rows) => ipcRenderer.invoke('harbor:resize', id, cols, rows),
+  diagnose: host => ipcRenderer.invoke('harbor:diagnose', host),
+  refresh: () => ipcRenderer.invoke('harbor:refresh'),
+  chooseFolder: () => ipcRenderer.invoke('harbor:chooseFolder'),
+  openDataDir: () => ipcRenderer.invoke('harbor:openDataDir'),
+  openExternal: url => ipcRenderer.invoke('harbor:openExternal', url),
+  onSnapshot: callback => subscribe<Snapshot>('harbor:snapshot-changed', callback),
+  onTerminal: callback => subscribe<TerminalEvent>('harbor:terminal', callback),
+  onNewSession: callback => subscribe('harbor:new-session', callback)
+};
+contextBridge.exposeInMainWorld('harbor', api);

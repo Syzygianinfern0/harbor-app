@@ -1,0 +1,57 @@
+{
+  "name": "harbor-agent-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A calm home for persistent local and SSH agent sessions",
+  "author": "Harbor",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/desktop/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "start": "electron .",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "package": "npm run build && electron-builder --mac dir"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "glob": "^13.0.6",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0"
+  },
+  "build": {
+    "appId": "dev.harbor.agent-manager",
+    "productName": "Harbor",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "icon": "assets/Harbor.icns"
+    }
+  }
+}
