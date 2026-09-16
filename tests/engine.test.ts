@@ -44,6 +44,12 @@ for (const host of ['local', ...(process.env.HARBOR_TEST_SSH ? [process.env.HARB
     const dataDir = await mkdtemp(path.join(tmpdir(), 'harbor-engine-'));
     const transport = new Transport('harbor-test-' + randomUUID().slice(0, 8));
     let engine = new HarborEngine(dataDir, transport); await engine.init(false);
+    if (host !== 'local') {
+      const preferences = engine.snapshot().preferences;
+      preferences.hosts.push({ id: host, label: host, source: 'manual', enabled: true, defaultDirectory: '~/harbor-smoke-test-20260916', connection: { target: host } });
+      await engine.savePreferences(preferences);
+    }
+
     t.after(async () => { await engine.dispose(); await transport.run(host, transport.setup() + transport.tmux(['kill-server'])).catch(() => {}); });
     const diagnosis = await engine.diagnose(host); assert.equal(diagnosis.ok, true, diagnosis.error);
     const testDir = host === 'local' ? path.join(dataDir, "folder with 'quotes' and $dollars") : '~/harbor-smoke-test-20260916';
@@ -60,6 +66,11 @@ for (const host of ['local', ...(process.env.HARBOR_TEST_SSH ? [process.env.HARB
     engine.detach(session.id);
     const freshAttach = engine.attach(session.id, 100, 28);
     await Promise.all([staleAttach, freshAttach]);
+    output = '';
+    await engine.input(session.id, "printf 'COLOR_ENV:%s:%s:%s\\n' \"$TERM\" \"$COLORTERM\" \"${NO_COLOR-unset}\"\r");
+    await eventually(() => output.includes('COLOR_ENV:xterm-256color:truecolor:unset'), 'Color-capable environment must reach the real session');
+    await engine.input(session.id, "printf '\\033[31mCOLOR_RED\\033[0m \\033[38;2;12;210;125mCOLOR_RGB\\033[0m\\n'\r");
+    await eventually(() => output.includes('\x1b[31mCOLOR_RED') && output.includes('\x1b[38;2;12;210;125mCOLOR_RGB'), 'ANSI and true color must survive live control-mode output');
     output = '';
     await engine.input(session.id, "printf 'INPUT_%s\\n' 'OK_你好'\r");
     await eventually(() => output.includes('INPUT_OK_你好'), 'UTF-8 keyboard input should reach the real shell');

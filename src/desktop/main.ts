@@ -29,6 +29,9 @@ else {
       });
     }
     handle('snapshot', () => engine.snapshot());
+    handle('savePreferences', preferences => engine.savePreferences(preferences));
+    handle('sshCandidates', () => engine.sshCandidates());
+    handle('resolveSsh', alias => engine.resolveSsh(alias));
     handle('create', input => engine.create(input));
     handle('update', (id, patch) => engine.update(id, patch));
     handle('attach', (id, cols, rows) => engine.attach(id, cols, rows));
@@ -56,8 +59,8 @@ else {
     engine.on('snapshot', snapshot => window?.webContents.send('harbor:snapshot-changed', snapshot));
     engine.on('terminal', event => window?.webContents.send('harbor:terminal', event));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: 'Harbor', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
-      { label: 'Session', submenu: [{ label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => window?.webContents.send('harbor:new-session') }, { label: 'Refresh Hosts and Status', accelerator: 'CmdOrCtrl+R', click: () => void engine.refresh() }] },
+      { label: 'Harbor', submenu: [{ role: 'about' }, { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+      { label: 'Session', submenu: [{ label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => window?.webContents.send('harbor:new-session') }, { label: 'Refresh Session Status', accelerator: 'CmdOrCtrl+R', click: () => void engine.refresh() }] },
       { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'togglefullscreen' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const }] : [])] }, { role: 'windowMenu' }
     ]));
     createWindow();

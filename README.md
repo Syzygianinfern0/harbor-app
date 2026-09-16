@@ -26,6 +26,30 @@ Click **New session**, select a launcher and a host, and choose an existing work
 - **Edit details** provides an attach command you can run in another terminal.
 - Status reports **Running, Exited, Ended, Checking, or Unreachable**. Running means the process is alive; it doesn't infer whether an agent is busy, waiting for input, or asking for approval.
 
+## Preferences and hosts
+
+Open **Preferences** from the sidebar or **Harbor → Preferences…** (`⌘ ,`). Only **This Mac** is available initially; Harbor no longer imports SSH aliases at startup or during status refresh.
+
+- **Import from SSH config:** inspect the aliases, select only the ones you want, then import and save. Effective hostname, username, and port are resolved with `ssh -G`; your SSH config file is never edited.
+- **Add manually:** enter an alias or address. Customize its display name, hostname override, username, port, identity-file path, and default working directory.
+- **Show in launcher:** turn a host on or off without deleting it. Removing a host is also available. Both operations preserve its existing sessions.
+- **Edit an imported host:** select it in Preferences and change its fields. Clear an override to use the target alias's current SSH configuration. Explicit identity files are optional; otherwise your SSH config and agent supply authentication.
+- **Terminal:** change font size, font family, and cursor blinking. Saved changes apply to open terminals without restarting their processes.
+
+New sessions record their connection settings, so editing a saved host later cannot accidentally redirect an existing session to another machine. Old sessions from 0.1.0 remain accessible even if you haven't added their hosts to Preferences.
+
+The active workspace uses one 42-pixel tab/action bar; the terminal fills the remainder of the right side. Split controls, pinning, editing, and reconnect are available from the bar. There is no Hosts section in the sidebar.
+
+### Sidebar
+
+The sidebar toggle (⌘ B) switches between the full session list and a compact icon rail. Hovering over the rail temporarily reveals the sidebar without resizing the terminal. Turn this off in **Preferences → Sidebar**; the collapsed state and hover preference survive restarting Harbor.
+
+### Agent colors
+
+Harbor 0.2.0 fixes inherited `NO_COLOR=1`, which could disable colors in Codex and Claude Code even while shell prompt colors worked. New sessions clear inherited color overrides and advertise `TERM=xterm-256color` and `COLORTERM=truecolor`. Both agents' actual screens were checked locally and on devbox, including after reconnect.
+
+**Already-running agents retain their original environment.** Start a new session or restart the CLI when convenient to pick up the fix. Reconnecting alone cannot change an existing process's environment. Harbor never restarts a running agent automatically.
+
 ## Develop
 
 Use Node.js 22.12+ (tested with Node 26.8.2) and npm:
@@ -72,7 +96,7 @@ The engine has no Electron or React imports. `Transport` is injectable, so the e
 
 ## Storage and recovery
 
-The index is at `~/Library/Application Support/Harbor/sessions.json`. Open its directory from **Settings**. The index contains session names, paths, commands, tags, and connection metadata. Environment values are not written to it, but anything you put literally into a custom command is saved as part of that command. A running process and tmux necessarily retain their launch environment; this isn't a secret vault.
+The session index is at `~/Library/Application Support/Harbor/sessions.json`; selected hosts and terminal preferences are in `preferences.json` alongside it. Open its directory from **Settings**. The index contains session names, paths, commands, tags, and connection metadata. Environment values are not written to it, but anything you put literally into a custom command is saved as part of that command. A running process and tmux necessarily retain their launch environment; this isn't a secret vault.
 
 The durable processes live on their target hosts, independently of the index. If needed:
 
@@ -83,12 +107,14 @@ tmux -L harbor attach -t harbor-SESSION_UUID
 ssh -t your-alias tmux -L harbor attach -t harbor-SESSION_UUID
 ```
 
-The app uses `~/.ssh/config` and recursive `Include` discovery for literal `Host` aliases, skips wildcard/negated patterns, and accepts manually entered hosts. SSH itself resolves the effective connection configuration; the discovery parser is only a picker, not a replacement for OpenSSH.
+Only the explicit import screen reads `~/.ssh/config` and recursive `Include` files to discover literal `Host` aliases, skipping wildcard/negated patterns. SSH still resolves the underlying connection configuration for your selected target; explicit saved overrides are passed as separate arguments.
 
-## First-version boundaries
+## Current boundaries
 
 No agent-specific conversation resume, worktree automation, cost tracking, remote file transfer, session sharing, mobile/web client, cloud backup, or auto-updater. Starting a new session starts a new CLI invocation; use Custom with a launcher's own resume command when needed. Reconnecting an existing running tmux session preserves the existing CLI process.
 
 Scrollback restoration is a rendered snapshot of up to 2,000 lines, not a full recording of terminal modes and events. Full-screen applications are best kept attached during active interaction. Lost network connections retry with backoff; unreachable hosts never cause session termination.
 
 Design references: [tmux control protocol](https://github.com/tmux/tmux/wiki/Control-Mode), [tmux manual](https://man.openbsd.org/tmux), and [Electron security guidance](https://www.electronjs.org/docs/latest/tutorial/security).
+
+Agent UI color verification is opt-in: `HARBOR_TEST_AGENTS=1 HARBOR_TEST_SSH=devbox npm run test:e2e`. These tests launch the actual CLIs, inspect their rendered color sequences, and save screenshots without submitting prompts or accepting workspace-trust dialogs.

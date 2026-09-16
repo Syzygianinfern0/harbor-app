@@ -6,6 +6,10 @@ function subscribe<T>(channel: string, callback: (value: T) => void) {
 }
 const api: HarborApi = {
   snapshot: () => ipcRenderer.invoke('harbor:snapshot'),
+  savePreferences: preferences => ipcRenderer.invoke('harbor:savePreferences', preferences),
+  sshCandidates: () => ipcRenderer.invoke('harbor:sshCandidates'),
+  resolveSsh: alias => ipcRenderer.invoke('harbor:resolveSsh', alias),
+  onPreferences: callback => subscribe('harbor:preferences', callback),
   create: input => ipcRenderer.invoke('harbor:create', input),
   update: (id, patch) => ipcRenderer.invoke('harbor:update', id, patch),
   terminate: id => ipcRenderer.invoke('harbor:terminate', id),

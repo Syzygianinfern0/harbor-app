@@ -10,6 +10,12 @@ for (const host of ['local', ...(process.env.HARBOR_TEST_SSH ? [process.env.HARB
   const transport = new Transport('harbor-launcher-test-' + randomUUID().slice(0, 8));
   const engine = new HarborEngine(await mkdtemp(path.join(tmpdir(), 'harbor-launchers-')), transport);
   await engine.init(false);
+    if (host !== 'local') {
+      const preferences = engine.snapshot().preferences;
+      preferences.hosts.push({ id: host, label: host, source: 'manual', enabled: true, defaultDirectory: '~/harbor-smoke-test-20260916', connection: { target: host } });
+      await engine.savePreferences(preferences);
+    }
+
   try {
     for (const launcher of ['codex', 'claude'] as const) {
       let output = '';
