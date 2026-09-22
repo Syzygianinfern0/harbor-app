@@ -1,15 +1,18 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { ControlClient } from './control';
 import { discoverHosts } from './hosts';
-import { checkAgentUpdates } from './updates';
+import { checkAgentUpdates, updateMachines, installAgentUpdate } from './updates';
+import { validateMode } from '../shared/agentModes';
+import { UpdateManager } from './updateManager';
 import { AgentBridge } from './bridge';
+import { PricingStore } from './pricing';
 import { PreferencesStore } from './preferences';
 import { Transport, quote, validateHost, validateConnection } from './transport';
-import type { Connection, CreateSession, Diagnostics, Preferences, Project, SshConnection, Session, Snapshot, AgentUpdate } from '../shared/types';
+import type { Connection, CreateSession, Diagnostics, Preferences, Project, SshConnection, Session, Snapshot, AgentUpdate, HostUsage } from '../shared/types';
 
 function bounded(value: unknown, label: string, max = 500) {
   if (typeof value !== 'string' || value.length > max || /[\x00-\x08\x0b-\x1f]/.test(value)) throw new Error(`Invalid ${label}.`);
@@ -26,6 +29,7 @@ export function validateCreate(input: CreateSession) {
   bounded(input.name, 'name', 100); if (!input.name.trim()) throw new Error('Give the session a name.');
   validateHost(input.host); directory(bounded(input.cwd, 'folder', 4096));
   if (!['shell', 'codex', 'claude', 'custom'].includes(input.launcher)) throw new Error('Invalid launcher.');
+  if(input.permissionMode!==undefined)validateMode(input.launcher,input.permissionMode);
   if (input.launcher === 'custom' && !input.command?.trim()) throw new Error('Enter a custom command.');
   if (input.command) bounded(input.command, 'command', 16000);
   bounded(input.group ?? '', 'group', 100);
@@ -41,6 +45,8 @@ export class HarborEngine extends EventEmitter {
   private sessions: Session[] = [];
   private projects: Project[] = [];
   private bridge: AgentBridge;
+  private updates: UpdateManager;
+  private pricing: PricingStore;
   private operations = new Set<string>();
   private importing = new Set<string>();
   private preferencesStore: PreferencesStore;
@@ -52,7 +58,7 @@ export class HarborEngine extends EventEmitter {
   private refreshing = false;
   private disposed = false;
   private launches = new Set<Promise<Session>>();
-  constructor(readonly dataDir: string, readonly transport = new Transport()) { super(); this.preferencesStore = new PreferencesStore(dataDir); this.bridge = new AgentBridge(transport); }
+  constructor(readonly dataDir: string, readonly transport = new Transport()) { super(); this.preferencesStore = new PreferencesStore(dataDir); this.bridge = new AgentBridge(transport); this.pricing = new PricingStore(dataDir); this.updates = new UpdateManager(dataDir, () => JSON.stringify(updateMachines(this.preferencesStore.value.hosts, this.projects)), () => checkAgentUpdates(this.transport, this.preferencesStore.value.hosts, this.projects), (host, agent) => this.performAgentUpdate(host, agent), () => this.changed()); }
   async init(poll = true) {
     await mkdir(this.dataDir, { recursive: true, mode: 0o700 });
     await this.transport.init();
@@ -67,6 +73,7 @@ export class HarborEngine extends EventEmitter {
     await this.preferencesStore.load();
     let migrated = false;
     for (const session of this.sessions) {
+      if (session.projectRemoved) continue;
       if (session.projectId && this.projects.some(p => p.id === session.projectId)) continue;
       let project = this.projects.find(p => p.cwd === session.cwd && JSON.stringify(p.connection) === JSON.stringify(this.connection(session)));
       if (!project) { project = { id: randomUUID(), name: session.cwd === '~' ? 'Home' : path.basename(session.cwd), cwd: session.cwd, hostId: session.hostId, hostLabel: session.hostLabel || session.host, connection: this.connection(session), createdAt: session.createdAt }; this.projects.push(project); }
@@ -77,12 +84,13 @@ export class HarborEngine extends EventEmitter {
       migrated = true;
     }
     if (migrated) await this.persist();
+    await this.updates.load();
     if (poll) { void this.refresh(); this.polling = setInterval(() => { void this.refresh(); }, 2500); this.polling.unref(); }
     return this.snapshot();
   }
   snapshot(): Snapshot {
     const preferences = structuredClone(this.preferencesStore.value);
-    return { projects: structuredClone(this.projects), sessions: structuredClone(this.sessions), hosts: preferences.hosts.filter(host => host.enabled), preferences, home: homedir(), dataDir: this.dataDir };
+    return { agentUpdates: this.updates.snapshot(), projects: structuredClone(this.projects), sessions: structuredClone(this.sessions), hosts: preferences.hosts.filter(host => host.enabled), preferences, home: homedir(), dataDir: this.dataDir };
   }
   async savePreferences(preferences: Preferences) { await this.preferencesStore.save(preferences); this.changed(); }
   async sshCandidates() { return (await discoverHosts()).filter(host => host.source !== 'local'); }
@@ -94,7 +102,43 @@ export class HarborEngine extends EventEmitter {
   }
   private connection(session: Session): Connection { return session.connection ?? session.host; }
 
-  async checkUpdates() { return checkAgentUpdates(this.transport, this.preferencesStore.value.hosts, this.projects); }
+  checkUpdates(force = true) { return this.updates.check(force); }
+  updateAllAgents() { return this.updates.updateAll(); }
+  updateAgent(hostId: string, agent: AgentUpdate['agent']) { return this.updates.install(hostId, agent); }
+  private updatingAgents = new Set<string>();
+  private async performAgentUpdate(hostId:string,agent:AgentUpdate['agent']) {
+    const host=updateMachines(this.preferencesStore.value.hosts,this.projects).find(h=>h.id===hostId);
+    if(!host) throw new Error('Host is no longer configured. Check for updates again.');
+    if(agent!=='codex'&&agent!=='claude') throw new Error('Unknown agent.');
+    if(this.updatingAgents.has(hostId)) throw new Error('An update is already running on this machine.');
+    this.updatingAgents.add(hostId);
+    try {
+      const output=await installAgentUpdate(this.transport,host.connection,agent);
+      const results=await checkAgentUpdates(this.transport,[],[{id:host.id,hostLabel:host.label,connection:host.connection} as Project]);
+      return {update:results.find(u=>u.agent===agent)!,output:output.slice(-12000)};
+    } finally {this.updatingAgents.delete(hostId);}
+  }
+  async checkReachability() {
+    const connections=new Map(this.projects.filter(p=>p.connection!=='local').map(p=>[JSON.stringify(p.connection),p.connection]));
+    return Object.fromEntries(await Promise.all([...connections].map(async([key,connection])=>{
+      try {await this.transport.run(connection,'true\n',{timeout:12000});return [key,true];}
+      catch{return [key,false];}
+    })));
+  }
+  async projectForEditor(id: string): Promise<Project> {
+    const project = this.projects.find(p => p.id === id);
+    if (!project) throw new Error('Project not found.');
+    if (project.cwd.startsWith('/')) return structuredClone(project);
+    const cwd = (await this.transport.run(project.connection, this.transport.setup()+`cd -- ${directory(project.cwd)} && pwd -P`)).trim();
+    return {...structuredClone(project), cwd};
+  }
+  async listDirectories(host: string, input: string, showHidden: boolean) {
+    bounded(input, 'folder', 4096);
+    if (/[\x00-\x1f]/.test(input) || typeof showHidden !== 'boolean') throw new Error('Invalid folder query.');
+    const profile = this.preferencesStore.value.hosts.find(h => h.id === host && h.enabled);
+    if (!profile) throw new Error('Choose an enabled host.');
+    return this.bridge.listDirectories(profile.connection ?? 'local', input, showHidden);
+  }
   async addProject(input: {name:string; host:string; cwd:string}) {
     bounded(input.name, 'project name', 100); directory(bounded(input.cwd, 'folder',4096));
     const profile = this.preferencesStore.value.hosts.find(h => h.id === input.host && h.enabled);
@@ -108,6 +152,34 @@ export class HarborEngine extends EventEmitter {
     await this.importHistory(project.id); return structuredClone(project);
   }
   async updateProject(id:string, name:string) { const project = this.projects.find(p=>p.id===id); if (!project) throw new Error('Project not found.'); bounded(name,'project name',100); if (!name.trim()) throw new Error('Enter a project name.'); project.name=name.trim(); await this.persist(); this.changed(); }
+  async manageProjects(items: {id:string;hidden:boolean}[]) {
+    if (!Array.isArray(items) || new Set(items.map(p=>p.id)).size!==items.length || items.some(p=>typeof p.hidden!=='boolean'||!this.projects.some(v=>v.id===p.id))) throw new Error('Invalid project list.');
+    const removed=this.projects.filter(p=>!items.some(v=>v.id===p.id));
+    if(removed.some(p=>this.importing.has(p.id))) throw new Error('Wait for project refresh to finish before deleting it.');
+    this.projects=items.map(item=>({...this.projects.find(p=>p.id===item.id)!,hidden:item.hidden}));
+    for(const session of this.sessions) if(removed.some(p=>p.id===session.projectId)) {session.projectId=undefined;session.projectRemoved=true;}
+    await this.persist(); this.changed();
+  }
+  private usagePending?: Promise<HostUsage[]>;
+  usage(): Promise<HostUsage[]> {
+    if (this.usagePending) return this.usagePending;
+    this.usagePending = Promise.all(updateMachines(this.preferencesStore.value.hosts, this.projects).map(async host => {
+      const base = {hostId: host.id, hostLabel: host.label, checkedAt: new Date().toISOString()};
+      try { return {...base, ...await this.bridge.usage(host.connection,await this.pricing.get())}; }
+      catch (error) { return {...base, agents: [], error: (error as Error).message}; }
+    })).finally(() => { this.usagePending = undefined; });
+    return this.usagePending;
+  }
+  async chatUsage(id: string) {
+    const session = this.sessions.find(s => s.id === id);
+    if (!session?.conversationId || !['codex','claude'].includes(session.launcher)) return {error:'No saved conversation is available yet.'};
+    return this.bridge.chatUsage(this.connection(session), session.launcher, session.cwd, session.conversationId, await this.pricing.get());
+  }
+  async chatPreview(id:string) {
+    const session=this.sessions.find(s=>s.id===id);
+    if(!session || !session.conversationId || !['codex','claude'].includes(session.launcher)) return {messages:[],error:'No saved conversation is available yet.'};
+    return this.bridge.preview(this.connection(session),session.launcher,session.cwd,session.conversationId);
+  }
   async importHistory(projectId:string) {
     if (this.importing.has(projectId)) return;
     const project = this.projects.find(p=>p.id===projectId); if (!project) throw new Error('Project not found.');
@@ -125,9 +197,9 @@ export class HarborEngine extends EventEmitter {
       for (const conversation of conversations) {
         if (!/^[a-f0-9-]{36}$/i.test(conversation.conversationId)) continue;
         const existing = this.sessions.find(s=>s.conversationId === conversation.conversationId && s.launcher === conversation.launcher && JSON.stringify(this.connection(s))===JSON.stringify(project.connection));
-        if (existing) { if (existing.nameSource !== 'manual') existing.name=conversation.name; if (existing.status === 'closed') existing.externalActive=conversation.externalActive; continue; }
+        if (existing) { if(existing.projectRemoved){existing.projectId=projectId;existing.projectRemoved=false;} if(typeof conversation.hasMessages==='boolean'&&existing.hasMessages!==true)existing.hasMessages=conversation.hasMessages; if (existing.nameSource !== 'manual') existing.name=conversation.name; if (existing.status === 'closed') existing.externalActive=conversation.externalActive; continue; }
         const id=randomUUID(); const connection=project.connection;
-        this.sessions.push({id,tmuxName:`harbor-${id}`,paneId:'%0',projectId,name:conversation.name,nameSource:'auto',host:typeof connection==='string'?connection:connection.target,hostId:project.hostId,hostLabel:project.hostLabel,...(typeof connection==='object'?{connection:structuredClone(connection)}:{}),cwd:conversation.cwd,launcher:conversation.launcher,command:conversation.launcher,group:project.name,tags:[],pinned:false,archived:false,createdAt:new Date(conversation.createdAt*1000).toISOString(),updatedAt:new Date(conversation.updatedAt*1000).toISOString(),status:'closed',activity:'closed',conversationId:conversation.conversationId,resumable:true,imported:true,externalActive:conversation.externalActive});
+        this.sessions.push({id,tmuxName:`harbor-${id}`,paneId:'%0',projectId,name:conversation.name,nameSource:'auto',host:typeof connection==='string'?connection:connection.target,hostId:project.hostId,hostLabel:project.hostLabel,...(typeof connection==='object'?{connection:structuredClone(connection)}:{}),cwd:conversation.cwd,launcher:conversation.launcher,command:conversation.launcher,group:project.name,tags:[],pinned:false,archived:false,createdAt:new Date(conversation.createdAt*1000).toISOString(),updatedAt:new Date(conversation.updatedAt*1000).toISOString(),status:'closed',activity:'closed',conversationId:conversation.conversationId,resumable:true,hasMessages:conversation.hasMessages,imported:true,externalActive:conversation.externalActive});
       }
       await this.persist(); this.changed();
     } catch(error) { project.historyError=(error as Error).message; this.changed(); }
@@ -144,6 +216,7 @@ export class HarborEngine extends EventEmitter {
           const meta=metadata[session.id]; if(!meta || meta.generation!==session.generation) continue;
           const previous=session.activity; const previousAt=session.activityAt;
           if(meta.conversationId && /^[a-f0-9-]{36}$/i.test(meta.conversationId)) session.conversationId=meta.conversationId;
+          if(meta.hasMessages===true || (meta.hasMessages===false&&session.hasMessages!==true))session.hasMessages=meta.hasMessages;
           if(meta.resumable!==undefined) session.resumable=meta.resumable;
           if(meta.name && session.nameSource!=='manual') session.name=meta.name.slice(0,100);
           if(session.status !== 'closed' && meta.activity && ['starting','working','attention','idle','closed','error','unknown'].includes(meta.activity)) session.activity=meta.activity;
@@ -201,7 +274,8 @@ printf 'HARBOR_CLAUDE='; command -v claude || true
     if (project) input = { ...input, cwd: project.cwd };
     const id = randomUUID(); const tmuxName = `harbor-${id}`; const generation = randomUUID();
     const agent = input.launcher === 'codex' || input.launcher === 'claude';
-    const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${input.launcher} ${quote(id)} ${quote(generation)}` : input.launcher === 'custom' ? input.command! : '';
+    const permissionMode=agent?validateMode(input.launcher,input.permissionMode??this.preferencesStore.value.agents[input.launcher as 'codex'|'claude']):undefined;
+    const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${input.launcher} ${quote(id)} ${quote(generation)} --permission-mode ${quote(permissionMode!)}` : input.launcher === 'custom' ? input.command! : '';
     const variables = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${quote(value)}`).join(' ');
     const inner = `cd -- ${directory(input.cwd)} || exit 1\n${launch ? launch : 'exec "${SHELL:-/bin/bash}" -l'}`;
     // Start the intended command directly, after the login shell initializes: no send-keys readiness race.
@@ -215,7 +289,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     const paneId = result.match(/^HARBOR_PANE=(%\d+)$/m)?.[1];
     if (!paneId) throw new Error(`The host did not return a pane ID. A session may exist as ${tmuxName}; do not automatically retry.`);
     const now = new Date().toISOString();
-    const session: Session = { id, tmuxName, paneId, name: input.name.trim(), host: typeof connection === 'string' ? connection : connection.target, hostId: project?.hostId ?? profile?.id, hostLabel: project?.hostLabel ?? profile?.label, projectId: project?.id, generation, activity: agent ? 'starting' : 'idle', nameSource: /^New (chat|terminal)$/.test(input.name) ? 'auto' : 'manual', ...(typeof connection === 'object' ? { connection } : {}), cwd: input.cwd || '~', launcher: input.launcher, command: launch, group: input.group?.trim() || 'Ungrouped', tags: input.tags ?? [], pinned: false, archived: false, createdAt: now, updatedAt: now, status: 'running' };
+    const session: Session = { originalLaunchCommand: command, latestLaunchCommand: command, permissionMode, ...(agent?{hasMessages:false}:{}), id, tmuxName, paneId, name: input.name.trim(), host: typeof connection === 'string' ? connection : connection.target, hostId: project?.hostId ?? profile?.id, hostLabel: project?.hostLabel ?? profile?.label, projectId: project?.id, generation, activity: agent ? 'starting' : 'idle', nameSource: /^New (chat|terminal)$/.test(input.name) ? 'auto' : 'manual', ...(typeof connection === 'object' ? { connection } : {}), cwd: input.cwd || '~', launcher: input.launcher, command: launch, group: input.group?.trim() || 'Ungrouped', tags: input.tags ?? [], pinned: false, archived: false, createdAt: now, updatedAt: now, status: 'running' };
     if (!session.projectId) {
       let inferred = this.projects.find(p => p.cwd === input.cwd && JSON.stringify(p.connection) === JSON.stringify(connection));
       if (!inferred) { inferred = { id: randomUUID(), name: input.cwd === '~' ? 'Home' : path.basename(input.cwd), cwd: input.cwd, hostId: profile?.id, hostLabel: profile?.label || 'This Mac', connection, createdAt: now }; this.projects.push(inferred); }
@@ -298,6 +372,37 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     // tmux owns bracketed-paste state, including on 3.2 where it cannot be queried as a format.
     await this.transport.run(this.connection(session), this.transport.setup() + `set -e\nprintf '%b' ${quote(escaped)} | ${this.transport.tmux(['load-buffer', '-b', buffer, '-'])}\n${this.transport.tmux(['paste-buffer', '-p', '-d', '-b', buffer, '-t', session.paneId])}`);
   }
+  async dropFiles(id: string, paths: string[]) {
+    const session = this.get(id);
+    const client = this.clients.get(id);
+    if (!client) throw new Error('Reconnect the terminal before dropping files.');
+    if (!Array.isArray(paths) || !paths.length || paths.length > 100) throw new Error('Drop between 1 and 100 files.');
+    for (const file of paths) {
+      if (typeof file !== 'string' || !path.isAbsolute(file) || /[\x00-\x1f\x7f]/.test(file)) throw new Error('This drop does not contain a usable file path.');
+      if (!(await stat(file)).isFile()) throw new Error('Drop files individually; folders are not supported.');
+    }
+    const connection = this.connection(session);
+    let inserted = paths;
+    if (connection !== 'local') {
+      const root = (await this.transport.run(connection, 'set -e\numask 077\nmkdir -p "$HOME/.local/share/harbor/drops"\nmktemp -d "$HOME/.local/share/harbor/drops/drop.XXXXXXXX"')).trim();
+      if (!root.startsWith('/') || /[\x00-\x1f\x7f]/.test(root)) throw new Error('Could not create the remote drop directory.');
+      inserted = [];
+      try {
+        for (const [index, file] of paths.entries()) {
+          const folder = `${root}/${index}`;
+          await this.transport.run(connection, `mkdir -m 700 -- ${quote(folder)}`);
+          const destination = `${folder}/${path.basename(file)}`;
+          await this.transport.uploadFile(connection, file, destination);
+          inserted.push(destination);
+        }
+      } catch (error) {
+        await this.transport.run(connection, `rm -rf -- ${quote(root)}`).catch(() => {});
+        throw error;
+      }
+    }
+    if (this.clients.get(id) !== client) throw new Error('The terminal reconnected during the file drop. Drop the files again.');
+    await this.paste(id, inserted.map(quote).join(' ') + ' ');
+  }
   private dimensions(cols: number, rows: number) { if (![cols, rows].every(n => Number.isInteger(n) && n >= 2 && n <= 1000)) throw new Error('Invalid terminal dimensions.'); }
   async resize(id: string, cols: number, rows: number) { this.dimensions(cols, rows); await this.clients.get(id)?.resize(cols, rows); }
   async terminate(id: string) {
@@ -330,7 +435,8 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
         session.externalActive=false;
       }
       await this.transport.run(connection, this.transport.setup() + `if ${this.transport.tmux(['has-session','-t',`=${session.tmuxName}`])} 2>/dev/null; then ${this.transport.tmux(['kill-session','-t',`=${session.tmuxName}`])}; fi`);
-      const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${session.launcher} ${quote(id)} ${quote(generation)}${session.conversationId && session.resumable !== false ? ` --resume ${quote(session.conversationId)}` : ''}` : session.launcher === 'custom' ? session.command : '';
+      const permissionMode=agent?validateMode(session.launcher,session.permissionMode??this.preferencesStore.value.agents[session.launcher as 'codex'|'claude']):undefined;
+      const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${session.launcher} ${quote(id)} ${quote(generation)} --permission-mode ${quote(permissionMode!)}${session.conversationId && session.resumable !== false ? ` --resume ${quote(session.conversationId)}` : ''}` : session.launcher === 'custom' ? session.command : '';
       const inner = `cd -- ${directory(session.cwd)} || exit 1\n${launch || 'exec "${SHELL:-/bin/bash}" -l'}`;
       const command = `exec env -u TMUX -u TMUX_PANE -u NO_COLOR -u FORCE_COLOR -u CLICOLOR -u CLICOLOR_FORCE TERM=xterm-256color COLORTERM=truecolor "\${SHELL:-/bin/bash}" -lic ${quote(inner)}`;
       // A new tmux name per incarnation prevents a delayed detach/kill from touching its successor.
@@ -338,7 +444,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
       const result = await this.transport.run(connection, this.transport.setup() + `set -e\ncd -- ${directory(session.cwd)}\n${this.transport.tmux(['-f','/dev/null','new-session','-d','-P','-F','HARBOR_PANE=#{pane_id}','-s',tmuxName,'-x','120','-y','32',command,';','set-option','-w','-t',`=${tmuxName}:`,'remain-on-exit','on',';','set-option','-t',tmuxName,'status','off'])}`);
       const paneId = result.match(/^HARBOR_PANE=(%\d+)$/m)?.[1];
       if (!paneId) throw new Error(`The session may have started as ${tmuxName}; do not automatically retry.`);
-      Object.assign(session, { paneId, tmuxName, generation, status:'running', activity: agent ? 'starting' : 'idle', archived:false, updatedAt:new Date().toISOString() });
+      Object.assign(session, { completedAt: undefined, attentionAt: undefined, activityAt: undefined, activityDetail: undefined, latestLaunchCommand: command, permissionMode, paneId, tmuxName, generation, status:'running', activity: agent ? 'starting' : 'idle', archived:false, updatedAt:new Date().toISOString() });
       await this.persist(); this.changed(); return structuredClone(session);
     } finally { this.operations.delete(id); }
   }
@@ -351,5 +457,6 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     for (const id of this.clients.keys()) this.detach(id);
     await this.writes;
     await this.preferencesStore.flush();
+    await this.updates.flush();
   }
 }

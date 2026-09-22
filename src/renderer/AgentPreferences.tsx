@@ -1,12 +1,50 @@
-import { useState } from 'react';
-import { Bell, Check, LoaderCircle, RefreshCw } from 'lucide-react';
-import type { AgentUpdate, Preferences } from '../shared/types';
+import { Fragment, useEffect, useState } from 'react';
+import { Bell, Check, Download, LoaderCircle, RefreshCw } from 'lucide-react';
+import type { AgentUpdate, AgentUpdateState, Preferences } from '../shared/types';
 
 export function NotificationPreferences({value,onChange}:{value:Preferences['notifications'];onChange:(value:Preferences['notifications'])=>void}) {
-  const [message,setMessage]=useState('');
-  return <div className="terminal-preferences notification-preferences"><h3>Know when a chat needs you.</h3><p>Harbor can notify you about approvals, questions, errors, and completed work while the app is running.</p>{([['enabled','Enable desktop notifications'],['sound','Play a sound'],['whenFocused','Notify even when Harbor is in front'],['onComplete','Notify when an agent finishes working']] as const).map(([key,label])=><label key={key} className="toggle-field"><input type="checkbox" checked={value[key]} onChange={e=>onChange({...value,[key]:e.target.checked})}/>{label}</label>)}<button className="secondary-button" onClick={async()=>setMessage(await window.harbor.testNotification()?'Test notification sent. If it doesn’t appear, allow Harbor in macOS System Settings → Notifications.':'Desktop notifications aren’t available on this system.')}><Bell size={14}/>Send test notification</button>{message&&<p role="status">{message}</p>}<p className="preferences-note">Status comes from the agents’ own runtime events. Older sessions need to be resumed in Harbor to enable live activity. macOS Focus and notification settings still apply.</p></div>;
+  const [message,setMessage]=useState('');const [testing,setTesting]=useState(false);
+  return <div className="terminal-preferences notification-preferences"><h3>Know when a chat needs you.</h3><p>Harbor can notify you about approvals, questions, errors, and completed work while the app is running.</p>{([['enabled','Enable desktop notifications'],['sound','Play a sound'],['whenFocused','Notify even when Harbor is in front'],['onComplete','Notify when an agent finishes working']] as const).map(([key,label])=><label key={key} className="toggle-field"><input type="checkbox" checked={value[key]} onChange={e=>onChange({...value,[key]:e.target.checked})}/>{label}</label>)}<div className="notification-actions"><button className="secondary-button" disabled={testing} onClick={async()=>{setTesting(true);setMessage('Waiting for macOS…');try{setMessage(await window.harbor.testNotification(value.sound));}catch(error){setMessage((error as Error).message);}finally{setTesting(false);}}}><Bell size={14}/>{testing?'Sending…':'Send test notification'}</button><button className="secondary-button" onClick={()=>void window.harbor.openNotificationSettings().catch(error=>setMessage(error.message))}>Open notification settings</button></div>{message&&<p role="status">{message}</p>}<p className="preferences-note">Status comes from the agents’ own runtime events. Older sessions need to be resumed in Harbor to enable live activity. macOS Focus and notification settings still apply.</p></div>;
 }
 export function UpdatePreferences() {
-  const [updates,setUpdates]=useState<AgentUpdate[]>([]);const [busy,setBusy]=useState(false);const [error,setError]=useState('');
-  return <div className="terminal-preferences updates-preferences"><div className="updates-heading"><div><h3>Agents on your machines</h3><p>Check Codex and Claude Code on your saved hosts and project machines.</p></div><button className="secondary-button" disabled={busy} onClick={async()=>{setBusy(true);setError('');try{setUpdates(await window.harbor.checkUpdates());}catch(err){setError((err as Error).message);}finally{setBusy(false);}}}>{busy?<LoaderCircle className="spin" size={14}/>:<RefreshCw size={14}/>}Check for updates</button></div>{!updates.length&&!busy&&<p className="updates-empty">Run a check to compare installed versions with the latest published releases.</p>}{busy&&<p role="status">Checking machines…</p>}{error&&<p className="form-error" role="alert">{error}</p>}{updates.length>0&&<table className="updates-table"><thead><tr><th>Machine / agent</th><th>Installed</th><th>Latest</th><th>Status</th></tr></thead><tbody>{updates.map((u,index)=><tr key={`${u.hostId}-${u.agent}-${index}`}><td><strong>{u.hostLabel}</strong><small>{u.agent==='codex'?'Codex':'Claude Code'}</small></td><td>{u.installed||'—'}</td><td>{u.latest||'—'}</td><td title={u.error} className={`update-${u.status}`}>{u.status==='available'?'Update available':u.status==='current'?'Up to date':u.status==='missing'?'Not installed':'Unable to check'}{u.error&&<small>{u.error.slice(0,180)}</small>}</td></tr>)}</tbody></table>}<p className="preferences-note">Checks don’t install updates or interrupt running chats. Versions are compared with the agents’ official npm release channels. Preview or pinned channels may differ.</p>{updates[0]&&<small>Last checked {new Date(updates[0].checkedAt).toLocaleString()}</small>}</div>;
+  const [state,setState]=useState<AgentUpdateState>({updates:[],checking:false,updatingAll:false,results:{}});
+  const [requesting,setRequesting]=useState(false);
+  const [error,setError]=useState('');
+  const {updates,results,running}=state;
+  const busy=requesting||state.checking||state.updatingAll||!!running;
+  const available=updates.filter(row=>row.status==='available').length;
+  const groups=[...new Set(updates.map(u=>u.hostId))];
+  useEffect(()=>{
+    let active=true;
+    const receive=(snapshot:Awaited<ReturnType<typeof window.harbor.snapshot>>)=>{if(active&&snapshot.agentUpdates)setState(snapshot.agentUpdates);};
+    const off=window.harbor.onSnapshot(receive);
+    void window.harbor.snapshot().then(receive).catch(error=>{if(active)setError(error.message);});
+    void window.harbor.checkUpdates(false).catch(error=>{if(active)setError(error.message);});
+    return()=>{active=false;off();};
+  },[]);
+  const check=async()=>{
+    setRequesting(true);setError('');
+    try {const rows=await window.harbor.checkUpdates();setState(v=>({...v,updates:rows}));}
+    catch(error){setError((error as Error).message);}finally{setRequesting(false);}
+  };
+  const install=async(u:AgentUpdate)=>{
+    const key=`${u.hostId}:${u.agent}`;setRequesting(true);
+    try {
+      const result=await window.harbor.updateAgent(u.hostId,u.agent);
+      setState(v=>({...v,updates:v.updates.map(old=>old.hostId===u.hostId&&old.agent===u.agent?result.update:old),results:{...v.results,[key]:{
+        message:result.update.status==='current'?`Verified: ${result.update.installed} is up to date.`:`Update finished, but the latest version was not verified. Active version: ${result.update.installed||'unknown'}. ${result.update.error||'Check the output and installation channel.'}`,output:result.output}}}));
+    } catch(error) {setState(v=>({...v,results:{...v.results,[key]:{message:`Update failed or could not be confirmed: ${(error as Error).message}. Check versions before retrying.`}}}));}
+    finally {setRequesting(false);}
+  };
+  const updateAll=async()=>{
+    setRequesting(true);setError('');
+    try {await window.harbor.updateAllAgents();const snapshot=await window.harbor.snapshot();if(snapshot.agentUpdates)setState(snapshot.agentUpdates);}
+    catch(error){setError((error as Error).message);}finally{setRequesting(false);}
+  };
+  return <div className="terminal-preferences updates-preferences"><div className="updates-heading"><div><h3>Agents on your machines</h3><p>Checks automatically each day, including when Harbor starts or wakes.</p></div><div className="updates-actions"><button className="secondary-button" disabled={busy} onClick={()=>void check()}>{state.checking?<LoaderCircle className="spin" size={14}/>:<RefreshCw size={14}/>}Check for updates</button><button className="primary-button" disabled={busy||!available} onClick={()=>void updateAll()}>{state.updatingAll?<LoaderCircle className="spin" size={14}/>:<Download size={14}/>}Update all{available?` (${available})`:''}</button></div></div>
+    {state.checking&&<p role="status">Checking machines…</p>}{state.updatingAll&&<p role="status">Updating agents across your machines: {state.completed} of {state.total} finished. You can close Preferences; updates will continue.</p>}{(error||state.error)&&<p className="form-error" role="alert">{error||state.error}</p>}
+    {!updates.length&&!state.checking&&<p className="updates-empty">No version results yet. Check for updates to try again.</p>}
+    {updates.length>0&&<table className="updates-table"><thead><tr><th>Agent</th><th>Installed</th><th>Latest</th><th>Status / action</th></tr></thead><tbody>{groups.map(hostId=><Fragment key={hostId}><tr className="update-host"><th colSpan={4} scope="rowgroup">{updates.find(u=>u.hostId===hostId)!.hostLabel}</th></tr>{updates.filter(u=>u.hostId===hostId).map(u=>{const key=`${u.hostId}:${u.agent}`;return <tr key={key}><td>{u.agent==='codex'?'Codex':'Claude Code'}</td><td>{u.installed||'—'}</td><td>{u.latest||'—'}</td><td className={`update-${u.status} update-result`}><div>{u.status==='available'?'Update available':u.status==='current'?'Up to date':u.status==='missing'?'Not installed':'Unable to check'}</div>{u.error&&<small>{u.error}</small>}{u.status==='available'&&<button className="secondary-button" disabled={busy} onClick={()=>void install(u)}>{running===key?<LoaderCircle className="spin" size={12}/>:<RefreshCw size={12}/>}Update {u.agent==='codex'?'Codex':'Claude Code'}</button>}{results[key]&&<><small role="status">{results[key].message}</small>{results[key].output&&<details><summary>Update output</summary><pre className="update-output">{results[key].output}</pre></details>}</>}</td></tr>;})}</Fragment>)}</tbody></table>}
+    <p className="preferences-note">Update all updates installed agents with an available release on every listed machine. Failures are reported per agent while the remaining updates continue. Running chats keep their existing process; new chats use the updated agent. Updates use each installation’s package manager and verify the version afterward.</p>{(state.checkedAt||updates[0])&&<small>Last checked {new Date(state.checkedAt||updates[0].checkedAt).toLocaleString()}</small>}
+  </div>;
 }

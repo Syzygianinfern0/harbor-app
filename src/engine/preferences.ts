@@ -2,9 +2,11 @@ import { readFile, writeFile, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Preferences, SavedHost } from '../shared/types';
+import { validateMode } from '../shared/agentModes';
 import { validateConnection } from './transport';
 
 export const defaultPreferences = (): Preferences => ({
+  agents: {codex:'standard',claude:'standard'},
   notifications: { enabled: false, sound: true, whenFocused: false, onComplete: true },
   sidebar: { expandOnHover: true },
   hosts: [{ id: 'local', label: 'This Mac', source: 'local', enabled: true, defaultDirectory: '~' }],
@@ -35,7 +37,9 @@ export function validatePreferences(value: Preferences): Preferences {
   if (typeof sidebar.expandOnHover !== 'boolean') throw new Error('Invalid sidebar preferences.');
   const notifications = value.notifications ?? defaultPreferences().notifications;
   if (['enabled','sound','whenFocused','onComplete'].some(key => typeof notifications[key as keyof typeof notifications] !== 'boolean')) throw new Error('Invalid notification preferences.');
-  return { notifications: { ...notifications }, sidebar: { expandOnHover: sidebar.expandOnHover }, hosts, terminal: { fontSize, fontFamily, cursorBlink } };
+  const agents=value.agents??defaultPreferences().agents;
+  validateMode('codex',agents.codex);validateMode('claude',agents.claude);
+  return { agents:{codex:agents.codex,claude:agents.claude}, notifications: { ...notifications }, sidebar: { expandOnHover: sidebar.expandOnHover }, hosts, terminal: { fontSize, fontFamily, cursorBlink } };
 }
 export class PreferencesStore {
   value = defaultPreferences();

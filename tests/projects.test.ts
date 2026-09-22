@@ -43,3 +43,24 @@ test('agent completion and attention events are deduplicated; manual titles over
 test('version comparisons use numeric components and preserve unknown results',()=>{
  assert.equal(compareVersions('0.154.0','0.155.0'),'available');assert.equal(compareVersions('2.1.263','2.1.99'),'current');assert.equal(compareVersions('unknown','1.2.3'),'unknown');
 });
+
+test('project order and visibility persist; deletion keeps sessions without recreating projects on restart',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'harbor-manage-'));const createdAt=new Date().toISOString();
+ const projects=['a','b'].map(id=>({id,name:id,cwd:dir+'/'+id,hostLabel:'This Mac',connection:'local',createdAt}));
+ const session={id:'chat',name:'Saved',host:'local',cwd:projects[0].cwd,tmuxName:'harbor-aaaa',paneId:'%1',launcher:'codex',group:'',tags:[],pinned:false,archived:false,createdAt,status:'closed',projectId:'a'};
+ await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects,sessions:[session]}));
+ let engine=new HarborEngine(dir);await engine.init(false);
+ await engine.manageProjects([{id:'b',hidden:true},{id:'a',hidden:false}]);assert.deepEqual(engine.snapshot().projects.map(p=>[p.id,p.hidden]),[['b',true],['a',false]]);
+ await engine.manageProjects([{id:'b',hidden:true}]);assert.equal(engine.snapshot().sessions.length,1);await engine.dispose();
+ engine=new HarborEngine(dir);await engine.init(false);assert.deepEqual(engine.snapshot().projects.map(p=>p.id),['b']);assert.equal(engine.snapshot().sessions[0].projectRemoved,true);await engine.dispose();
+});
+
+test('usage reads each configured connection once and preserves other hosts when SSH fails',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'harbor-usage-'));const engine=new HarborEngine(dir);await engine.init(false);t.after(()=>engine.dispose());
+ const preferences=engine.snapshot().preferences;
+ await engine.savePreferences({...preferences,hosts:[...preferences.hosts,{id:'remote',label:'Research server',source:'manual',enabled:true,defaultDirectory:'~',connection:{target:'server'}}]});
+ const calls:unknown[]=[];
+ (engine as any).bridge={usage:async(connection:unknown)=>{calls.push(connection);await new Promise(resolve=>setTimeout(resolve,10));if(connection!=='local')throw new Error('SSH unavailable');return {agents:[]};}};
+ const [first,second]=await Promise.all([engine.usage(),engine.usage()]);assert.deepEqual(first,second);assert.equal(calls.length,2);assert.equal(first[0].error,undefined);assert.equal(first[1].error,'SSH unavailable');
+ await engine.usage();assert.equal(calls.length,4);
+});

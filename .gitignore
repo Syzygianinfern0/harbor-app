@@ -7,3 +7,6 @@ playwright-report/
 *.log
 __pycache__/
 *.pyc
+
+# Local investigation artifacts, installation backups, and copied app profiles.
+/work/

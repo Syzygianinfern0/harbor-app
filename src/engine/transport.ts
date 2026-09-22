@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createReadStream } from 'node:fs';
+import type { Readable } from 'node:stream';
 import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
@@ -30,20 +32,22 @@ export function environment() {
 export class CommandError extends Error {
   constructor(message: string, public code: number | null, public timedOut = false) { super(message); }
 }
-export async function collect(child: ChildProcessWithoutNullStreams, input = '', timeout = 15000) {
+export async function collect(child: ChildProcessWithoutNullStreams, input: string | Readable = '', timeout = 15000) {
   return new Promise<string>((resolve, reject) => {
     let stdout = ''; let stderr = ''; let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeout);
     child.stdout.on('data', chunk => { stdout += chunk.toString(); if (stdout.length > 8_000_000) child.kill(); });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8000); });
     child.stdin.on('error', () => {});
-    child.on('error', error => { clearTimeout(timer); reject(error); });
+    child.on('error', error => { clearTimeout(timer); if (typeof input !== 'string') input.destroy(); reject(error); });
     child.on('close', code => {
       clearTimeout(timer);
+      if (typeof input !== 'string') input.destroy();
       if (code === 0 && !timedOut) resolve(stdout);
       else reject(new CommandError(timedOut ? 'Connection timed out. Check the host, network, and SSH authentication.' : [stderr.trim(), stdout.trim()].filter(Boolean).join('\n') || `Command exited (${code}).`, code, timedOut));
     });
-    child.stdin.end(input);
+    if (typeof input === 'string') child.stdin.end(input);
+    else { input.on('error', error => { child.kill(); reject(error); }); input.pipe(child.stdin); }
   });
 }
 export class Transport {
@@ -90,6 +94,14 @@ export class Transport {
   setup() {
     // Same PATH on every operation; login-shell startup output cannot pollute the protocol.
     return 'export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\nunset TMUX TMUX_PANE NO_COLOR FORCE_COLOR CLICOLOR CLICOLOR_FORCE\nexport TERM=xterm-256color COLORTERM=truecolor\n';
+  }
+  async uploadFile(host: Connection, source: string, destination: string) {
+    await this.init();
+    const script = `umask 077; cat > ${quote(destination)}`;
+    const child = host === 'local'
+      ? spawn('/bin/bash', ['--noprofile', '--norc', '-c', script], { env: environment() })
+      : spawn('/usr/bin/ssh', [...this.sshArgs(host, this.multiplex(host)), script], { env: environment() });
+    await collect(child, createReadStream(source), 10 * 60 * 1000);
   }
   tmux(args: string[]) { return ['tmux', '-L', this.socket, ...args].map(quote).join(' '); }
   async control(host: Connection, name: string) {
