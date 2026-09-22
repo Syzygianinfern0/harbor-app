@@ -22,9 +22,15 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
   const reportRef = useRef(report); reportRef.current = report;
   const status = useRef(session.status); status.current = session.status;
   useEffect(() => {
-    const terminal = new Terminal({ cursorBlink: preferences.cursorBlink, cursorStyle: 'bar', fontFamily: preferences.fontFamily, fontSize: preferences.fontSize, lineHeight: 1.2, scrollback: 10000, allowProposedApi: false, theme: { background: '#101217', foreground: '#dce1eb', cursor: '#8ce0bf', selectionBackground: '#334a49', black: '#232731', red: '#f18989', green: '#9bd9ac', yellow: '#e4ca88', blue: '#91b5ed', magenta: '#c4a8e2', cyan: '#88d5d7', white: '#e3e7ef', brightBlack: '#697487', brightRed: '#ffacac', brightGreen: '#b7f0c5', brightYellow: '#f6dca0', brightBlue: '#b7d1fa', brightMagenta: '#e2c6fb', brightCyan: '#a6edf0', brightWhite: '#ffffff' } });
+    // OSC 8 links bypass WebLinksAddon; route both kinds through validated IPC.
+    const linkHandler = {
+      activate: (_event: MouseEvent, uri: string) => { void window.harbor.openExternal(uri).catch(error => reportRef.current(error.message)); },
+      hover: (_event: MouseEvent, uri: string) => { if (element.current) element.current.title = uri; },
+      leave: () => { element.current?.removeAttribute('title'); },
+    };
+    const terminal = new Terminal({ linkHandler, cursorBlink: preferences.cursorBlink, cursorStyle: 'bar', fontFamily: preferences.fontFamily, fontSize: preferences.fontSize, lineHeight: 1.2, scrollback: 10000, allowProposedApi: false, theme: { background: '#101217', foreground: '#dce1eb', cursor: '#8ce0bf', selectionBackground: '#334a49', black: '#232731', red: '#f18989', green: '#9bd9ac', yellow: '#e4ca88', blue: '#91b5ed', magenta: '#c4a8e2', cyan: '#88d5d7', white: '#e3e7ef', brightBlack: '#697487', brightRed: '#ffacac', brightGreen: '#b7f0c5', brightYellow: '#f6dca0', brightBlue: '#b7d1fa', brightMagenta: '#e2c6fb', brightCyan: '#a6edf0', brightWhite: '#ffffff' } });
     const fit = new FitAddon(); terminal.loadAddon(fit); terminalRef.current = terminal; fitRef.current = fit;
-    terminal.loadAddon(new WebLinksAddon((_event, uri) => { void window.harbor.openExternal(uri).catch(error => reportRef.current(error.message)); }));
+    terminal.loadAddon(new WebLinksAddon(linkHandler.activate, linkHandler));
     terminal.open(element.current!); fit.fit();
     let disposed = false; let connected = false; let connecting = false; let attempts = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
