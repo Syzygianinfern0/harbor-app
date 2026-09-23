@@ -5,6 +5,7 @@ import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
 import type { Connection, SshConnection } from '../shared/types';
+import { terminalColors } from '../shared/terminalTheme';
 
 export const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 export function validateHost(host: string) {
@@ -104,6 +105,12 @@ export class Transport {
     await collect(child, createReadStream(source), 10 * 60 * 1000);
   }
   tmux(args: string[]) { return ['tmux', '-L', this.socket, ...args].map(quote).join(' '); }
+  terminalCommand(command: string) {
+    // Set defaults inside the new pane, before its app can query OSC 10/11.
+    // This also works while detached and on tmux versions without color reports.
+    const style = `fg=${terminalColors.foreground},bg=${terminalColors.background}`;
+    return `${this.tmux(['select-pane', '-P', style])} -t "$TMUX_PANE" || exit 1\n${command}`;
+  }
   async control(host: Connection, name: string) {
     await this.init();
     const script = this.setup() + `exec ${this.tmux(['-C', 'attach-session', '-f', 'no-output', '-t', `=${name}`])}`;

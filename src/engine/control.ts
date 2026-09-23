@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { terminalColors } from '../shared/terminalTheme';
 
 export function decodeOutput(raw: Buffer): Buffer {
   const result: number[] = [];
@@ -72,6 +73,16 @@ export class ControlClient extends EventEmitter {
   }
   async prime(cols: number, rows: number) {
     await this.ready;
+    // Newer tmux answers OSC 10/11 itself. Control clients must supply the
+    // actual theme or tmux may report black for both foreground and background.
+    // Probe command support instead of assuming the SSH host's tmux version.
+    const commands = await this.command('list-commands');
+    if (/^refresh-client\b[^\n]*\[-r /m.test(commands)) {
+      for (const [osc, color] of [[10, terminalColors.foreground], [11, terminalColors.background]] as const) {
+        const rgb = color.slice(1).match(/../g)!.map(byte => byte.repeat(2)).join('/');
+        await this.command(`refresh-client -r "${this.pane}:\\033]${osc};rgb:${rgb}\\007"`);
+      }
+    }
     await this.command(`refresh-client -C ${cols},${rows}`);
     // Commands execute together on tmux's event loop: capture, cursor, then turn live output on.
     this.child.stdin.cork();

@@ -279,7 +279,7 @@ printf 'HARBOR_CLAUDE='; command -v claude || true
     const variables = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${quote(value)}`).join(' ');
     const inner = `cd -- ${directory(input.cwd)} || exit 1\n${launch ? launch : 'exec "${SHELL:-/bin/bash}" -l'}`;
     // Start the intended command directly, after the login shell initializes: no send-keys readiness race.
-    const command = `exec env -u TMUX -u TMUX_PANE -u NO_COLOR -u FORCE_COLOR -u CLICOLOR -u CLICOLOR_FORCE TERM=xterm-256color COLORTERM=truecolor ${variables} "\${SHELL:-/bin/bash}" ${launch ? `-lic ${quote(inner)}` : '-l'}`;
+    const command = this.transport.terminalCommand(`exec env -u TMUX -u TMUX_PANE -u NO_COLOR -u FORCE_COLOR -u CLICOLOR -u CLICOLOR_FORCE TERM=xterm-256color COLORTERM=truecolor ${variables} "\${SHELL:-/bin/bash}" ${launch ? `-lic ${quote(inner)}` : '-l'}`);
     const script = this.transport.setup() + `set -e
 command -v tmux >/dev/null || { echo 'tmux is required on this host.' >&2; exit 1; }
 cd -- ${directory(input.cwd)}
@@ -438,7 +438,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
       const permissionMode=agent?validateMode(session.launcher,session.permissionMode??this.preferencesStore.value.agents[session.launcher as 'codex'|'claude']):undefined;
       const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${session.launcher} ${quote(id)} ${quote(generation)} --permission-mode ${quote(permissionMode!)}${session.conversationId && session.resumable !== false ? ` --resume ${quote(session.conversationId)}` : ''}` : session.launcher === 'custom' ? session.command : '';
       const inner = `cd -- ${directory(session.cwd)} || exit 1\n${launch || 'exec "${SHELL:-/bin/bash}" -l'}`;
-      const command = `exec env -u TMUX -u TMUX_PANE -u NO_COLOR -u FORCE_COLOR -u CLICOLOR -u CLICOLOR_FORCE TERM=xterm-256color COLORTERM=truecolor "\${SHELL:-/bin/bash}" -lic ${quote(inner)}`;
+      const command = this.transport.terminalCommand(`exec env -u TMUX -u TMUX_PANE -u NO_COLOR -u FORCE_COLOR -u CLICOLOR -u CLICOLOR_FORCE TERM=xterm-256color COLORTERM=truecolor "\${SHELL:-/bin/bash}" -lic ${quote(inner)}`);
       // A new tmux name per incarnation prevents a delayed detach/kill from touching its successor.
       const tmuxName = `harbor-${randomUUID()}`;
       const result = await this.transport.run(connection, this.transport.setup() + `set -e\ncd -- ${directory(session.cwd)}\n${this.transport.tmux(['-f','/dev/null','new-session','-d','-P','-F','HARBOR_PANE=#{pane_id}','-s',tmuxName,'-x','120','-y','32',command,';','set-option','-w','-t',`=${tmuxName}:`,'remain-on-exit','on',';','set-option','-t',tmuxName,'status','off'])}`);
