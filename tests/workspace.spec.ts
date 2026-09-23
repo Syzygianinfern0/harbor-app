@@ -7,7 +7,7 @@ async function fixture(shell=false) {
  const project={id:'fixture',name:'Workspace test',cwd:dir,hostId:'local',hostLabel:'This Mac',connection:'local',createdAt};
  const sessions=Array.from({length:10},(_,i)=>({id:`chat-${i}`,tmuxName:`harbor-aaaa${i}`,paneId:`%${i}`,name:`Chat ${i+1}`,host:'local',cwd:dir,launcher:shell&&i!==9?'shell':'codex',group:'',tags:[],pinned:false,archived:false,createdAt,updatedAt:createdAt,status:'closed',projectId:project.id,...(i===1?{originalLaunchCommand:'codex --sandbox read-only',latestLaunchCommand:"codex resume 'example-id'"}:{}),...(i===9?{hasMessages:false}:{})}));
  await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects:[project],sessions}));
- return {dir,launch:()=>electron.launch({args:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}})};
+ return {dir,launch:()=>electron.launch({executablePath:process.env.HARBOR_TEST_APP,args:process.env.HARBOR_TEST_APP?[]:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}})};
 }
 async function split(page:Page,source:string,target:string,side:string) {
  const transfer=await page.evaluateHandle(()=>new DataTransfer());
@@ -220,6 +220,50 @@ test('closed chat filter persists and launch commands can be inspected without s
   await page.getByRole('button',{name:'Copy original launch command'}).click();await expect(page.getByRole('status')).toHaveText('Command copied.');
   expect(await app.evaluate(({clipboard})=>clipboard.readText())).toBe('codex --sandbox read-only');
   await page.screenshot({path:'test-results/screenshots/21-launch-command.png'});
+ }finally{await app.close();}
+});
+
+test('control letters reach the terminal while Command shortcuts and Control-Tab stay in Harbor',async()=>{
+ const data=await fixture();const app=await data.launch();const page=await app.firstWindow();
+ try {
+  await expect(page.locator('.sidebar .chat-row')).toHaveCount(5);
+  const snapshot=await page.evaluate(()=>window.harbor.snapshot());
+  snapshot.sessions.slice(0,2).forEach(session=>{session.status='running';});
+  await app.evaluate(({ipcMain,BrowserWindow},snapshot)=>{
+   (globalThis as any).shortcutInputs=[];(globalThis as any).shortcutActions=[];
+   ipcMain.removeHandler('harbor:snapshot');ipcMain.handle('harbor:snapshot',()=>snapshot);
+   ipcMain.removeHandler('harbor:importHistory');ipcMain.handle('harbor:importHistory',()=>{});
+   for(const channel of ['attach','input','detach','resize','terminate','refresh']){
+    ipcMain.removeHandler('harbor:'+channel);
+    ipcMain.handle('harbor:'+channel,(_event,_id,text)=>{
+     if(channel==='input')(globalThis as any).shortcutInputs.push(text);
+     if(channel==='terminate'||channel==='refresh')(globalThis as any).shortcutActions.push(channel);
+    });
+   }
+   const contents=BrowserWindow.getAllWindows()[0].webContents;
+   const send=contents.send.bind(contents);
+   contents.send=(channel,...args)=>send(channel,...(channel==='harbor:snapshot-changed'?[snapshot]:args));
+   contents.send('harbor:snapshot-changed',snapshot);
+  },snapshot);
+  for(const index of [0,1])await page.locator('.sidebar .chat-row').nth(index).click();
+  await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-1');
+  await page.locator('.workspace-pane .xterm-helper-textarea').focus();
+  for(const key of ['t','n','k','f','w','r'])await page.keyboard.press('Control+'+key);
+  await expect.poll(()=>app.evaluate(()=>(globalThis as any).shortcutInputs)).toEqual(['\x14','\x0e','\x0b','\x06','\x17','\x12']);
+  expect(await app.evaluate(()=>(globalThis as any).shortcutActions)).toEqual([]);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.workspace-pane .xterm-helper-textarea')).toBeFocused();
+  await page.keyboard.press('Control+Shift+Tab');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-0');
+  await page.keyboard.press('Control+Tab');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-1');
+  await page.keyboard.press('Meta+t');await expect(page.getByRole('dialog',{name:'New chat',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Close dialog'}).click();
+  await page.locator('.workspace-pane .xterm-helper-textarea').focus();
+  await page.keyboard.press('Meta+r');await expect.poll(()=>app.evaluate(()=>(globalThis as any).shortcutActions)).toEqual(['refresh']);
+  await expect(page.getByRole('button',{name:'Refresh all chats and status'})).toBeEnabled();
+  await expect(page.locator('.workspace-pane .connection-label')).toHaveText('Connected');
+  await page.locator('.workspace-pane .xterm-helper-textarea').focus();
+  await page.keyboard.press('Meta+w');await expect.poll(()=>app.evaluate(()=>(globalThis as any).shortcutActions)).toEqual(['refresh','terminate']);
+  expect(await app.evaluate(()=>(globalThis as any).shortcutInputs)).toEqual(['\x14','\x0e','\x0b','\x06','\x17','\x12']);
  }finally{await app.close();}
 });
 

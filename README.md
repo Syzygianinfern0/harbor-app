@@ -33,6 +33,7 @@ Right-click a project and choose **Open in Cursor** to open its directory locall
 - **⌘ W:** close the active chat, confirming before stopping a live session.
 - **⌘ ,:** Preferences.
 - **⌘ C / ⌘ V:** terminal copy and paste.
+- **Control-letter shortcuts** pass through to the terminal, including **Ctrl-T** for Codex's transcript, **Ctrl-R** for shell history search, and **Ctrl-W** for word deletion. **Control-Tab / Control-Shift-Tab** remain Harbor tab navigation.
 
 Drop one or more files onto a connected terminal to insert quoted paths without submitting the input. SSH chats first copy the files to a private directory under `~/.local/share/harbor/drops` on that chat's host; these copies remain available for the conversation. Folders are not supported. File paths use Electron's [native file API](https://www.electronjs.org/docs/latest/api/web-utils).
 

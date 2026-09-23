@@ -109,7 +109,8 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
         if (event.type === 'keydown' && connected) inputQueue = inputQueue.then(() => window.harbor.input(session.id, '\u0015')).catch(err => reportRef.current(err.message));
         event.preventDefault(); return false;
       }
-      if ((event.metaKey || event.ctrlKey) && ['n', 'k', 'f', 'w', 't', 'r'].includes(event.key.toLowerCase())) return false;
+      // macOS app shortcuts use Command; Control belongs to the terminal (e.g. Codex Ctrl+T).
+      if (event.metaKey && ['n', 'k', 'f', 'w', 't', 'r'].includes(event.key.toLowerCase())) return false;
       if (event.metaKey && ['b', 'c', 'v', 'a'].includes(event.key.toLowerCase())) return false;
       return true;
     });
