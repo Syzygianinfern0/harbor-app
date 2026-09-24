@@ -383,10 +383,13 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     const session = this.get(id);
     const client = this.clients.get(id);
     if (!client) throw new Error('Reconnect the terminal before dropping files.');
-    if (!Array.isArray(paths) || !paths.length || paths.length > 100) throw new Error('Drop between 1 and 100 files.');
+    if (!Array.isArray(paths) || !paths.length || paths.length > 100) throw new Error('Drop between 1 and 100 files or folders.');
+    const folders = new Set<string>();
     for (const file of paths) {
       if (typeof file !== 'string' || !path.isAbsolute(file) || /[\x00-\x1f\x7f]/.test(file)) throw new Error('This drop does not contain a usable file path.');
-      if (!(await stat(file)).isFile()) throw new Error('Drop files individually; folders are not supported.');
+      const info = await stat(file);
+      if (info.isDirectory()) folders.add(file);
+      else if (!info.isFile()) throw new Error(`${path.basename(file)} is not a regular file or folder.`);
     }
     const connection = this.connection(session);
     let inserted = paths;
@@ -399,7 +402,8 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
           const folder = `${root}/${index}`;
           await this.transport.run(connection, `mkdir -m 700 -- ${quote(folder)}`);
           const destination = `${folder}/${path.basename(file)}`;
-          await this.transport.uploadFile(connection, file, destination);
+          if (folders.has(file)) await this.transport.uploadDirectory(connection, file, folder);
+          else await this.transport.uploadFile(connection, file, destination);
           inserted.push(destination);
         }
       } catch (error) {

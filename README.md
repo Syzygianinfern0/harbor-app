@@ -37,7 +37,7 @@ Right-click a project and choose **Open in Cursor** to open its directory locall
 - **⌘ C / ⌘ V:** terminal copy and paste.
 - **Control-letter shortcuts** pass through to the terminal, including **Ctrl-T** for Codex's transcript, **Ctrl-R** for shell history search, and **Ctrl-W** for word deletion. **Control-Tab / Control-Shift-Tab** remain Harbor tab navigation.
 
-Drop one or more files onto a connected terminal to insert quoted paths without submitting the input. SSH chats first copy the files to a private directory under `~/.local/share/harbor/drops` on that chat's host; these copies remain available for the conversation. Folders are not supported. File paths use Electron's [native file API](https://www.electronjs.org/docs/latest/api/web-utils).
+Drop one or more files or folders onto a connected terminal to insert quoted paths without submitting the input. SSH chats first copy them to a private directory under `~/.local/share/harbor/drops` on that chat's host; these copies remain available for the conversation. Folders are copied recursively, including hidden files, with a streamed `tar` (the host needs `tar`); symlinks inside a folder are copied as links, and macOS extended attributes are omitted. File paths use Electron's [native file API](https://www.electronjs.org/docs/latest/api/web-utils).
 
 The sidebar's sliding **Hide all closed chats** switch persists across restarts and keeps currently open tabs intact. Conversations running outside Harbor remain visible. Use **Chat actions → View launch command…** (also in the chat's right-click menu) to inspect and copy the original command and, after resuming, the latest command. Older chats show their saved launcher when available; imported chats identify when the original command is unknown.
 

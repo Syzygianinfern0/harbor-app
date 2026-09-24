@@ -102,13 +102,29 @@ export class Transport {
     // Same PATH on every operation; login-shell startup output cannot pollute the protocol.
     return 'export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\nunset TMUX TMUX_PANE NO_COLOR FORCE_COLOR CLICOLOR CLICOLOR_FORCE\nexport TERM=xterm-256color COLORTERM=truecolor\n';
   }
-  async uploadFile(host: Connection, source: string, destination: string) {
-    await this.init();
-    const script = `umask 077; cat > ${quote(destination)}`;
-    const child = host === 'local'
+  private receiver(host: Connection, script: string) {
+    return host === 'local'
       ? spawn('/bin/bash', ['--noprofile', '--norc', '-c', script], { env: environment() })
       : spawn('/usr/bin/ssh', [...this.sshArgs(host, this.multiplex(host)), script], { env: environment() });
-    await collect(child, createReadStream(source), 10 * 60 * 1000);
+  }
+  async uploadFile(host: Connection, source: string, destination: string) {
+    await this.init();
+    await collect(this.receiver(host, `umask 077; cat > ${quote(destination)}`), createReadStream(source), 10 * 60 * 1000);
+  }
+  // Streams a tar of `source` into the existing `destination` folder, recreating `destination/<basename>`.
+  async uploadDirectory(host: Connection, source: string, destination: string) {
+    await this.init();
+    // COPYFILE_DISABLE and the no-metadata flags keep macOS AppleDouble/xattr records out of the remote copy.
+    const archive = spawn('/usr/bin/tar', ['--no-mac-metadata', '--no-xattrs', '--no-acls', '-C', path.dirname(source), '-cf', '-', '--', path.basename(source)], { env: { ...environment(), COPYFILE_DISABLE: '1' } });
+    let stderr = '';
+    archive.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8000); });
+    const packed = new Promise<void>((resolve, reject) => {
+      archive.on('error', reject);
+      archive.on('close', code => code === 0 ? resolve() : reject(new Error(stderr.trim() || `Could not read ${path.basename(source)} (tar exited ${code}).`)));
+    });
+    const receiver = this.receiver(host, `umask 077; tar -xf - --no-same-owner -C ${quote(destination)}`);
+    try { await Promise.all([collect(receiver, archive.stdout, 10 * 60 * 1000), packed]); }
+    catch (error) { archive.kill(); receiver.kill(); throw error; }
   }
   tmux(args: string[]) { return ['tmux', '-L', this.socket, ...args].map(quote).join(' '); }
   terminalCommand(command: string) {
