@@ -9,7 +9,7 @@ test('projects take notes, and the notes-only switch filters chats and projects'
   const project=(id:string,name:string)=>({id,name,cwd:dir,connection:'local',hostLabel:'This Mac',createdAt});
   const session=(id:string,name:string,projectId:string,note?:string)=>({id,name,projectId,cwd:dir,host:'local',launcher:'codex',hasMessages:true,status:'closed',activity:'closed',tmuxName:`harbor-${id}`,paneId:'%9999',tags:[],group:'',pinned:false,archived:false,createdAt,updatedAt:createdAt,...(note?{note}:{})});
   await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects:[project('alpha','Alpha project'),project('beta','Beta project'),project('gamma','Gamma project')],sessions:[session('a1','Alpha noted','alpha','Keep'),session('a2','Alpha plain','alpha'),session('b1','Beta plain','beta')]}));
-  const app=await electron.launch({args:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
+  const app=await electron.launch({executablePath:process.env.HARBOR_TEST_APP,args:process.env.HARBOR_TEST_APP?[]:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
   try {
     const page=await app.firstWindow();
     await app.evaluate(({ipcMain})=>{
