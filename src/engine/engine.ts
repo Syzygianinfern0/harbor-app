@@ -189,15 +189,16 @@ export class HarborEngine extends EventEmitter {
       for (const session of this.sessions.filter(s=>s.projectId===projectId && !s.conversationId && !s.generation && s.status!=='closed' && (s.launcher==='codex'||s.launcher==='claude'))) {
         try {
           const pid=Number((await this.transport.run(project.connection,this.transport.setup()+this.transport.tmux(['display-message','-p','-t',`=${session.tmuxName}:`,'#{pane_pid}']))).trim());
-          if(Number.isInteger(pid)&&pid>0) { const identity=await this.bridge.identify(project.connection,session.launcher,pid); if(identity) {session.conversationId=identity;session.resumable=true;} }
+          if(Number.isInteger(pid)&&pid>0) { const identity=await this.bridge.identify(project.connection,session.launcher,pid); if(identity) {session.conversationId=identity;session.resumable=true;this.dropDuplicates(session);} }
         } catch { /* Never guess which conversation belongs to an old terminal. */ }
       }
       const {conversations,errors} = await this.bridge.history(project.connection, project.cwd);
       project.historyError = errors.join('\n') || undefined;
       for (const conversation of conversations) {
         if (!/^[a-f0-9-]{36}$/i.test(conversation.conversationId)) continue;
-        const existing = this.sessions.find(s=>s.conversationId === conversation.conversationId && s.launcher === conversation.launcher && JSON.stringify(this.connection(s))===JSON.stringify(project.connection));
-        if (existing) { if(existing.projectRemoved){existing.projectId=projectId;existing.projectRemoved=false;} if(typeof conversation.hasMessages==='boolean'&&existing.hasMessages!==true)existing.hasMessages=conversation.hasMessages; if (existing.nameSource !== 'manual') existing.name=conversation.name; if (existing.status === 'closed') existing.externalActive=conversation.externalActive; continue; }
+        const matches = this.sessions.filter(s=>s.conversationId === conversation.conversationId && s.launcher === conversation.launcher && JSON.stringify(this.connection(s))===JSON.stringify(project.connection));
+        const existing = matches.find(s=>!s.imported) ?? matches[0];
+        if (existing) { this.dropDuplicates(existing); if(existing.projectRemoved){existing.projectId=projectId;existing.projectRemoved=false;} if(typeof conversation.hasMessages==='boolean'&&existing.hasMessages!==true)existing.hasMessages=conversation.hasMessages; if (existing.nameSource !== 'manual') existing.name=conversation.name; if (existing.status === 'closed') existing.externalActive=conversation.externalActive; continue; }
         const id=randomUUID(); const connection=project.connection;
         this.sessions.push({id,tmuxName:`harbor-${id}`,paneId:'%0',projectId,name:conversation.name,nameSource:'auto',host:typeof connection==='string'?connection:connection.target,hostId:project.hostId,hostLabel:project.hostLabel,...(typeof connection==='object'?{connection:structuredClone(connection)}:{}),cwd:conversation.cwd,launcher:conversation.launcher,command:conversation.launcher,group:project.name,tags:[],pinned:false,archived:false,createdAt:new Date(conversation.createdAt*1000).toISOString(),updatedAt:new Date(conversation.updatedAt*1000).toISOString(),status:'closed',activity:'closed',conversationId:conversation.conversationId,resumable:true,hasMessages:conversation.hasMessages,imported:true,externalActive:conversation.externalActive});
       }
@@ -215,7 +216,7 @@ export class HarborEngine extends EventEmitter {
         for(const session of sessions) {
           const meta=metadata[session.id]; if(!meta || meta.generation!==session.generation) continue;
           const previous=session.activity; const previousAt=session.activityAt;
-          if(meta.conversationId && /^[a-f0-9-]{36}$/i.test(meta.conversationId)) session.conversationId=meta.conversationId;
+          if(meta.conversationId && /^[a-f0-9-]{36}$/i.test(meta.conversationId)) {session.conversationId=meta.conversationId;this.dropDuplicates(session);}
           if(meta.hasMessages===true || (meta.hasMessages===false&&session.hasMessages!==true))session.hasMessages=meta.hasMessages;
           if(meta.resumable!==undefined) session.resumable=meta.resumable;
           if(meta.name && session.nameSource!=='manual') session.name=meta.name.slice(0,100);
@@ -227,6 +228,12 @@ export class HarborEngine extends EventEmitter {
         }
       } catch { /* Connection failures are represented by the terminal status, never fabricated as idle. */ }
     }));
+  }
+  // An import can run before a Harbor chat learns its conversation ID, leaving a closed copy that
+  // mistakes Harbor's own agent for an external writer. The Harbor-owned chat is authoritative.
+  private dropDuplicates(owner: Session) {
+    const key=JSON.stringify(this.connection(owner));
+    this.sessions=this.sessions.filter(s=>s===owner || !s.imported || s.generation || s.status!=='closed' || s.conversationId!==owner.conversationId || s.launcher!==owner.launcher || JSON.stringify(this.connection(s))!==key);
   }
   private changed() { if (!this.disposed) this.emit('snapshot', this.snapshot()); }
   private persist() {

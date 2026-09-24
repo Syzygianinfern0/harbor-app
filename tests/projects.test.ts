@@ -31,6 +31,26 @@ test('history deduplicates by exact conversation and connection; custom names su
  const chat=engine.snapshot().sessions[0];assert.equal(chat.status,'closed');assert.equal(chat.conversationId,id);assert.equal(chat.externalActive,true);
  await engine.update(chat.id,{name:'My title'});await engine.importHistory(project.id);assert.equal(engine.snapshot().sessions[0].name,'My title');await engine.dispose();
 });
+test('an import that races a new Harbor chat is merged once the chat learns its conversation',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'harbor-race-'));const transport=new Transport();let chat:any;const id='22222222-2222-4222-8222-222222222222';
+ transport.run=async(_host,command)=>command.includes('new-session')?'HARBOR_PANE=%1\n':command.includes('list-panes')?`HARBOR_STATUS=${chat.tmuxName}|%1|0|claude|\n`:dir;
+ const engine=new HarborEngine(dir,transport);await engine.init(false);let meta:any={};
+ (engine as any).bridge={ensure:async()=>'/tmp/bridge.py',metadata:async()=>({[chat.id]:meta}),history:async()=>({conversations:[{conversationId:id,launcher:'claude',name:'Race',cwd:dir,createdAt:100,updatedAt:200,externalActive:true}],errors:[]})};
+ const project=await engine.addProject({name:'Race',host:'local',cwd:dir});
+ chat=await engine.create({name:'New chat',host:'local',cwd:dir,launcher:'claude',projectId:project.id});meta={generation:chat.generation,activity:'working',updatedAt:1};
+ await engine.importHistory(project.id);assert.equal(engine.snapshot().sessions.filter(s=>s.conversationId===id&&s.externalActive).length,1);
+ meta={...meta,conversationId:id};await engine.refresh();
+ assert.deepEqual(engine.snapshot().sessions.map(s=>s.id),[chat.id]);assert.equal(engine.snapshot().sessions[0].conversationId,id);
+ await engine.importHistory(project.id);assert.deepEqual(engine.snapshot().sessions.map(s=>s.id),[chat.id]);await engine.dispose();
+});
+test('stale imported duplicates of a Harbor chat are removed on the next import',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'harbor-stale-'));const createdAt=new Date().toISOString();const id='33333333-3333-4333-8333-333333333333';
+ const base={name:'Chat',host:'local',cwd:dir,paneId:'%0',launcher:'claude',group:'',tags:[],pinned:false,archived:false,createdAt,status:'closed',projectId:'p',conversationId:id};
+ await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects:[{id:'p',name:'p',cwd:dir,hostLabel:'This Mac',connection:'local',createdAt}],sessions:[{...base,id:'own',tmuxName:'harbor-aaaa',generation:'g1'},{...base,id:'dup',tmuxName:'harbor-bbbb',imported:true,externalActive:true}]}));
+ const transport=new Transport();transport.run=async()=>dir;const engine=new HarborEngine(dir,transport);await engine.init(false);
+ (engine as any).bridge={history:async()=>({conversations:[{conversationId:id,launcher:'claude',name:'Chat',cwd:dir,createdAt:100,updatedAt:200,externalActive:false}],errors:[]})};
+ await engine.importHistory('p');assert.deepEqual(engine.snapshot().sessions.map(s=>[s.id,!!s.externalActive]),[['own',false]]);await engine.dispose();
+});
 test('agent completion and attention events are deduplicated; manual titles override automatic titles',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'harbor-events-'));const transport=new Transport();let chat:any;
  transport.run=async(_host,command)=>command.includes('new-session')?'HARBOR_PANE=%1\n':command.includes('list-panes')?`HARBOR_STATUS=${chat.tmuxName}|%1|0|python3|\n`:'';
