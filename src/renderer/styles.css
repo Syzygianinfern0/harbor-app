@@ -305,14 +305,17 @@
 .menu-swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .group-menu .group-rename{width:calc(100% - 12px);margin:2px 6px 6px;padding:7px 8px;border-radius:5px;border:1px solid #445062;background:#1a1f27;color:#e3e9ef;font-size:12px;outline:none}
 .group-menu .group-rename:focus{border-color:#9be1c4}
-.group-menu .group-colors{display:flex;gap:7px;padding:6px 10px 8px}
-.group-menu .group-colors button{width:18px;height:18px;padding:0;border-radius:50%;background:var(--swatch);flex:none}
-.group-menu .group-colors button:hover{background:var(--swatch);filter:brightness(1.12)}
-.group-menu .group-colors button.current{box-shadow:0 0 0 2px #222833,0 0 0 3.5px var(--swatch)}
+.group-colors{display:flex;gap:7px;padding:6px 10px 8px}
+.group-colors button{width:18px;height:18px;padding:0;border-radius:50%;background:var(--swatch);flex:none}
+.group-colors button:hover{background:var(--swatch);filter:brightness(1.12)}
+.group-colors button.current{box-shadow:0 0 0 2px #222833,0 0 0 3.5px var(--swatch)}
 /* Sidebar ↔ tab bar: project colors, a soft highlight on chats open as tabs (the branch line stays intact), folded-project summaries. */
 .project-chats .chat-row.open-tab{background:color-mix(in srgb,var(--project-color) 6%,transparent);border-color:color-mix(in srgb,var(--project-color) 24%,transparent)}
 .project-chats .chat-row.open-tab:hover{background:color-mix(in srgb,var(--project-color) 11%,transparent)}
-.project-chats .chat-row.open-tab.selected{background:#29342f;border-color:#3a4c42}
+.project-chats .chat-row.selected{background:color-mix(in srgb,var(--project-color) 19%,transparent);border-color:color-mix(in srgb,var(--project-color) 52%,transparent);color:#eef3f1}
+/* The active tab takes its group's (or project's) color, not Harbor's mint. */
+.session-toolbar .tab.active{background:color-mix(in srgb,var(--tab-color,#9bd7b9) 18%,#191d24);border-top-color:var(--tab-color,#9bd7b9);color:#eef3f1}
+.popover .group-colors{padding:4px 10px 8px}
 .project-rollup{display:flex;align-items:center;gap:3px;flex-shrink:0;margin-right:3px;padding:1px 4px 1px 5px;border-radius:4px;background:#262c35;color:#c3ccd8;font-size:9.5px;font-variant-numeric:tabular-nums}
 .project-rollup .chat-activity{margin-top:0;width:14px;min-width:14px}
 .project-rollup .chat-activity svg{width:12px;height:12px}

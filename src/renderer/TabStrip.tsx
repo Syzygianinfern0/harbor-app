@@ -113,7 +113,7 @@ export function TabStrip(props:TabStripProps) {
     const s=byId.get(id)!;const active=id===selected;const activity=chatActivity(s);
     const size=active||!groups.shrink?'':shrink>=3||(shrink===2&&keyOf.get(id)!==selectedKey)?'compact':shrink>=1?'narrow':'';
     return <div key={id} data-tab-id={id} data-attention={activity==='attention'?id:undefined} title={size==='compact'?`${s.name}\n${activityLabel[activity]}`:undefined}
-      style={color?{'--group-color':color} as CSSProperties:undefined}
+      style={{'--tab-color':color??(s.projectId&&groups.projectColors[s.projectId])??GROUP_COLORS[0].value,...(color?{'--group-color':color}:{})} as CSSProperties}
       onMouseDown={event=>{if(event.button===1)event.preventDefault();}} onAuxClick={event=>{if(event.button===1){event.preventDefault();props.onClose(s);}}}
       onContextMenu={event=>{event.preventDefault();event.stopPropagation();props.onTabMenu(id,event.clientX,event.clientY);}}
       draggable onDragStart={event=>props.onDragStart(event,id)} onDragEnd={props.onDragEnd} onDragOver={accepts} onDrop={event=>dropOnTab(event,id)}

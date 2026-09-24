@@ -109,6 +109,12 @@ test('project and custom tab groups fold, report status, persist, and link to th
     await page.locator('.project-heading',{hasText:'tessera-api'}).click({button:'right'});
     await page.getByRole('menuitem',{name:'Show tabs',exact:true}).click();
     await expect(page.getByRole('button',{name:/^tessera-api group/})).toHaveAttribute('aria-expanded','true');
+    // Projects take a color from their sidebar menu; the active tab and selected row use it.
+    await page.locator('.project-heading',{hasText:'tessera-api'}).click({button:'right'});
+    await page.getByRole('group',{name:'Project color'}).getByRole('menuitemradio',{name:'Rose',exact:true}).click();await page.keyboard.press('Escape');
+    await expect(page.locator('[data-group-key="p:api"]')).toHaveCSS('--group-color','#e3a1a8');
+    await expect(page.locator('.project-heading',{hasText:'tessera-api'}).locator('.project-folder')).toHaveCSS('color','rgb(227, 161, 168)');
+    await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');await expect(page.locator('.tab.active')).toHaveCSS('border-top-color','rgb(227, 161, 168)');
     await page.screenshot({path:'test-results/screenshots/33-tab-groups-sidebar.png'});
 
     // ⌘⇧G turns project grouping off; custom groups stay.
