@@ -237,3 +237,4 @@
 .updates-heading{flex-wrap:wrap;align-items:center;gap:14px}
 .updates-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .updates-heading .updates-actions button{display:inline-flex;align-items:center;gap:6px}
+.section-actions{display:flex;align-items:center;gap:8px}

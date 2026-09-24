@@ -74,3 +74,29 @@ test('update settings show cached automatic results and bulk progress survives c
     await page.screenshot({path:'test-results/screenshots/bulk-agent-updates.png'});
   }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('projects heading toggles between collapsing and expanding every project',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'harbor-fold-all-'));
+  const createdAt=new Date().toISOString();
+  const projects=[{id:'alpha',name:'Alpha project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt},{id:'beta',name:'Beta project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt}];
+  const session=(id:string,projectId:string,name:string)=>({id,name,projectId,cwd:dir,host:'local',launcher:'codex',hasMessages:true,status:'closed',activity:'closed',tmuxName:`harbor-${id}`,paneId:'%9999',tags:[],group:'',pinned:false,archived:false,createdAt,updatedAt:createdAt});
+  await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects,sessions:[session('a1','alpha','Alpha chat'),session('b1','beta','Beta chat')]}));
+  const app=await electron.launch({args:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
+  try {
+    const page=await app.firstWindow();
+    await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('harbor:checkReachability');ipcMain.handle('harbor:checkReachability',()=>({}));ipcMain.removeHandler('harbor:importHistory');ipcMain.handle('harbor:importHistory',()=>{});});
+    const chat=(name:string)=>page.getByRole('complementary').getByRole('button',{name:`${name} Closed`,exact:true});
+    await expect(chat('Alpha chat')).toBeVisible();await expect(chat('Beta chat')).toBeVisible();
+    // A partially folded list still collapses everything first.
+    await page.getByRole('button',{name:'Collapse project Alpha project',exact:true}).click();
+    await expect(chat('Alpha chat')).toHaveCount(0);
+    await page.getByRole('button',{name:'Collapse all projects',exact:true}).click();
+    await expect(chat('Beta chat')).toHaveCount(0);await expect(chat('Alpha chat')).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Expand project Beta project',exact:true})).toBeVisible();
+    await mkdir('test-results/screenshots',{recursive:true});await page.screenshot({path:'test-results/screenshots/projects-collapsed.png'});
+    await page.getByRole('button',{name:'Expand all projects',exact:true}).click();
+    await expect(chat('Alpha chat')).toBeVisible();await expect(chat('Beta chat')).toBeVisible();
+    await expect(page.getByRole('button',{name:'Collapse all projects',exact:true})).toBeVisible();
+    await page.screenshot({path:'test-results/screenshots/projects-expanded.png'});
+  }finally{await app.close();await rm(dir,{recursive:true,force:true});}
+});
