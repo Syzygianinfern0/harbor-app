@@ -1,5 +1,5 @@
 import { ChatPreviewPanel } from './ChatPreviewPanel';
-import { tabShortcut } from '../shared/shortcuts';
+import { groupShortcut, tabShortcut } from '../shared/shortcuts';
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -100,7 +100,7 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
         if(event.type==='keydown' && connected) inputQueue=inputQueue.then(()=>window.harbor.input(session.id,event.ctrlKey?'\x1b[13;5u':'\x1b[13;2u')).catch(err=>reportRef.current(err.message));
         return false;
       }
-      if (tabShortcut(event)!==undefined) return false;
+      if (tabShortcut(event)!==undefined || groupShortcut(event)!==undefined) return false;
       if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
         event.preventDefault();
         if (event.type === 'keydown' && connected) inputQueue = inputQueue.then(() => window.harbor.input(session.id, event.key === 'ArrowLeft' ? '\x01' : '\x05')).catch(err => reportRef.current(err.message));

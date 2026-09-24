@@ -31,9 +31,9 @@ Right-click a project and choose **Open in Cursor** to open its directory locall
 - **⌘ N / ⌘ T:** new chat in the selected project.
 - **⌘ K / ⌘ F:** search chat and project names.
 - **⌘ B:** collapse/pin the sidebar. Hover over its collapsed rail to peek without resizing the terminal.
-- **⌘ 1–8:** select the numbered tab; **⌘ 9:** select the last tab.
+- **⌘ 1–8:** select the numbered visible tab; **⌘ 9:** select the last visible tab. See [Tab groups](#tab-groups) for group shortcuts.
 - **⌘ 1 / ⌘ 2 / ⌘ 3 in the New chat dialog:** choose Codex / Claude Code / Terminal. Each option shows its shortcut.
-- With many tabs, the tab strip scrolls horizontally (trackpad or mouse wheel) with its scrollbar hidden. The active tab stays in view.
+- With many tabs, inactive tabs shrink first; then the tab strip scrolls horizontally (trackpad or mouse wheel) with its scrollbar hidden. The active tab stays in view.
 - **Control-Tab / Control-Shift-Tab:** next / previous tab, with wraparound. **⌘ Shift-[ / ⌘ Shift-]:** previous / next tab.
 - **⌘ W:** close the active chat, confirming before stopping a live session.
 - **⌘ ,:** Preferences.
@@ -45,6 +45,21 @@ Drop one or more files or folders onto a connected terminal to insert quoted pat
 The sidebar's sliding **Hide all closed chats** switch persists across restarts and keeps currently open tabs intact. Conversations running outside Harbor remain visible. Use **Chat actions → View launch command…** (also in the chat's right-click menu) to inspect and copy the original command and, after resuming, the latest command. Older chats show their saved launcher when available; imported chats identify when the original command is unknown.
 
 Drag tabs to reorder them. Drag a tab, sidebar chat, or pane header onto another pane’s left, right, top, or bottom target to split it; the center target replaces that pane. Splits can be nested without a fixed pane-count limit. Drag any divider to resize, or double-click to reset its proportions. The sidebar’s right edge resizes it too. Focused dividers also support arrow keys. Layout, tab order, and sidebar width persist across restarts. Closing a pane removes it from the layout and keeps the chat open; closing its tab stops the chat after confirmation.
+
+## Tab groups
+
+Open tabs are grouped so many chats fit in one tab row. Folding a group hides its tabs without stopping any chat.
+
+- **Group tabs by project** (on by default): tabs from the same project sit together behind a colored label, and one line in that color runs under the label and the group's tabs. Groups follow the sidebar's project order. When every open tab belongs to one project, no label is shown.
+- **Fold a group:** click its label. A folded group becomes a chip with its tab count and its most urgent status (needs input, then error, turn finished, background work, working). Click that status icon to open the chat it refers to. Folding the group you're viewing keeps the current tab next to the chip.
+- **Custom groups:** ⌘-click or Shift-click tabs to select them, then press **⌘ G** (or right-click a tab → **New group**). Name the group and pick a color in the field that opens. A custom group can mix projects and hosts, and it takes precedence over project grouping. Right-click a tab to add it to or remove it from a group. Right-click a label to rename, recolor, collapse or ungroup. A custom group disappears when its last tab closes. A new chat from the same project as the current tab joins the current tab's custom group.
+- **Dragging:** drag a tab into a group's run to join it, or out to leave. Drag a label to move the whole group; dragging a project label onto another project reorders the projects in the sidebar too. Dropping a tab or sidebar chat on a chip adds it without unfolding.
+- **Tab groups** button (the layers icon beside Split view) holds the switches: **Group tabs by project**, **Focus mode** (only the current tab's group stays open; clicking a chip switches to that group's last-used tab), and **Shrink tabs before scrolling** (on by default: inactive tabs truncate, then shrink to icon and status, before the strip scrolls). The same menu can collapse or expand all groups.
+- When tabs still overflow, markers at the strip's edges count the hidden tabs and turn amber when a hidden chat needs input. Click one to scroll there.
+- **Sidebar:** each project's folder icon uses its group color, and a dot on the branch line marks chats that are open as tabs. A folded project shows its live chat count and most urgent status. The collapsed rail shows the same status as a badge; in focus mode, clicking a rail project switches to its tab group. Right-click a project for **Show tabs** and **Fold in tab bar**.
+- **Shortcuts:** **⌘ G** group selected tabs, **⌘ ⇧ G** toggle project grouping, **⌥ ⌘ ← / →** previous / next group, **⌥ ⌘ 1–9** group N, **⌘ J** next chat that needs input (unfolding its group). **⌘ 1–9** and **Control-Tab** move among the tabs shown in the strip.
+
+Groups, folding, colors and the switches persist across restarts alongside tab order (`harbor.tabGroups` in the app's local storage).
 
 ## Preferences
 

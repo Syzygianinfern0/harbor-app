@@ -28,7 +28,10 @@ test('browser shortcuts, reorder, nested splits, sidebar and pane resizing persi
   await page.keyboard.press('Control+Tab');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-3');
   await page.keyboard.press('Control+Shift+Tab');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-2');
   await page.keyboard.press('Meta+9');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-8');
-  const strip=page.locator('.session-toolbar .tab-strip');expect(await strip.evaluate(e=>e.scrollWidth>e.clientWidth)).toBe(true);expect(await strip.evaluate(e=>getComputedStyle(e).scrollbarWidth)).toBe('none');
+  // Tabs shrink before scrolling; with shrinking off, the strip scrolls as before.
+  const strip=page.locator('.session-toolbar .tab-strip');await expect(page.locator('.tab.compact').first()).toBeAttached();expect(await strip.evaluate(e=>e.scrollWidth>e.clientWidth)).toBe(false);await expect(page.locator('.tab.active:not(.compact):not(.narrow)')).toHaveCount(1);
+  await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.locator('.groups-menu label',{hasText:'Shrink tabs before scrolling'}).click();await page.keyboard.press('Escape');await expect(page.locator('.tab.compact,.tab.narrow')).toHaveCount(0);
+  expect(await strip.evaluate(e=>e.scrollWidth>e.clientWidth)).toBe(true);expect(await strip.evaluate(e=>getComputedStyle(e).scrollbarWidth)).toBe('none');
   await strip.evaluate(e=>{e.scrollLeft=e.scrollWidth;});await strip.hover();await page.mouse.wheel(0,-400);await expect.poll(()=>strip.evaluate(e=>e.scrollLeft)).toBeLessThan(await strip.evaluate(e=>e.scrollWidth-e.clientWidth));await strip.evaluate(e=>{e.scrollLeft=0;});
   await page.keyboard.press('Control+Tab');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-0');
   // Actual browser drag/drop reorders tabs.
