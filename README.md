@@ -29,6 +29,8 @@ Right-click a project and choose **Open in Cursor** to open its directory locall
 - **⌘ K / ⌘ F:** search chat and project names.
 - **⌘ B:** collapse/pin the sidebar. Hover over its collapsed rail to peek without resizing the terminal.
 - **⌘ 1–8:** select the numbered tab; **⌘ 9:** select the last tab.
+- **⌘ 1 / ⌘ 2 / ⌘ 3 in the New chat dialog:** choose Codex / Claude Code / Terminal. Each option shows its shortcut.
+- With many tabs, the tab strip scrolls horizontally (trackpad or mouse wheel) with its scrollbar hidden. The active tab stays in view.
 - **Control-Tab / Control-Shift-Tab:** next / previous tab, with wraparound. **⌘ Shift-[ / ⌘ Shift-]:** previous / next tab.
 - **⌘ W:** close the active chat, confirming before stopping a live session.
 - **⌘ ,:** Preferences.

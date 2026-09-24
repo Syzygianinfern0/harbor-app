@@ -28,6 +28,8 @@ test('browser shortcuts, reorder, nested splits, sidebar and pane resizing persi
   await page.keyboard.press('Control+Tab');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-3');
   await page.keyboard.press('Control+Shift+Tab');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-2');
   await page.keyboard.press('Meta+9');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-8');
+  const strip=page.locator('.session-toolbar .tab-strip');expect(await strip.evaluate(e=>e.scrollWidth>e.clientWidth)).toBe(true);expect(await strip.evaluate(e=>getComputedStyle(e).scrollbarWidth)).toBe('none');
+  await strip.evaluate(e=>{e.scrollLeft=e.scrollWidth;});await strip.hover();await page.mouse.wheel(0,-400);await expect.poll(()=>strip.evaluate(e=>e.scrollLeft)).toBeLessThan(await strip.evaluate(e=>e.scrollWidth-e.clientWidth));await strip.evaluate(e=>{e.scrollLeft=0;});
   await page.keyboard.press('Control+Tab');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','chat-0');
   // Actual browser drag/drop reorders tabs.
   const dragTab=page.locator('[data-tab-id="chat-2"] > button').first();await dragTab.scrollIntoViewIfNeeded();const dragBounds=await dragTab.boundingBox();const firstBounds=await page.locator('[data-tab-id="chat-0"]').boundingBox();await page.mouse.move(dragBounds!.x+15,dragBounds!.y+12);await page.mouse.down();await page.mouse.move(dragBounds!.x+30,dragBounds!.y+15,{steps:5});await expect(page.locator('.tab.dragging')).toHaveCount(1);await page.mouse.move(firstBounds!.x+3,firstBounds!.y+15,{steps:10});await page.mouse.move(firstBounds!.x+4,firstBounds!.y+15);await page.mouse.up();
@@ -90,6 +92,13 @@ test('refresh, keyboard creation, middle close, and dialog project management',a
   await expect(page.locator('.sidebar .chat-row')).toHaveCount(5);
   await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('harbor:create');ipcMain.handle('harbor:create',(_event,input)=>{(globalThis as any).createdInput=input;return {id:'new',...input};});});
   await page.keyboard.press('Meta+n');await expect(page.getByLabel('Chat name',{exact:true})).toBeFocused();await page.keyboard.press('Enter');await expect(page.getByRole('dialog')).toHaveCount(0);expect(await app.evaluate(()=>(globalThis as any).createdInput.launcher)).toBe('codex');
+  await page.keyboard.press('Meta+n');const chatDialog=page.getByRole('dialog',{name:'New chat',exact:true});await expect(chatDialog.locator('.launcher-options kbd')).toHaveText(['⌘1','⌘2','⌘3']);
+  await page.keyboard.press('Meta+2');await expect(page.getByRole('button',{name:'Claude Code',exact:true})).toHaveClass('selected');await expect(page.getByLabel('Chat name',{exact:true})).toBeFocused();
+  await page.keyboard.press('Meta+3');await expect(page.getByRole('button',{name:'Terminal',exact:true})).toHaveClass('selected');
+  await page.keyboard.press('Meta+1');await expect(page.getByRole('button',{name:'Codex',exact:true})).toHaveClass('selected');
+  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('harbor:tab-shortcut',3));await expect(page.getByRole('button',{name:'Terminal',exact:true})).toHaveClass('selected');
+  await page.keyboard.press('Meta+9');await expect(page.getByRole('button',{name:'Terminal',exact:true})).toHaveClass('selected');
+  await page.keyboard.press('Enter');await expect(page.getByRole('dialog')).toHaveCount(0);expect(await app.evaluate(()=>(globalThis as any).createdInput.launcher)).toBe('shell');
   await page.locator('.sidebar .chat-row').first().click();await expect(page.locator('[data-tab-id="chat-0"]')).toBeVisible();await page.locator('[data-tab-id="chat-0"] button').first().click({button:'middle'});await expect(page.locator('[data-tab-id="chat-0"]')).toHaveCount(0);
   await page.getByRole('button',{name:'Refresh all chats and status'}).click();await expect(page.getByRole('alert')).toContainText('up to date');
   await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Projects',exact:true}).click();await expect(page.getByRole('button',{name:'Terminal',exact:true})).toHaveCount(0);
