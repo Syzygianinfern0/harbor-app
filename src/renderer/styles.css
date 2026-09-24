@@ -241,3 +241,5 @@
 .updates-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .updates-heading .updates-actions button{display:inline-flex;align-items:center;gap:6px}
 .section-actions{display:flex;align-items:center;gap:8px}
+/* While the sidebar peeks over the title bar, keep that strip clickable instead of a window-drag region. */
+.app-shell.sidebar-peeking .sidebar-dock .traffic-spacer,.app-shell.sidebar-peeking .session-toolbar,.app-shell.sidebar-peeking .overview-toolbar,.app-shell.sidebar-peeking .topbar{-webkit-app-region:no-drag}

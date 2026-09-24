@@ -66,7 +66,13 @@ export function App() {
   const loadedHistory=useRef(new Set<string>()); const search=useRef<HTMLInputElement>(null);
   const report=useCallback((message:string)=>setToast(message.replace(/^Error invoking remote method '[^']+': Error: /,'')),[]);
   const newChat=useCallback((id?:string)=>{if(id) setProjectId(id); setDialog(id||projectRef.current?'chat':'project');},[]);
-  const toggleSidebar=()=>{setCollapsed(v=>!v);setPeek(false);};
+  // Hover intent: a short delay before peeking lets the pointer reach the rail's Expand button, and a grace
+  // period before hiding survives macOS title-bar drag regions, which swallow mouse events on the way to the toggle.
+  const peekTimer=useRef<ReturnType<typeof setTimeout>>(undefined);
+  const schedulePeek=(value:boolean,delay:number)=>{clearTimeout(peekTimer.current);peekTimer.current=setTimeout(()=>setPeek(value),delay);};
+  const hoverDock=(event:{target:EventTarget})=>{if((event.target as Element).closest?.('.rail-expand'))schedulePeek(peek,0);else if(!peek)schedulePeek(true,150);else clearTimeout(peekTimer.current);};
+  useEffect(()=>()=>clearTimeout(peekTimer.current),[]);
+  const toggleSidebar=()=>{clearTimeout(peekTimer.current);setCollapsed(v=>!v);setPeek(false);};
   const sessions=snapshot?.sessions??[]; const projects=(snapshot?.projects??[]).filter(p=>!p.hidden);
   useEffect(()=>{if(hydrated&&!projects.some(p=>p.id===projectId))setProjectId(projects[0]?.id||'');},[snapshot?.projects,hydrated,projectId]);
   const current=sessions.find(s=>s.id===selected);
@@ -145,9 +151,9 @@ export function App() {
   const refreshButton=<button className="global-refresh icon-button" aria-label="Refresh all chats and status" title="Refresh all chats and status (⌘ R)" aria-keyshortcuts="Meta+R" disabled={refreshing} onClick={()=>void refreshAll()}><RefreshCw size={16} className={refreshing?'spin':''}/><kbd aria-hidden="true">⌘ R</kbd></button>;
   const peeking=collapsed&&peek&&snapshot?.preferences.sidebar.expandOnHover;
   const allFolded=projects.length>0&&projects.every(p=>folded.includes(p.id));
-  return <div className="app-shell" style={{'--sidebar-width':`${sidebarWidth}px`} as CSSProperties}>
-    <div className={`sidebar-dock ${collapsed?'is-collapsed':''} ${peeking?'is-peeking':''}`} onMouseEnter={()=>setPeek(true)} onMouseLeave={()=>setPeek(false)}>
-      {collapsed&&<nav className="sidebar-rail" aria-label="Collapsed sidebar"><div className="traffic-spacer"/><button className="icon-button" aria-label="Expand sidebar" onClick={toggleSidebar}><PanelLeftOpen size={19}/></button><button className="rail-new" aria-label="New chat" onClick={()=>newChat()}><Plus size={20}/></button><div className="rail-sessions">{projects.map(p=><button key={p.id} className={`rail-session ${projectId===p.id?'active':''}`} title={p.name} aria-label={`Open project ${p.name}`} onClick={()=>{setProjectId(p.id);setSelected(undefined);}}><Folder size={19}/></button>)}</div><SidebarCost state={usage} onDetails={showUsage} collapsed/><button className="icon-button rail-preferences" aria-label="Preferences" onClick={()=>setDialog('preferences')}><Settings2 size={19}/></button></nav>}
+  return <div className={`app-shell ${peeking?'sidebar-peeking':''}`} style={{'--sidebar-width':`${sidebarWidth}px`} as CSSProperties}>
+    <div className={`sidebar-dock ${collapsed?'is-collapsed':''} ${peeking?'is-peeking':''}`} onMouseOver={hoverDock} onMouseLeave={()=>schedulePeek(false,350)}>
+      {collapsed&&<nav className="sidebar-rail" aria-label="Collapsed sidebar"><div className="traffic-spacer"/><button className="icon-button rail-expand" aria-label="Expand sidebar" onClick={toggleSidebar}><PanelLeftOpen size={19}/></button><button className="rail-new" aria-label="New chat" onClick={()=>newChat()}><Plus size={20}/></button><div className="rail-sessions">{projects.map(p=><button key={p.id} className={`rail-session ${projectId===p.id?'active':''}`} title={p.name} aria-label={`Open project ${p.name}`} onClick={()=>{setProjectId(p.id);setSelected(undefined);}}><Folder size={19}/></button>)}</div><SidebarCost state={usage} onDetails={showUsage} collapsed/><button className="icon-button rail-preferences" aria-label="Preferences" onClick={()=>setDialog('preferences')}><Settings2 size={19}/></button></nav>}
       <aside className="sidebar" inert={collapsed&&!peeking?true:undefined}><div className="traffic-spacer"><button className="icon-button sidebar-toggle" aria-label={collapsed?'Pin sidebar open':'Collapse sidebar'} title="Toggle sidebar (⌘ B)" onClick={toggleSidebar}>{collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</button></div>
         <div className="brand"><div className="brand-icon"><Anchor size={23}/></div><span>harbor<span className="brand-period">.</span></span></div>
         <button className="new-session-button" onClick={()=>newChat()}><Plus size={17}/>New chat<kbd>⌘ N</kbd></button>
