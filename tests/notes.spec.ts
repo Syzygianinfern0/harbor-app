@@ -9,7 +9,7 @@ test('chat notes are added on hover, previewed on hover, edited on click, and ma
   const projects=[{id:'project',name:'Notes project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt}];
   const session=(id:string,name:string)=>({id,name,projectId:'project',cwd:dir,host:'local',launcher:'codex',hasMessages:true,status:'closed',activity:'closed',tmuxName:`harbor-${id}`,paneId:'%9999',tags:[],group:'',pinned:false,archived:false,createdAt,updatedAt:createdAt});
   await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects,sessions:[session('aaaa','First chat'),session('bbbb','Second chat')]}));
-  const app=await electron.launch({args:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
+  const app=await electron.launch({executablePath:process.env.HARBOR_TEST_APP,args:process.env.HARBOR_TEST_APP?[]:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
   try {
     const page=await app.firstWindow();
     await app.evaluate(({ipcMain})=>{
