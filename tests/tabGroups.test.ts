@@ -85,3 +85,21 @@ test('group shortcuts use key codes so Option does not change digits',()=>{
   assert.equal(k('g','KeyG',{ctrlKey:true}),undefined);
   assert.equal(k('1','Digit1',{metaKey:true}),undefined);
 });
+
+test('folding moves the view to the most recent chat still shown, else to the overview',async()=>{
+  const {foldView,splitFor}=await import('../src/shared/folding');
+  const {leaf,dropPane,paneIds}=await import('../src/shared/panes');
+  const split=dropPane(dropPane(leaf('a1'),'a1','a2','right'),'a2','b1','bottom');
+  assert.deepEqual(paneIds(split),['a1','a2','b1']);
+  // Folding a group that shares the screen keeps the other pane, selecting it.
+  assert.deepEqual(foldView(split,'a1',['a1','a2'],['b1','b2'],['a1','b2','b1']),{layout:leaf('b1'),selected:'b1'});
+  // Folding the only group on screen switches to the most recently used chat still in the strip.
+  assert.deepEqual(foldView(leaf('a1'),'a1',['a1','a2'],['b1','b2','c1'],['a1','c1','b1']),{layout:leaf('c1'),selected:'c1'});
+  assert.deepEqual(foldView(leaf('a1'),'a1',['a1'],['b1'],[]),{layout:leaf('b1'),selected:'b1'});
+  // A selection outside the folded group stays.
+  assert.deepEqual(foldView(split,'b1',['a1','a2'],['b1'],[]),{layout:leaf('b1'),selected:'b1'});
+  // Nothing left: the overview.
+  assert.deepEqual(foldView(leaf('a1'),'a1',['a1'],[],['a1']),{layout:null});
+  assert.deepEqual(paneIds(splitFor(split,['a1','a2'])),['a1','a2']);
+  assert.equal(splitFor(split,['c1']),null);
+});

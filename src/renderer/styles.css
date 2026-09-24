@@ -277,7 +277,7 @@
 .tab.compact .tab-close{display:none}
 .tab.multi-selected{background:#1f2a36;box-shadow:inset 0 0 0 1px #56779a}
 .tab-group-chip{position:relative;flex-shrink:0;display:flex;align-items:center;margin-left:8px;padding-right:4px;-webkit-app-region:no-drag;cursor:grab}
-.tab-group-chip .chip-pill{display:flex;align-items:center;height:23px;border-radius:6px;color:var(--group-color);background:color-mix(in srgb,var(--group-color) 14%,transparent);border:1px solid color-mix(in srgb,var(--group-color) 28%,transparent);transition:background .12s}
+.tab-group-chip .chip-pill{display:flex;align-items:center;height:23px;border-radius:6px;color:var(--group-color);background:color-mix(in srgb,var(--group-color) 14%,transparent);border:1px solid color-mix(in srgb,var(--group-color) 28%,transparent)}
 .tab-group-chip:hover .chip-pill{background:color-mix(in srgb,var(--group-color) 24%,transparent)}
 .tab-group-chip.collapsed .chip-pill{background:color-mix(in srgb,var(--group-color) 22%,transparent)}
 .tab-group-chip.collapsed{padding-right:3px}
@@ -313,8 +313,6 @@
 .project-chats .chat-row.open-tab{background:color-mix(in srgb,var(--project-color) 6%,transparent);border-color:color-mix(in srgb,var(--project-color) 24%,transparent)}
 .project-chats .chat-row.open-tab:hover{background:color-mix(in srgb,var(--project-color) 11%,transparent)}
 .project-chats .chat-row.selected{background:color-mix(in srgb,var(--project-color) 19%,transparent);border-color:color-mix(in srgb,var(--project-color) 52%,transparent);color:#eef3f1}
-/* The active tab takes its group's (or project's) color, not Harbor's mint. */
-.session-toolbar .tab.active{background:color-mix(in srgb,var(--tab-color,#9bd7b9) 18%,#191d24);border-top-color:var(--tab-color,#9bd7b9);color:#eef3f1}
 .popover .group-colors{padding:4px 10px 8px}
 .project-rollup{display:flex;align-items:center;gap:3px;flex-shrink:0;margin-right:3px;padding:1px 4px 1px 5px;border-radius:4px;background:#262c35;color:#c3ccd8;font-size:9.5px;font-variant-numeric:tabular-nums}
 .project-rollup .chat-activity{margin-top:0;width:14px;min-width:14px}
@@ -322,3 +320,47 @@
 .rail-badge{position:absolute;right:5px;bottom:5px;display:flex;border-radius:50%;background:#191c23;padding:1px}
 .rail-badge .chat-activity{margin-top:0;width:12px;min-width:12px}
 .rail-badge .chat-activity svg{width:11px;height:11px}
+/* Chrome-style strip: rounded tabs with short separators; the active tab is a folder shape whose outline
+   (in its group's color) flares at the bottom into the group line; group labels are solid pills. */
+.session-toolbar .tab{position:relative;margin-top:6px;border:0;border-radius:8px 8px 0 0;background:transparent;box-shadow:none}
+.session-toolbar .tab::before{content:"";position:absolute;left:0;top:9px;bottom:10px;width:1px;background:#2f3540;pointer-events:none}
+.session-toolbar .tab-strip>.tab:first-child::before,.session-toolbar .tab-group-chip+.tab::before,.session-toolbar .tab.active::before,.session-toolbar .tab.active+.tab::before,.session-toolbar .tab:hover::before,.session-toolbar .tab:hover+.tab::before{display:none}
+.session-toolbar .tab:not(.active):hover{background:#20252d}
+.session-toolbar .tab.active{--tab-fill:color-mix(in srgb,var(--tab-color,#9bd7b9) 17%,#191d24);z-index:2;color:#eef3f1;background:var(--tab-fill)}
+.session-toolbar .tab.active.grouped{box-shadow:inset 2px 0 0 var(--group-color),inset -2px 0 0 var(--group-color),inset 0 2px 0 var(--group-color)}
+.session-toolbar .tab.active.grouped::after{display:none}
+/* Bottom flares: an 8px quarter circle centred 6px outside the tab, so its 2px stroke continues the side outline
+   (x 0–2px) and ends flush with the 2px group line (y H-2px–H). */
+.tab-flare{position:absolute;bottom:0;width:8px;height:8px;pointer-events:none}
+.tab-flare.left{left:-6px;background:radial-gradient(circle at 0 0,transparent 7.6px,var(--tab-fill) 8.2px)}
+.tab-flare.right{right:-6px;background:radial-gradient(circle at 100% 0,transparent 7.6px,var(--tab-fill) 8.2px)}
+.tab.grouped .tab-flare.left{background:radial-gradient(circle at 0 0,transparent 5.6px,var(--group-color) 6.2px,var(--group-color) 7.6px,var(--tab-fill) 8.2px)}
+.tab.grouped .tab-flare.right{background:radial-gradient(circle at 100% 0,transparent 5.6px,var(--group-color) 6.2px,var(--group-color) 7.6px,var(--tab-fill) 8.2px)}
+.session-toolbar .tab.multi-selected{background:#1f2a36;box-shadow:inset 0 0 0 1px #56779a}
+.tab-group-chip .chip-pill{background:var(--group-color);border:0;color:#12161b;height:22px;border-radius:7px}
+.tab-group-chip:hover .chip-pill,.tab-group-chip.collapsed .chip-pill{background:var(--group-color)}
+.tab-group-chip:hover .chip-pill{filter:brightness(1.08)}
+.tab-group-chip .chip-label{font-weight:650}
+.tab-group-chip .chip-count{color:#12161b;background:#00000024}
+.tab-group-chip .chip-rollup{background:#191d24;border-radius:50%;padding:2px;margin:0 3px 0 -3px}
+.tab-group-chip .chip-rollup:hover{background:#0f1216}
+.tab-group-chip.holds-active .chip-pill{box-shadow:0 0 0 2px #191d24,0 0 0 3px var(--group-color)}
+.tab-group-chip::after{left:0}
+/* Everything folded: a zoomed-out overview of the open groups. */
+.pane-workspace[hidden]{display:none}
+.groups-overview{flex:1;min-height:0;overflow:auto;padding:38px 40px 30px}
+.groups-overview-heading h1{font-size:26px;font-weight:500;margin:10px 0 8px;color:#e8ecef}
+.groups-overview-heading p{font-size:12px}
+.groups-overview .attention-text{color:#e8c282}
+.group-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-top:26px;align-items:start}
+.group-card{border:1px solid #2a303a;border-top:3px solid var(--group-color);border-radius:9px;background:#171b21;padding:6px}
+.group-card-title{display:flex;align-items:center;gap:8px;width:100%;padding:9px 8px 10px;border-radius:6px;text-align:left;font-size:12px;font-weight:600;color:#dfe6ee}
+.group-card-title:hover{background:#20262e}
+.group-card-dot{width:9px;height:9px;border-radius:50%;background:var(--group-color);flex-shrink:0}
+.group-card-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-card-detail{font-size:10px;font-weight:400;color:#7f8a99}
+.group-card-count{margin-left:auto;font-size:10px;color:#9aa6b5;background:#252b34;border-radius:4px;padding:2px 6px;font-variant-numeric:tabular-nums}
+.group-card-chats{display:flex;flex-direction:column;gap:2px;border-top:1px solid #252b33;padding-top:5px}
+.group-card-chat{display:flex;align-items:center;gap:8px;width:100%;padding:8px;border-radius:6px;text-align:left;font-size:11.5px;color:#b2becb}
+.group-card-chat:hover{background:#222731;color:#eef3f1}
+.group-card-chat .chat-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

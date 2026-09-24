@@ -36,11 +36,10 @@ test('project and custom tab groups fold, report status, persist, and link to th
     await expect(page.locator('.sidebar .chat-row.open-tab')).toHaveCount(5);
     await expect(page.locator('.sidebar .chat-row.open-tab',{hasText:'Release notes'})).toHaveCount(0);
 
-    // Folding the viewed group keeps the current tab next to its chip.
+    // Folding the viewed group puts it away: the view moves to the most recently used chat still shown.
     const api=page.getByRole('button',{name:/^tessera-api group/});
     await api.click();await expect(api).toHaveAttribute('aria-expanded','false');
-    expect(await tabOrder(page)).toEqual(['a1','a2','b2','c1']);
-    await expect(page.locator('[data-group-key="p:api"]')).toHaveClass(/holds-active/);
+    expect(await tabOrder(page)).toEqual(['a1','a2','c1']);await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','c1');
     await expect(page.locator('[data-group-key="p:api"] .chip-count')).toHaveText('2');
 
     // A folded chat that needs input is reported on the chip, and the bell opens it.
@@ -48,7 +47,7 @@ test('project and custom tab groups fold, report status, persist, and link to th
     const bell=page.getByRole('button',{name:'Open Rate limiter: Needs input or approval',exact:true});
     await expect(bell).toBeVisible();await page.screenshot({path:'test-results/screenshots/30-tab-groups-folded.png'});
     await bell.click();await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
-    expect(await tabOrder(page)).toEqual(['a1','a2','b1','c1']);
+    await expect(api).toHaveAttribute('aria-expanded','true');expect(await tabOrder(page)).toEqual(['a1','a2','b1','b2','c1']);
 
     // ⌘/Shift-click builds a selection; ⌘G makes a custom group and opens its name field.
     await page.locator('[data-tab-id="a2"] > button').first().click({modifiers:['Meta']});
@@ -59,7 +58,7 @@ test('project and custom tab groups fold, report status, persist, and link to th
     const name=page.getByRole('textbox',{name:'Group name',exact:true});await expect(name).toBeFocused();
     await name.fill('Release 0.6');await page.keyboard.press('Enter');
     const release=page.getByRole('button',{name:/^Release 0\.6 group, 2 chats/});await expect(release).toBeVisible();
-    await expect.poll(()=>tabOrder(page)).toEqual(['a1','b1','a2','c1']);
+    await expect.poll(()=>tabOrder(page)).toEqual(['a1','b1','b2','a2','c1']);
     expect(await chipOrder(page)).toEqual(['p:app','p:api','g:'+(await page.locator('[data-group-key^="g:"]').getAttribute('data-group-key'))!.slice(2)]);
 
     // Right-click menus: recolor the group, then remove a tab from it.
@@ -114,7 +113,7 @@ test('project and custom tab groups fold, report status, persist, and link to th
     await page.getByRole('group',{name:'Project color'}).getByRole('menuitemradio',{name:'Rose',exact:true}).click();await page.keyboard.press('Escape');
     await expect(page.locator('[data-group-key="p:api"]')).toHaveCSS('--group-color','#e3a1a8');
     await expect(page.locator('.project-heading',{hasText:'tessera-api'}).locator('.project-folder')).toHaveCSS('color','rgb(227, 161, 168)');
-    await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');await expect(page.locator('.tab.active')).toHaveCSS('border-top-color','rgb(227, 161, 168)');
+    await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');await expect(page.locator('.tab.active')).toHaveCSS('--tab-color','#e3a1a8');
     await page.screenshot({path:'test-results/screenshots/33-tab-groups-sidebar.png'});
 
     // ⌘⇧G turns project grouping off; custom groups stay.
@@ -149,5 +148,27 @@ test('tabs shrink step by step before scrolling, and edge markers report hidden 
     const edge=page.locator('.tab-edge.left');await expect(edge).toBeVisible();await expect(edge.locator('.edge-pill.attention')).toHaveText('1');
     await page.screenshot({path:'test-results/screenshots/34-tab-edge-markers.png'});
     await edge.click();await expect.poll(()=>page.locator('[data-tab-id="a1"]').evaluate(e=>{const r=e.getBoundingClientRect(),s=e.parentElement!.getBoundingClientRect();return r.left>=s.left-1&&r.right<=s.right+1;})).toBe(true);
+  } finally {await app.close();}
+});
+
+test('folding takes the group split with it, unfold undoes it, and folding everything shows the overview',async()=>{
+  const data=await fixture();const app=await data.launch();const page=await app.firstWindow();
+  try {
+    await openChat(page,'Tab groups design');await openChat(page,'Rate limiter');await openChat(page,'Tab groups design');
+    await page.getByRole('button',{name:'Split view',exact:true}).click();await page.locator('.split-picker button',{hasText:'Fix SSH reattach'}).click();
+    await expect(page.locator('.workspace-pane')).toHaveCount(2);
+    const appGroup=page.getByRole('button',{name:/^Agent-Manager group/});
+    await appGroup.click();await expect(page.locator('.workspace-pane')).toHaveCount(1);await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
+    await appGroup.click();await expect(page.locator('.workspace-pane')).toHaveCount(2);await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','a2');
+    await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.getByRole('menuitem',{name:'Collapse all groups'}).click();
+    const overview=page.locator('.groups-overview');await expect(overview).toBeVisible();await expect(page.locator('.workspace-pane')).toHaveCount(0);
+    await expect(overview.locator('.group-card')).toHaveCount(2);await expect(page.locator('.session-toolbar [data-group-key]')).toHaveCount(2);
+    await page.screenshot({path:'test-results/screenshots/35-groups-overview.png'});
+    await overview.getByRole('button',{name:/Agent-Manager/}).click();
+    await expect(overview).toHaveCount(0);await expect(page.locator('.workspace-pane')).toHaveCount(2);
+    await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.getByRole('menuitem',{name:'Collapse all groups'}).click();
+    await overview.locator('.group-card-chat',{hasText:'Rate limiter'}).click();
+    await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');await expect(page.getByRole('button',{name:/^tessera-api group/})).toHaveAttribute('aria-expanded','true');
+    await expect(page.getByRole('button',{name:/^Agent-Manager group/})).toHaveAttribute('aria-expanded','false');
   } finally {await app.close();}
 });

@@ -5,7 +5,7 @@ import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon } from './ChatStatusIcon';
 import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
 import { reorderTabs } from '../shared/panes';
-import { addToGroup, arrangeTabs, groupEntry, groupTabs, isCollapsed, layoutTabs, removeFromGroups, rollup, setCollapsed, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
+import { addToGroup, arrangeTabs, groupEntry, groupTabs, isCollapsed, layoutTabs, removeFromGroups, rollup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
 
 export interface GroupInfo { key:string; name:string; color:string; kind:'project'|'custom'; detail?:string }
 export function groupInfo(key:string,groups:TabGroups,projects:Project[]):GroupInfo {
@@ -22,7 +22,7 @@ export interface TabStripProps {
   onOpen:(session:Session)=>void; onClose:(session:Session)=>void; onSelection:(ids:Set<string>)=>void;
   setTabs:(update:(tabs:string[])=>string[])=>void; setGroups:(update:(groups:TabGroups)=>TabGroups)=>void;
   onDragStart:(event:DragEvent,id:string)=>void; onDragEnd:()=>void; onNewChat:()=>void;
-  onTabMenu:(id:string,x:number,y:number)=>void; onGroupMenu:(key:string,x:number,y:number)=>void; onMoveProject:(source:string,target:string,after:boolean)=>void;
+  onToggleGroup:(key:string)=>void; onTabMenu:(id:string,x:number,y:number)=>void; onGroupMenu:(key:string,x:number,y:number)=>void; onMoveProject:(source:string,target:string,after:boolean)=>void;
 }
 
 export function TabStrip(props:TabStripProps) {
@@ -120,6 +120,7 @@ export function TabStrip(props:TabStripProps) {
       className={`tab ${active?'active':''} ${props.dragging===id?'dragging':''} ${color?'grouped':''} ${end?'group-end':''} ${size} ${selection.has(id)?'multi-selected':''}`}>
       <button onClick={event=>click(event,s)} aria-pressed={selection.size?selection.has(id):undefined}><AgentIcon launcher={s.launcher} size={14}/><span className="tab-name">{s.name}</span><ChatStatusIcon session={s}/></button>
       <button className="tab-close" disabled={props.busy===s.id} aria-label={`Close chat ${s.name}`} title="Close chat and stop its tmux session" onClick={()=>props.onClose(s)}><X size={12}/></button>
+      {active&&<><span className="tab-flare left" aria-hidden="true"/><span className="tab-flare right" aria-hidden="true"/></>}
     </div>;
   };
   const chip=(key:string,ids:string[])=>{
@@ -128,7 +129,7 @@ export function TabStrip(props:TabStripProps) {
     const hidden=members.filter(s=>s.id!==selected);
     const toggle=()=>{
       if(groups.focus){if(key!==selectedKey){const entry=byId.get(groupEntry(groups,segments,key));if(entry)props.onOpen(entry);}return;}
-      props.setGroups(g=>setCollapsed(g,key,!folded));
+      props.onToggleGroup(key);
     };
     const label=`${info.name} group, ${ids.length} ${ids.length===1?'chat':'chats'}${summary?`, ${activityLabel[summary.activity as ChatStatus].toLowerCase()}`:''}`;
     return <div key={key} data-group-key={key} data-hidden-count={folded?hidden.length:undefined} data-attention={folded?hidden.filter(s=>chatActivity(s)==='attention').map(s=>s.id).join(' '):undefined}
