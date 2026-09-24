@@ -12,6 +12,8 @@ Use **Add project** to choose a saved host and an existing directory. The direct
 - Agent-generated titles appear automatically. **Right-click → Rename chat…** sets a persistent Harbor name that takes precedence over later automatic titles.
 - Right-click a chat to **pin**, **rename**, **close**, **resume**, or **reconnect & resume** it.
 - **Notes:** hover a chat and click the faint note icon (or right-click → **Add note…**) to attach free-form text. Chats with a note keep a muted icon; hover it to read the note, click it to edit. ⌘↩ or clicking away saves, Esc discards, and **Remove** deletes the note. Notes are stored with the chat in `sessions.json` and do not change chat ordering.
+- **Project notes:** projects take notes the same way — hover a project heading and click its note icon, or right-click → **Add note…**. They are stored with the project in `sessions.json`.
+- **Only show chats with notes:** this sidebar switch (below **Hide all closed chats**) keeps only chats that have a note; projects with no noted chats are hidden unless the project itself has a note. The switch persists across restarts.
 - **Close chat** (⌘ W), including the tab’s **×** and a split pane’s close button, asks for confirmation before stopping a live session (press Return to confirm, Esc to cancel), then terminates that chat’s tmux session. The closed chat remains gray in its project. Closing does not delete the agent conversation.
 - **Resume chat** creates a new tmux session and resumes the exact saved conversation ID. **Reconnect & resume** first closes the old tmux session, then resumes in a new one.
 - A closed shell reopens as a fresh shell in the project directory; shells don’t have agent conversation history to restore.

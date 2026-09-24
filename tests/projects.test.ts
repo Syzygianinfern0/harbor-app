@@ -15,7 +15,7 @@ test('projects retain their directory; closing stops tmux and reopening creates 
  await engine.terminate(chat.id);assert.equal(engine.snapshot().sessions[0].status,'closed');assert.equal(engine.snapshot().sessions[0].archived,false);
  await assert.rejects(transport.run('local',transport.setup()+transport.tmux(['has-session','-t',`=${chat.tmuxName}`])));
  const resumed=await engine.resume(chat.id);assert.equal(resumed.id,chat.id);assert.notEqual(resumed.tmuxName,chat.tmuxName);assert.notEqual(resumed.generation,chat.generation);
- await engine.update(chat.id,{name:'Renamed chat',pinned:true});await engine.updateProject(project.id,'Renamed project');
+ await engine.update(chat.id,{name:'Renamed chat',pinned:true});await engine.updateProject(project.id,{name:'Renamed project'});
  const stored=JSON.parse(await readFile(path.join(dir,'sessions.json'),'utf8'));assert.equal(stored.version,2);assert.equal(stored.projects[0].name,'Renamed project');assert.equal(stored.sessions[0].nameSource,'manual');
 });
 test('legacy index migrates without changing existing tmux identity',async()=>{
@@ -96,4 +96,16 @@ test('chat notes persist, trim, clear, and do not reorder chats',async()=>{
  assert.equal(engine.snapshot().sessions[0].note,'Remember the flaky test\n\tline two');
  await engine.update('noted',{note:'   '});assert.equal('note' in engine.snapshot().sessions[0],false);
  assert.equal('note' in JSON.parse(await readFile(path.join(dir,'sessions.json'),'utf8')).sessions[0],false);await engine.dispose();
+});
+test('project notes persist, trim, clear, and leave the name alone',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'harbor-project-notes-'));const createdAt='2026-01-01T00:00:00.000Z';
+ await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects:[{id:'p',name:'Noted project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt}],sessions:[]}));
+ let engine=new HarborEngine(dir,new Transport('harbor-project-notes-'+Date.now()));await engine.init(false);
+ await engine.updateProject('p',{note:'  Deploy from main only \n'});
+ assert.equal(engine.snapshot().projects[0].note,'Deploy from main only');assert.equal(engine.snapshot().projects[0].name,'Noted project');
+ await assert.rejects(engine.updateProject('p',{note:'x'.repeat(4001)}),/Invalid note/);await assert.rejects(engine.updateProject('p',{name:'  '}),/Enter a project name/);
+ await engine.dispose();engine=new HarborEngine(dir,new Transport('harbor-project-notes-'+Date.now()));await engine.init(false);
+ assert.equal(engine.snapshot().projects[0].note,'Deploy from main only');
+ await engine.updateProject('p',{note:''});assert.equal('note' in engine.snapshot().projects[0],false);
+ assert.equal('note' in JSON.parse(await readFile(path.join(dir,'sessions.json'),'utf8')).projects[0],false);await engine.dispose();
 });

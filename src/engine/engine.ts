@@ -151,7 +151,13 @@ export class HarborEngine extends EventEmitter {
     this.projects.push(project); await this.persist(); this.changed();
     await this.importHistory(project.id); return structuredClone(project);
   }
-  async updateProject(id:string, name:string) { const project = this.projects.find(p=>p.id===id); if (!project) throw new Error('Project not found.'); bounded(name,'project name',100); if (!name.trim()) throw new Error('Enter a project name.'); project.name=name.trim(); await this.persist(); this.changed(); }
+  async updateProject(id:string, patch:Partial<Pick<Project,'name'|'note'>>) {
+    const project = this.projects.find(p=>p.id===id); if (!project) throw new Error('Project not found.');
+    if (!patch || typeof patch !== 'object') throw new Error('Invalid project update.');
+    if (patch.name !== undefined) { bounded(patch.name,'project name',100); if (!patch.name.trim()) throw new Error('Enter a project name.'); project.name=patch.name.trim(); }
+    if (patch.note !== undefined) { const note = bounded(patch.note, 'note', 4000).trim(); if (note) project.note = note; else delete project.note; }
+    await this.persist(); this.changed();
+  }
   async manageProjects(items: {id:string;hidden:boolean}[]) {
     if (!Array.isArray(items) || new Set(items.map(p=>p.id)).size!==items.length || items.some(p=>typeof p.hidden!=='boolean'||!this.projects.some(v=>v.id===p.id))) throw new Error('Invalid project list.');
     const removed=this.projects.filter(p=>!items.some(v=>v.id===p.id));

@@ -37,7 +37,7 @@ else {
     handle('resolveSsh', alias => engine.resolveSsh(alias));
     handle('addProject', input => engine.addProject(input));
     handle('listDirectories', (host, input, showHidden) => engine.listDirectories(host, input, showHidden));
-    handle('updateProject', (id,name) => engine.updateProject(id,name));
+    handle('updateProject', (id,patch) => engine.updateProject(id,patch));
     handle('manageProjects', projects => engine.manageProjects(projects));
     handle('usage', () => engine.usage());
     handle('chatUsage', id => engine.chatUsage(id));

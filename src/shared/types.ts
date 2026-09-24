@@ -2,7 +2,7 @@ export type Launcher = 'shell' | 'codex' | 'claude' | 'custom';
 export type PermissionMode = 'standard' | 'read-only' | 'accept-edits' | 'plan' | 'full-access';
 export type TabShortcut = number | 'next' | 'previous';
 export type Activity = 'starting' | 'working' | 'attention' | 'idle' | 'closed' | 'error' | 'unknown';
-export interface Project { id: string; name: string; cwd: string; hostId?: string; hostLabel: string; connection: Connection; createdAt: string; hidden?: boolean; historyError?: string }
+export interface Project { id: string; name: string; cwd: string; hostId?: string; hostLabel: string; connection: Connection; createdAt: string; hidden?: boolean; historyError?: string; note?: string }
 export interface TokenUsage { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; totalTokens: number }
 export interface CostAmount { usd: number; estimated: number; recorded: number; unpriced: number }
 export interface CostModel extends CostAmount { model: string }
@@ -49,7 +49,7 @@ export interface HarborApi {
   create(input: CreateSession): Promise<Session>;
   addProject(input: {name: string; host: string; cwd: string}): Promise<Project>;
   listDirectories(host: string, input: string, showHidden: boolean): Promise<DirectoryListing>;
-  updateProject(id: string, name: string): Promise<void>;
+  updateProject(id: string, patch: Partial<Pick<Project, 'name' | 'note'>>): Promise<void>;
   manageProjects(projects: {id: string; hidden: boolean}[]): Promise<void>;
   usage(): Promise<HostUsage[]>;
   chatUsage(id: string): Promise<ChatUsage>;
