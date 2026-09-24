@@ -54,6 +54,8 @@ for (const host of ['local', ...(process.env.HARBOR_TEST_SSH ? [process.env.HARB
     const diagnosis = await engine.diagnose(host); assert.equal(diagnosis.ok, true, diagnosis.error);
     const testDir = host === 'local' ? path.join(dataDir, "folder with 'quotes' and $dollars") : '~/harbor-smoke-test-20260916';
     if (host === 'local') await mkdir(testDir);
+    // A tmux server started from inside Claude Code carries its session markers; new chats must not inherit them.
+    await transport.run(host, transport.setup() + transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-s', 'harbor-seed', ';', 'set-environment', '-g', 'CLAUDE_CODE_CHILD_SESSION', '1']));
     const session = await engine.create({ name: 'Real shell test', host, cwd: testDir, launcher: 'custom', command: 'printf "BOOT:%s\\n" "$HARBOR_TEST_VALUE"; exec bash --noprofile --norc', env: { HARBOR_TEST_VALUE: "it's $literal; 你好" }, group: 'Tests', tags: ['integration'] });
     const persisted = await readFile(path.join(dataDir, 'sessions.json'), 'utf8');
     assert.equal(JSON.parse(persisted).sessions[0].env, undefined); assert.ok(!persisted.includes("it's $literal"));
@@ -67,8 +69,8 @@ for (const host of ['local', ...(process.env.HARBOR_TEST_SSH ? [process.env.HARB
     const freshAttach = engine.attach(session.id, 100, 28);
     await Promise.all([staleAttach, freshAttach]);
     output = '';
-    await engine.input(session.id, "printf 'COLOR_ENV:%s:%s:%s\\n' \"$TERM\" \"$COLORTERM\" \"${NO_COLOR-unset}\"\r");
-    await eventually(() => output.includes('COLOR_ENV:xterm-256color:truecolor:unset'), 'Color-capable environment must reach the real session');
+    await engine.input(session.id, "printf 'COLOR_ENV:%s:%s:%s:%s\\n' \"$TERM\" \"$COLORTERM\" \"${NO_COLOR-unset}\" \"${CLAUDE_CODE_CHILD_SESSION-unset}\"\r");
+    await eventually(() => output.includes('COLOR_ENV:xterm-256color:truecolor:unset:unset'), 'Color-capable environment without inherited agent markers must reach the real session');
     await engine.input(session.id, "printf '\\033[31mCOLOR_RED\\033[0m \\033[38;2;12;210;125mCOLOR_RGB\\033[0m\\n'\r");
     await eventually(() => output.includes('\x1b[31mCOLOR_RED') && output.includes('\x1b[38;2;12;210;125mCOLOR_RGB'), 'ANSI and true color must survive live control-mode output');
     output = '';

@@ -22,10 +22,16 @@ export function validateConnection(input: Connection): SshConnection {
   if (connection.identityFile !== undefined && (typeof connection.identityFile !== 'string' || connection.identityFile.length > 4096 || /[\x00-\x1f]/.test(connection.identityFile) || !(connection.identityFile.startsWith('/') || connection.identityFile.startsWith('~/')))) throw new Error('Identity file must be an absolute path or start with ~/.');
   return connection;
 }
+// Variables that must not leak from Harbor's launcher into terminals. The agent-session markers appear when
+// Harbor (or its tmux server) was started from inside Claude Code; inheriting them makes every new chat look
+// like a Claude Code child session, which disables its transcript saving.
+export const strippedVariables = ['TMUX', 'TMUX_PANE', 'NO_COLOR', 'FORCE_COLOR', 'CLICOLOR', 'CLICOLOR_FORCE',
+  'CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_EXECPATH', 'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'AI_AGENT'];
+export const unsetStripped = strippedVariables.map(name => `-u ${name}`).join(' ');
 export function environment() {
   const env = { ...process.env };
-  delete env.TMUX; delete env.TMUX_PANE;
-  delete env.NO_COLOR; delete env.FORCE_COLOR; delete env.CLICOLOR; delete env.CLICOLOR_FORCE;
+  for (const name of strippedVariables) delete env[name];
   env.TERM = 'xterm-256color'; env.COLORTERM = 'truecolor';
   env.PATH = [...new Set([env.PATH, `${homedir()}/.local/bin`, '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'].filter(Boolean))].join(':');
   return env;

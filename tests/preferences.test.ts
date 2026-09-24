@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarborEngine } from '../src/engine/engine';
 import { defaultPreferences, PreferencesStore, validatePreferences } from '../src/engine/preferences';
-import { environment, Transport } from '../src/engine/transport';
+import { environment, Transport, unsetStripped } from '../src/engine/transport';
 
 test('preferences start local-only, persist edits and hide disabled hosts across restarts', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'harbor-preferences-'));
@@ -68,4 +68,18 @@ test('SSH overrides use separate arguments; launcher environment drops color sup
   const original = process.env.NO_COLOR; process.env.NO_COLOR = '1';
   try { assert.equal(environment().NO_COLOR, undefined); assert.equal(environment().TERM, 'xterm-256color'); assert.equal(environment().COLORTERM, 'truecolor'); }
   finally { if (original === undefined) delete process.env.NO_COLOR; else process.env.NO_COLOR = original; }
+});
+test('launcher environment drops inherited Claude Code session markers', () => {
+  const names = ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID', 'AI_AGENT'];
+  const original = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  for (const name of names) process.env[name] = '1';
+  process.env.HARBOR_KEEP_TEST = '1';
+  try {
+    const env = environment();
+    for (const name of names) { assert.equal(env[name], undefined, name); assert.match(unsetStripped, new RegExp(`-u ${name}(\\s|$)`)); }
+    assert.equal(env.HARBOR_KEEP_TEST, '1');
+  } finally {
+    for (const name of names) { if (original[name] === undefined) delete process.env[name]; else process.env[name] = original[name]; }
+    delete process.env.HARBOR_KEEP_TEST;
+  }
 });
