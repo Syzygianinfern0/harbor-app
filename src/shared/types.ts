@@ -30,7 +30,7 @@ export interface Session {
   originalLaunchCommand?: string; latestLaunchCommand?: string;
   status: SessionStatus; detail?: string;
   hostId?: string; hostLabel?: string; connection?: SshConnection;
-  projectId?: string; projectRemoved?: boolean; conversationId?: string; generation?: string; activity?: Activity; activityDetail?: string; activityAt?: number; attentionAt?: number; completedAt?: number; resumable?: boolean; nameSource?: 'auto' | 'manual'; imported?: boolean; externalActive?: boolean;
+  projectId?: string; projectRemoved?: boolean; conversationId?: string; generation?: string; activity?: Activity; activityDetail?: string; activityAt?: number; attentionAt?: number; completedAt?: number; resumable?: boolean; nameSource?: 'auto' | 'manual'; imported?: boolean; externalActive?: boolean; note?: string;
 }
 export interface CreateSession {
   name: string; host: string; cwd: string; launcher: Launcher; projectId?: string;
@@ -66,7 +66,7 @@ export interface HarborApi {
   openNotificationSettings(): Promise<void>;
   testNotification(sound?: boolean): Promise<string>;
   onOpenSession(callback: (id: string) => void): () => void;
-  update(id: string, patch: Partial<Pick<Session, 'name' | 'group' | 'tags' | 'pinned' | 'archived'>>): Promise<void>;
+  update(id: string, patch: Partial<Pick<Session, 'name' | 'group' | 'tags' | 'pinned' | 'archived' | 'note'>>): Promise<void>;
   terminate(id: string): Promise<boolean>;
   forget(id: string): Promise<boolean>;
   attach(id: string, cols: number, rows: number): Promise<void>;

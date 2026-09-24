@@ -243,3 +243,20 @@
 .section-actions{display:flex;align-items:center;gap:8px}
 /* While the sidebar peeks over the title bar, keep that strip clickable instead of a window-drag region. */
 .app-shell.sidebar-peeking .sidebar-dock .traffic-spacer,.app-shell.sidebar-peeking .session-toolbar,.app-shell.sidebar-peeking .overview-toolbar,.app-shell.sidebar-peeking .topbar{-webkit-app-region:no-drag}
+/* Chat notes: deliberately quieter than the row's title, pin and status. */
+.chat-note{display:none;align-items:center;justify-content:center;width:15px;min-width:15px;height:15px;margin:0 -3px;border-radius:3px;color:#6b7684;opacity:.55;transition:opacity .12s,color .12s}
+.chat-note.has-note{display:flex;opacity:.7}
+.chat-row:hover .chat-note{display:flex}.chat-row:hover .chat-note:not(.has-note){opacity:.4}
+.chat-row .chat-note:hover{opacity:1;color:#aab6c3}
+.chat-note-peek{position:fixed;z-index:1200;max-width:280px;max-height:220px;overflow:hidden;padding:7px 9px;border:1px solid #333b46;border-radius:6px;background:#1c2129;color:#a9b4c1;font-size:11px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:0 8px 24px #0005;pointer-events:none}
+.chat-note-peek.hint{padding:4px 7px;color:#8793a1;font-size:10px}
+.chat-note-editor{position:fixed;z-index:1200;width:320px;padding:8px;border:1px solid #333b46;border-radius:8px;background:#1c2129;box-shadow:0 12px 35px #0006}
+.chat-note-editor textarea{display:block;width:100%;min-height:120px;max-height:320px;resize:vertical;padding:7px 8px;border:1px solid #2c333d;border-radius:5px;background:#15191f;color:#cdd5de;font-size:11px;line-height:1.5}
+.chat-note-editor textarea:focus-visible{outline:0;border-color:#4a5a52}
+.chat-note-editor .form-error{margin:6px 2px 0;font-size:10px}
+.chat-note-editor footer{display:flex;align-items:center;gap:4px;margin-top:7px}
+.chat-note-editor footer small{flex:1;padding-left:2px;font-size:9px;color:#5f6b78}
+.chat-note-editor footer button{padding:4px 8px;border-radius:4px;font-size:10px;color:#8f9bab}
+.chat-note-editor footer button:hover{background:#262d37;color:#c2ccd7}
+.chat-note-editor .chat-note-remove{color:#b58e8a}
+.chat-note-editor .chat-note-save{color:var(--mint)}

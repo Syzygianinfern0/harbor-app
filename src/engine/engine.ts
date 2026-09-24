@@ -306,13 +306,16 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     try { await this.persist(); } catch (error) { this.changed(); throw new Error(`Session ${tmuxName} is running, but its index could not be saved: ${String(error)}`); }
     this.changed(); return structuredClone(session);
   }
-  async update(id: string, patch: Partial<Pick<Session, 'name' | 'group' | 'tags' | 'pinned' | 'archived'>>) {
+  async update(id: string, patch: Partial<Pick<Session, 'name' | 'group' | 'tags' | 'pinned' | 'archived' | 'note'>>) {
     const session = this.get(id);
     for (const key of ['name', 'group'] as const) if (patch[key] !== undefined) { bounded(patch[key], key, 100); if (!patch[key]?.trim()) throw new Error(`${key} cannot be empty.`); session[key] = patch[key]!.trim(); }
     if (patch.tags !== undefined) { if (!Array.isArray(patch.tags) || patch.tags.length > 20) throw new Error('Invalid tags.'); patch.tags.forEach(tag => bounded(tag, 'tag', 50)); session.tags = patch.tags; }
     for (const key of ['pinned', 'archived'] as const) if (patch[key] !== undefined) { if (typeof patch[key] !== 'boolean') throw new Error(`Invalid ${key}.`); session[key] = patch[key]!; }
+    if (patch.note !== undefined) { const note = bounded(patch.note, 'note', 4000).trim(); if (note) session.note = note; else delete session.note; }
     if (patch.name !== undefined) session.nameSource = 'manual';
-    session.updatedAt = new Date().toISOString(); await this.persist(); this.changed();
+    // A note is an annotation, not activity, so it does not reorder the chat list.
+    if (Object.keys(patch).some(key => key !== 'note')) session.updatedAt = new Date().toISOString();
+    await this.persist(); this.changed();
   }
   async refresh() {
     if (this.refreshing || this.disposed) return;

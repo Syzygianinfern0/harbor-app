@@ -84,3 +84,16 @@ test('usage reads each configured connection once and preserves other hosts when
  const [first,second]=await Promise.all([engine.usage(),engine.usage()]);assert.deepEqual(first,second);assert.equal(calls.length,2);assert.equal(first[0].error,undefined);assert.equal(first[1].error,'SSH unavailable');
  await engine.usage();assert.equal(calls.length,4);
 });
+test('chat notes persist, trim, clear, and do not reorder chats',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'harbor-notes-'));const createdAt='2026-01-01T00:00:00.000Z';
+ const session={id:'noted',name:'Noted chat',host:'local',cwd:'~',tmuxName:'harbor-aaaa',paneId:'%1',launcher:'shell',group:'Notes',tags:[],pinned:false,archived:false,status:'closed',createdAt,updatedAt:createdAt};
+ await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects:[],sessions:[session]}));
+ let engine=new HarborEngine(dir,new Transport('harbor-notes-'+Date.now()));await engine.init(false);
+ await engine.update('noted',{note:'  Remember the flaky test\n\tline two  '});
+ assert.equal(engine.snapshot().sessions[0].note,'Remember the flaky test\n\tline two');assert.equal(engine.snapshot().sessions[0].updatedAt,createdAt);
+ await assert.rejects(engine.update('noted',{note:'x'.repeat(4001)}),/Invalid note/);await assert.rejects(engine.update('noted',{note:'bad\x07'}),/Invalid note/);
+ await engine.dispose();engine=new HarborEngine(dir,new Transport('harbor-notes-'+Date.now()));await engine.init(false);
+ assert.equal(engine.snapshot().sessions[0].note,'Remember the flaky test\n\tline two');
+ await engine.update('noted',{note:'   '});assert.equal('note' in engine.snapshot().sessions[0],false);
+ assert.equal('note' in JSON.parse(await readFile(path.join(dir,'sessions.json'),'utf8')).sessions[0],false);await engine.dispose();
+});
