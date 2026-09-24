@@ -5,6 +5,7 @@ const descriptions: Record<ChatStatus, string> = {
   starting: 'The agent is starting up or loading its conversation.',
   working: 'The agent is processing your request or running tools.',
   attention: 'The agent needs an answer, permission, or another action from you.',
+  background: 'The turn ended while background work keeps running — shell jobs, monitors, or background agents. Claude resumes by itself when they report back; Codex does not, so for Codex this means its turn finished with processes still running.',
   completed: 'The last turn ended and the agent is waiting for your next prompt. This does not verify that the task succeeded.',
   idle: 'The agent is available, with no work currently in progress.',
   error: 'The agent reported a problem. Open the chat to see what happened.',

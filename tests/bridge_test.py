@@ -36,6 +36,30 @@ class BridgeTests(unittest.TestCase):
    self.assertEqual(reminder['activity'],'idle');self.assertEqual(reminder['completedAt'],finished['completedAt'])
    self.assertEqual(send({'hook_event_name':'PermissionRequest'},'old')['activity'],'idle')
    self.assertEqual(send({'hook_event_name':'PermissionRequest','agent_id':'child'})['activity'],'idle')
+ def test_claude_background_wait_is_not_completion(self):
+  with tempfile.TemporaryDirectory() as d, patch.object(bridge,'ROOT',pathlib.Path(d)):
+   file=pathlib.Path(d)/'chats/chat/metadata.json';file.parent.mkdir(parents=True)
+   file.write_text(json.dumps({'generation':'current','activity':'idle'}))
+   def send(event):
+    with patch.object(bridge.sys,'stdin',io.StringIO(json.dumps(event))): bridge.hook('chat','current')
+    return json.loads(file.read_text())
+   send({'hook_event_name':'UserPromptSubmit'})
+   task={'id':'b1','type':'shell','status':'running','description':'Run the test suite','command':'npm test'}
+   waiting=send({'hook_event_name':'Stop','background_tasks':[task,{'id':'a1','type':'subagent','status':'running','agent_type':'general-purpose'}]})
+   self.assertEqual(waiting['activity'],'background');self.assertNotIn('completedAt',waiting);self.assertEqual(waiting['backgroundKinds'],['shell','subagent'])
+   self.assertEqual(waiting['reason'],'2 background tasks running: Run the test suite; general-purpose')
+   self.assertEqual(send({'hook_event_name':'Notification','notification_type':'idle_prompt'})['activity'],'background')
+   self.assertEqual(send({'hook_event_name':'PostToolUse','agent_id':'a1'})['activity'],'background')  # subagent hooks do not flip the chat
+   self.assertEqual(send({'hook_event_name':'UserPromptSubmit','prompt':'<task-notification>'})['activity'],'working')
+   done=send({'hook_event_name':'Stop','background_tasks':[{**task,'status':'completed'}]})
+   self.assertEqual(done['activity'],'idle');self.assertGreater(done['completedAt'],0)
+   self.assertEqual(send({'hook_event_name':'Stop','background_tasks':[]})['activity'],'idle')
+ def test_background_reason_and_codex_wording(self):
+  self.assertEqual(bridge.background_reason([{'command':'sleep 40; echo done\nmore'}],resumes=False),'Turn finished; 1 background terminal still running: sleep 40; echo done')
+  self.assertTrue(bridge.background_reason([{'type':'shell'}]*5).endswith('; +2 more'))
+ def test_claude_background_idle_ignores_caffeinate(self):
+  with patch.object(bridge.subprocess,'check_output',return_value='  10     1 claude\n  11    10 caffeinate -i -t 300\n  12     1 zsh\n'): self.assertTrue(bridge.claude_background_idle(10))
+  with patch.object(bridge.subprocess,'check_output',return_value='  11    10 caffeinate -i -t 300\n  13    10 /bin/zsh -c sleep 25\n'): self.assertFalse(bridge.claude_background_idle(10))
  def test_permission_flags(self):
   self.assertEqual(bridge.permission_args('codex','full-access'),['--sandbox','danger-full-access','--ask-for-approval','never'])
   self.assertEqual(bridge.codex_server_permissions('standard'),['-c','sandbox_mode="workspace-write"','-c','approval_policy="on-request"'])

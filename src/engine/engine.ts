@@ -226,7 +226,7 @@ export class HarborEngine extends EventEmitter {
           if(meta.hasMessages===true || (meta.hasMessages===false&&session.hasMessages!==true))session.hasMessages=meta.hasMessages;
           if(meta.resumable!==undefined) session.resumable=meta.resumable;
           if(meta.name && session.nameSource!=='manual') session.name=meta.name.slice(0,100);
-          if(session.status !== 'closed' && meta.activity && ['starting','working','attention','idle','closed','error','unknown'].includes(meta.activity)) session.activity=meta.activity;
+          if(session.status !== 'closed' && meta.activity && ['starting','working','attention','background','idle','closed','error','unknown'].includes(meta.activity)) session.activity=meta.activity;
           session.activityDetail=meta.reason; session.activityAt=meta.updatedAt;
           const attention=Number(meta.attentionAt||0)>Number(session.attentionAt||0), completed=Number(meta.completedAt||0)>Number(session.completedAt||0);
           if(session.status==='running'&&previousAt&&(attention||completed)) this.emit('attention',{session:structuredClone(session),completed:!attention&&completed});

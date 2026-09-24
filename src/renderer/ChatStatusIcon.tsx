@@ -1,4 +1,4 @@
-import { Bell, Circle, CircleCheck, CircleHelp, CircleSlash, ExternalLink, LoaderCircle, TriangleAlert } from 'lucide-react';
+import { Bell, Circle, CircleCheck, CircleHelp, CircleSlash, ExternalLink, Hourglass, LoaderCircle, TriangleAlert } from 'lucide-react';
 import type { Session } from '../shared/types';
 import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
 
@@ -9,7 +9,7 @@ export function ChatStatusIcon({ session }: { session: Session }) {
 }
 
 export function StatusIcon({ activity, detail }: { activity: ChatStatus; detail?: string }) {
-  const Icon = { starting: LoaderCircle, working: LoaderCircle, attention: Bell, completed: CircleCheck,
+  const Icon = { starting: LoaderCircle, working: LoaderCircle, attention: Bell, background: Hourglass, completed: CircleCheck,
     idle: Circle, error: TriangleAlert, closed: CircleSlash, unknown: CircleHelp, external: ExternalLink }[activity];
   const label = activityLabel[activity];
   return <span role="img" className={`chat-activity ${activity}`} aria-label={label} title={detail ? `${label}\n${detail}` : label}>

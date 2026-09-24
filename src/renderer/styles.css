@@ -189,6 +189,7 @@
 .chat-activity.idle,.chat-activity.closed { color:#8492a2; }
 .chat-activity.unknown { color:#a1adbd; opacity:1; }
 .chat-activity.external { color:#91b5ed; }
+.chat-activity.background { color:#c0aef0; }
 .terminal-pane { position:relative; }
 .file-drop-hover { outline:2px solid #8ce0bf; outline-offset:-2px; }
 .file-drop-indicator { position:absolute; z-index:10; top:12px; left:50%; transform:translateX(-50%); padding:8px 14px; border:1px solid #8ce0bf; border-radius:8px; background:#20352f; color:#dce1eb; pointer-events:none; white-space:nowrap; font-size:12px; }

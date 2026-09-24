@@ -302,20 +302,20 @@ test('agent status icons distinguish working, attention, completion and errors; 
  try {
   await expect(page.locator('.sidebar .chat-row')).toHaveCount(5);
   const snapshot=await page.evaluate(()=>window.harbor.snapshot());
-  const activities=['starting','working','attention','idle','idle','error','closed','unknown','idle'];
+  const activities=['starting','working','attention','background','idle','error','closed','unknown','idle'];
   snapshot.sessions=snapshot.sessions.slice(0,9).map((s,i)=>({...s,status:i===6||i===8?'closed':i===7?'unreachable':'running',activity:activities[i] as any,completedAt:i===4?100:undefined,externalActive:i===8,hasMessages:true}));
   await app.evaluate(({BrowserWindow,ipcMain},snapshot)=>{
    ipcMain.removeHandler('harbor:snapshot');ipcMain.handle('harbor:snapshot',()=>snapshot);
    const contents=BrowserWindow.getAllWindows()[0].webContents;const send=contents.send.bind(contents);contents.send=(channel,...args)=>send(channel,...(channel==='harbor:snapshot-changed'?[snapshot]:args));contents.send('harbor:snapshot-changed',snapshot);
   },snapshot);
   await page.getByRole('button',{name:'Show more (4)',exact:true}).click();
-  const labels=['Starting','Working','Needs input or approval','Ready','Turn finished — waiting for next prompt','Agent error','Closed','Status unavailable','Running elsewhere'];
+  const labels=['Starting','Working','Needs input or approval','Waiting on background work','Turn finished — waiting for next prompt','Agent error','Closed','Status unavailable','Running elsewhere'];
   for(const label of labels)await expect(page.locator('.sidebar').getByRole('img',{name:label,exact:true})).toBeVisible();
   await expect(page.locator('.sidebar .chat-activity.working svg')).toHaveClass(/spin/);
   await page.screenshot({path:'test-results/screenshots/22-agent-statuses.png'});
   const toggle=page.getByRole('switch',{name:'Hide all closed chats'});await toggle.focus();await page.keyboard.press('Space');await expect(toggle).toBeChecked();
   await expect(page.locator('.sidebar .chat-row')).toHaveCount(8);await expect(page.locator('.sidebar').getByRole('img',{name:'Running elsewhere',exact:true})).toBeVisible();
-  await expect(page.locator('.toggle-track')).toHaveCSS('border-radius','12px');await expect(page.locator('.toggle-track > span')).toHaveCSS('transform','matrix(1, 0, 0, 1, 14, 0)');
+  await expect(page.locator('.toggle-track').first()).toHaveCSS('border-radius','12px');await expect(page.locator('.toggle-track > span').first()).toHaveCSS('transform','matrix(1, 0, 0, 1, 14, 0)');
   await page.screenshot({path:'test-results/screenshots/23-closed-chat-switch.png'});
  }finally{await app.close();}
 });

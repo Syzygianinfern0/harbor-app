@@ -535,12 +535,35 @@ def codex_activity(status):
     if kind == 'idle': return 'idle', ''
     return 'unknown', 'Codex runtime status is unavailable'
 
+def running_background(event):
+    tasks = event.get('background_tasks')
+    return [t for t in tasks if isinstance(t, dict) and t.get('status', 'running') == 'running'] if isinstance(tasks, list) else []
+
+def background_reason(tasks, resumes=True):
+    label = lambda t: str(t.get('description') or t.get('command') or t.get('agent_type') or t.get('type') or 'task').strip().splitlines()[0][:80]
+    names = '; '.join(label(t) for t in tasks[:3]) + (f'; +{len(tasks)-3} more' if len(tasks) > 3 else '')
+    noun = 'task' if resumes else 'terminal'
+    count = f"{len(tasks)} background {noun}{'' if len(tasks) == 1 else 's'}"
+    return (f'{count} running: {names}' if resumes else f'Turn finished; {count} still running: {names}')[:500]
+
+def claude_background_idle(pid):
+    # Background shells are direct children of claude; caffeinate is Claude's own sleep guard.
+    try: rows = subprocess.check_output(['ps', '-A', '-o', 'pid=,ppid=,command='], text=True, timeout=5).splitlines()
+    except (OSError, subprocess.SubprocessError): return False
+    for row in rows:
+        parts = row.split(None, 2)
+        if len(parts) >= 2 and parts[1] == str(pid) and not (len(parts) > 2 and parts[2].split()[0].endswith('caffeinate')): return False
+    return True
+
 def claude_activity(event):
     kind = event.get('hook_event_name')
     activity = {'SessionStart':'idle','UserPromptSubmit':'working','PreToolUse':'working','PostToolUse':'working','PermissionRequest':'attention','Elicitation':'attention','ElicitationResult':'working','Stop':'idle','StopFailure':'error','SessionEnd':'closed'}.get(kind)
     reason = 'Approval requested' if kind == 'PermissionRequest' else 'Input requested' if kind == 'Elicitation' else ''
     if kind == 'PreToolUse' and event.get('tool_name') == 'AskUserQuestion': activity, reason = 'attention', 'Question requires your answer'
     if kind == 'StopFailure': reason = str(event.get('error_details') or event.get('error') or 'Claude could not complete its turn')[:500]
+    if kind == 'Stop':
+        pending = running_background(event)
+        if pending: activity, reason = 'background', background_reason(pending)
     if kind == 'Notification':
         notification = event.get('notification_type')
         if notification == 'permission_prompt': activity, reason = 'attention', 'Approval requested'
@@ -557,7 +580,7 @@ def run(args):
         if stop.is_set(): return
         previous = meta.get('activity'); meta.update(values); meta['updatedAt'] = time.time()
         if values.get('activity') in ('attention','error') and previous != values['activity']: meta['attentionAt'] = time.time()
-        if values.get('activity') == 'idle' and previous == 'working': meta['completedAt'] = time.time()
+        if values.get('activity') == 'idle' and previous in ('working','background'): meta['completedAt'] = time.time()
         atomic(meta_file, meta)
     def shutdown(_signum=None, _frame=None):
         stop.set()
@@ -591,6 +614,11 @@ def run(args):
                         if not records: continue
                         record = next((r for r in records if r['id'] == meta.get('conversationId')), records[0])
                         activity, reason = codex_activity(record.get('status', {}))
+                        if activity == 'idle':
+                            try: terminals = ws.rpc('thread/backgroundTerminals/list', {'threadId': record['id']}).get('data') or []
+                            except (RuntimeError, TimeoutError): terminals = []  # Older Codex without the experimental method.
+                            # Codex does not resume the turn when these exit, so this is "finished, still running" rather than a pending wake-up.
+                            if terminals: activity, reason = 'background', background_reason(terminals, resumes=False)
                         update(hasMessages=bool(record.get('preview')) or bool(meta.get('hasMessages')), conversationId=record['id'], name=title(record.get('name') or record.get('preview')), activity=activity, reason=reason, resumable=bool(args.resume or (record.get('path') and pathlib.Path(record['path']).exists())))
                     except (OSError, ValueError, EOFError, RuntimeError, KeyError): update(activity='unknown', reason='Codex runtime status could not be read')
             threading.Thread(target=monitor, daemon=True).start()
@@ -602,7 +630,14 @@ def run(args):
             help_text = subprocess.check_output(['claude','--help'], text=True, timeout=15) if args.permission_mode == 'standard' else ''
             command = ['claude', '--resume' if args.resume else '--session-id', identity, '--settings', json.dumps(settings)] + permission_args('claude', args.permission_mode, help_text)
             def monitor():
+                quiet_since = None
                 while not stop.wait(2):
+                    # A shell-only wait whose processes are gone (e.g. stopped from Claude's task list) will never produce another hook.
+                    latest = read(meta_file, {})
+                    if latest.get('activity') == 'background' and latest.get('backgroundKinds') == ['shell'] and terminal and claude_background_idle(terminal.pid):
+                        quiet_since = quiet_since or time.time()
+                        if time.time() - quiet_since >= 10: patch_metadata(meta_file, generation, {'activity':'idle','reason':'','completedAt':time.time(),'updatedAt':time.time()}); quiet_since = None
+                    else: quiet_since = None
                     current = live_claude().get(identity, {})
                     records = history('claude', os.getcwd(), identity)
                     record = next((r for r in records if r['conversationId'] == identity), {})
@@ -642,13 +677,16 @@ def hook(chat_id, generation):
         file = ROOT / 'chats' / chat_id / 'metadata.json'; meta = read(file, {})
         if meta.get('generation') != generation: return
         kind = event.get('hook_event_name'); activity, reason = claude_activity(event)
+        # Idle reminders arrive while Claude waits on background work; that wait is still pending.
+        if kind == 'Notification' and activity == 'idle' and meta.get('activity') == 'background': activity, reason = 'background', meta.get('reason', '')
         if activity:
             if activity in ('attention','error'): meta['attentionAt'] = time.time()
             if kind == 'UserPromptSubmit': meta['hasMessages'] = True
-            if kind == 'Stop': meta['completedAt'] = time.time()
+            if kind == 'Stop' and activity == 'idle': meta['completedAt'] = time.time()
+            if activity == 'background': meta['backgroundKinds'] = sorted({str(t.get('type') or 'task') for t in running_background(event)})
             if kind == 'Notification' and activity == 'idle' and not meta.get('completedAt'): meta['completedAt'] = time.time()
             meta.update(activity=activity, conversationId=event.get('session_id') or meta.get('conversationId'), updatedAt=time.time(), reason=reason)
-            patch_metadata(file, generation, {key:meta[key] for key in ('activity','conversationId','updatedAt','reason','attentionAt','completedAt','hasMessages') if key in meta})
+            patch_metadata(file, generation, {key:meta[key] for key in ('activity','conversationId','updatedAt','reason','attentionAt','completedAt','hasMessages','backgroundKinds') if key in meta})
     except Exception: pass
 
 if __name__ == '__main__':

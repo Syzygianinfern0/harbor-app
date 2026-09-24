@@ -1,7 +1,7 @@
 export type Launcher = 'shell' | 'codex' | 'claude' | 'custom';
 export type PermissionMode = 'standard' | 'read-only' | 'accept-edits' | 'plan' | 'full-access';
 export type TabShortcut = number | 'next' | 'previous';
-export type Activity = 'starting' | 'working' | 'attention' | 'idle' | 'closed' | 'error' | 'unknown';
+export type Activity = 'starting' | 'working' | 'attention' | 'background' | 'idle' | 'closed' | 'error' | 'unknown';
 export interface Project { id: string; name: string; cwd: string; hostId?: string; hostLabel: string; connection: Connection; createdAt: string; hidden?: boolean; historyError?: string; note?: string }
 export interface TokenUsage { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; totalTokens: number }
 export interface CostAmount { usd: number; estimated: number; recorded: number; unpriced: number }

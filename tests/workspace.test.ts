@@ -98,4 +98,5 @@ test('chat indicators distinguish completion and never show stale success on dis
  assert.equal(chatActivity({...session,status:'closed'}),'closed');
  assert.equal(chatActivity({...session,status:'closed',externalActive:true}),'external');
  assert.equal(chatActivity({...session,completedAt:undefined}),'idle');
+ assert.equal(chatActivity({...session,activity:'background'}),'background'); // an earlier turn's completion does not mask pending background work
 });
