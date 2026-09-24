@@ -94,9 +94,10 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
     surface.addEventListener('drop', drop);
     terminal.attachCustomKeyEventHandler(event => {
       if (document.querySelector('[aria-modal="true"]')) return false;
-      if (event.key==='Enter' && event.shiftKey && !event.metaKey && !event.ctrlKey && (session.launcher==='codex'||session.launcher==='claude')) {
+      // Agents read modified Enter as CSI u (Shift = newline, Ctrl = distinct Ctrl+Enter); xterm would send a bare CR.
+      if (event.key==='Enter' && event.shiftKey!==event.ctrlKey && !event.metaKey && !event.altKey && (session.launcher==='codex'||session.launcher==='claude')) {
         event.preventDefault();
-        if(event.type==='keydown' && connected) inputQueue=inputQueue.then(()=>window.harbor.input(session.id,'\x1b[13;2u')).catch(err=>reportRef.current(err.message));
+        if(event.type==='keydown' && connected) inputQueue=inputQueue.then(()=>window.harbor.input(session.id,event.ctrlKey?'\x1b[13;5u':'\x1b[13;2u')).catch(err=>reportRef.current(err.message));
         return false;
       }
       if (tabShortcut(event)!==undefined) return false;

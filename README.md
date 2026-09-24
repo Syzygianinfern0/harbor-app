@@ -112,7 +112,7 @@ Release tags use `v<package.json version>` and point to validated commits. Push 
 ### Workspace controls
 
 - Use the refresh icon at the top right (or ⌘R) to discover saved chats across projects and refresh session and host status.
-- Shift+Enter inserts a newline in Codex and Claude; ⌘N followed by Enter starts a chat with the selected defaults. Middle-click a tab to close it, using the same running-session confirmation as its close button.
+- Shift+Enter inserts a newline in Codex and Claude. Ctrl+Enter reaches them as a distinct key (`ESC [13;5u`, as in kitty-protocol terminals) instead of a plain Enter: Claude submits, and Codex ignores it unless bound, e.g. `[tui.keymap.composer] submit = ["enter", "ctrl-enter"]` in `~/.codex/config.toml`. Shell chats still receive a plain carriage return; ⌘N followed by Enter starts a chat with the selected defaults. Middle-click a tab to close it, using the same running-session confirmation as its close button.
 - Preferences opens in a centered, scrollable dialog. Its Projects pane supports drag ordering, visibility, and deletion; save to apply or cancel to discard. Project headings also support drag ordering directly in the sidebar. Deletion removes Harbor's project entry while keeping files, conversations, and running sessions.
 - Shell terminals stay out of the chat sidebar. Closed and disconnected agent chats show a read-only saved-message preview when a transcript is available, with a message count and the last four text messages. Tool records are excluded; preview messages are shortened to 1,200 characters.
 - Agent marks use monochrome OpenAI and Claude silhouettes from Simple Icons, colored by the app theme.

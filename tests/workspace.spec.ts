@@ -99,7 +99,7 @@ test('refresh, keyboard creation, middle close, and dialog project management',a
  }finally{await app.close();}
 });
 
-test('Shift Enter sends a modified newline without submitting for both agents',async()=>{
+test('Shift Enter and Control Enter send distinct modified Enter sequences for both agents',async()=>{
  const data=await fixture();const app=await data.launch();const page=await app.firstWindow();
  try {
   await expect(page.locator('.sidebar .chat-row')).toHaveCount(5);
@@ -111,8 +111,10 @@ test('Shift Enter sends a modified newline without submitting for both agents',a
    await expect(page.locator('.sidebar .chat-row')).toHaveCount(1);await expect(page.locator('.sidebar .chat-row')).toContainText(launcher);
    await page.locator('.sidebar .chat-row').first().click();await expect(page.locator('.connection-label')).toHaveText('Connected');await page.keyboard.press('Shift+Enter');
    await expect.poll(()=>app.evaluate(()=>(globalThis as any).inputs?.at(-1))).toEqual({id:launcher,text:'\x1b[13;2u'});
+   await page.keyboard.press('Control+Enter');
+   await expect.poll(()=>app.evaluate(()=>(globalThis as any).inputs?.at(-1))).toEqual({id:launcher,text:'\x1b[13;5u'});
   }
-  expect(await app.evaluate(()=>(globalThis as any).inputs.length)).toBe(2);
+  expect(await app.evaluate(()=>(globalThis as any).inputs.length)).toBe(4);
  }finally{await app.close();}
 });
 
