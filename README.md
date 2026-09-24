@@ -11,7 +11,7 @@ Use **Add project** to choose a saved host and an existing directory. The direct
 - The **+** beside a project creates a Codex, Claude Code, or Terminal chat in that directory. **⌘ N** uses the selected project.
 - Agent-generated titles appear automatically. **Right-click → Rename chat…** sets a persistent Harbor name that takes precedence over later automatic titles.
 - Right-click a chat to **pin**, **rename**, **close**, **resume**, or **reconnect & resume** it.
-- **Close chat** (⌘ W), including the tab’s **×** and a split pane’s close button, asks for confirmation before stopping a live session, then terminates that chat’s tmux session. The closed chat remains gray in its project. Closing does not delete the agent conversation.
+- **Close chat** (⌘ W), including the tab’s **×** and a split pane’s close button, asks for confirmation before stopping a live session (press Return to confirm, Esc to cancel), then terminates that chat’s tmux session. The closed chat remains gray in its project. Closing does not delete the agent conversation.
 - **Resume chat** creates a new tmux session and resumes the exact saved conversation ID. **Reconnect & resume** first closes the old tmux session, then resumes in a new one.
 - A closed shell reopens as a fresh shell in the project directory; shells don’t have agent conversation history to restore.
 - Conversations with an active writer outside Harbor must be closed there before resuming here. Harbor checks again at resume time.

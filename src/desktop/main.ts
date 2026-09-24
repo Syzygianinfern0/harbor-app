@@ -78,7 +78,7 @@ else {
       if(!session)throw new Error('Chat not found.');
       if(!['closed','exited','missing'].includes(session.status)) {
         confirmingClose=true;
-        try {const choice=await dialog.showMessageBox(window!,{type:'warning',message:`Close “${session.name}”?`,detail:'This will stop its terminal session and any work still running in it.',buttons:['Cancel','Close chat'],defaultId:0,cancelId:0});if(choice.response!==1)return false;}
+        try {const choice=await dialog.showMessageBox(window!,{type:'warning',message:`Close “${session.name}”?`,detail:'This will stop its terminal session and any work still running in it.',buttons:['Cancel','Close chat'],defaultId:1,cancelId:0});if(choice.response!==1)return false;}
         finally{confirmingClose=false;}
       }
       if(session.status!=='closed')await engine.terminate(id);return true;
