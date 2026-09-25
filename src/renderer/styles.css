@@ -270,7 +270,7 @@
 .tab.grouped::after,.tab-group-chip:not(.collapsed)::after,.tab-group-chip.holds-active::after{content:"";position:absolute;left:0;right:-1px;bottom:0;height:2px;background:var(--group-color);pointer-events:none}
 .tab-group-chip::after{border-radius:2px 0 0 2px}
 .tab.grouped.group-end::after{right:0;border-radius:0 2px 2px 0}
-.session-toolbar .tab.narrow{max-width:156px}
+.session-toolbar .tab.narrow{flex-shrink:1;min-width:128px}
 .session-toolbar .tab.compact{min-width:0;padding-right:0}
 .tab.compact>button:first-child{padding:10px 10px 10px 12px;gap:5px}
 .tab.compact .tab-name{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

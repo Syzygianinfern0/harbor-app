@@ -46,14 +46,19 @@ export function TabStrip(props:TabStripProps) {
   const [shrink,setShrink]=useState(0);
   const [edges,setEdges]=useState<{left:Edge;right:Edge}>({left:noEdge,right:noEdge});
 
-  // Shrink inactive tabs one step at a time until they fit: narrow names, then icons outside the current group, then all icons.
+  // Inactive tabs keep their names and flex down to fill the strip; while that still overflows,
+  // they become icons one at a time: other groups before the current one, farthest from the active tab first.
+  const shown=segments.flatMap(s=>s.kind==='tab'?[s.id]:isCollapsed(groups,s.key,selectedKey)?(selected&&s.tabs.includes(selected)?[selected]:[]):s.tabs);
+  const at=selected?shown.indexOf(selected):-1;
+  const iconOrder=shown.filter(id=>id!==selected).sort((a,b)=>Number(keyOf.get(b)!==selectedKey)-Number(keyOf.get(a)!==selectedKey)||Math.abs(shown.indexOf(b)-at)-Math.abs(shown.indexOf(a)-at));
   const fitKey=JSON.stringify([width,groups.shrink,selected,segments.map(s=>s.kind==='tab'?s.id:[s.key,isCollapsed(groups,s.key,selectedKey),s.tabs.map(id=>byId.get(id)?.name)]),tabs.map(id=>byId.get(id)?.name)]);
   const fitted=useRef('');
   useLayoutEffect(()=>{
     const el=strip.current;if(!el)return;
     if(fitted.current!==fitKey){fitted.current=fitKey;if(shrink!==0){setShrink(0);return;}}
-    if(groups.shrink&&shrink<3&&layoutWidth(el)>el.clientWidth+1)setShrink(shrink+1);
+    if(groups.shrink&&shrink<iconOrder.length&&layoutWidth(el)>el.clientWidth+1)setShrink(shrink+1);
   },[fitKey,shrink,groups.shrink]);
+  const icons=new Set(iconOrder.slice(0,shrink));
   useEffect(()=>{const el=strip.current;if(!el)return;const observer=new ResizeObserver(()=>setWidth(Math.round(el.clientWidth)));observer.observe(el);return()=>observer.disconnect();},[]);
 
   // Count what's off either edge, so a chat needing input is never both hidden and silent.
@@ -121,7 +126,7 @@ export function TabStrip(props:TabStripProps) {
   };
   const tab=(id:string,color?:string,end=false)=>{
     const s=byId.get(id)!;const active=id===selected;const activity=chatActivity(s);
-    const size=active||!groups.shrink?'':shrink>=3||(shrink===2&&keyOf.get(id)!==selectedKey)?'compact':shrink>=1?'narrow':'';
+    const size=active||!groups.shrink?'':icons.has(id)?'compact':'narrow';
     return <div key={id} data-tab-id={id} data-attention={activity==='attention'?id:undefined} title={size==='compact'?`${s.name}\n${activityLabel[activity]}`:undefined}
       style={{'--tab-color':color??(s.projectId&&groups.projectColors[s.projectId])??GROUP_COLORS[0].value,...(color?{'--group-color':color}:{})} as CSSProperties}
       onMouseDown={event=>{if(event.button===1)event.preventDefault();}} onAuxClick={event=>{if(event.button===1){event.preventDefault();props.onClose(s);}}}

@@ -162,6 +162,8 @@ test('turning shrink on mid-animation fits tabs as tightly as a click would, not
     await toggle();
     await expect(page.locator('[data-tab-id="c1"]')).toHaveClass(/\bnarrow\b/);await expect(page.locator('[data-tab-id="a1"]')).toHaveClass(/\bcompact\b/);
     await page.waitForTimeout(400);await expect(page.locator('[data-tab-id="c1"]')).toHaveClass(/\bnarrow\b/);
+    // Named tabs flex to fill the strip: no gap after the + button and no overflow.
+    expect(await page.locator('.session-toolbar .tab-strip').evaluate(e=>{const add=e.querySelector('.tab-add')!.getBoundingClientRect();return [Math.round(e.getBoundingClientRect().right-add.right),e.scrollWidth-e.clientWidth];})).toEqual([0,0]);
     await mkdir('test-results/screenshots',{recursive:true});await page.screenshot({path:'test-results/screenshots/36-shrink-toggle-fit.png'});
   } finally {await app.close();}
 });
