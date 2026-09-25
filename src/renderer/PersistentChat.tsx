@@ -1,10 +1,12 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { reducedMotion } from './useTabMotion';
 
 // A stable portal keeps xterm's buffer, connection and viewport alive when a
 // tab is hidden or its pane moves elsewhere in the split tree.
 export function PersistentChat({ id, placement, onFocus, children }: { id: string; placement: unknown; onFocus: () => void; children: ReactNode }) {
   const scrollPositions = useRef(new Map<Element, {top:number; left:number}>());
+  const shownIn = useRef<HTMLElement | null>(null);
   const [surface] = useState(() => {
     const node = document.createElement('div');
     node.className = 'chat-surface';
@@ -29,11 +31,14 @@ export function PersistentChat({ id, placement, onFocus, children }: { id: strin
     const slot = Array.from(document.querySelectorAll<HTMLElement>('[data-chat-slot]')).find(node => node.dataset.chatSlot === id);
     if (slot) {
       slot.appendChild(surface);
+      // Fade in when the chat arrives in a pane, not when the layout merely re-renders around it.
+      if (slot !== shownIn.current && !reducedMotion()) surface.animate([{opacity: .35}, {opacity: 1}], {duration: 140, easing: 'cubic-bezier(.2,0,0,1)'});
       for (const [node, position] of scrollPositions.current) {
         if (surface.contains(node)) { node.scrollTop = position.top; node.scrollLeft = position.left; }
         else scrollPositions.current.delete(node);
       }
     }
+    shownIn.current = slot ?? null;
     return () => {
       // Capture synchronously too: a tab shortcut can arrive before the browser
       // dispatches its pending scroll event.

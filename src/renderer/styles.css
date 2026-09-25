@@ -350,3 +350,9 @@
 .group-card-chat{display:flex;align-items:center;gap:8px;width:100%;padding:8px;border-radius:6px;text-align:left;font-size:11.5px;color:#b2becb}
 .group-card-chat:hover{background:#222731;color:#eef3f1}
 .group-card-chat .chat-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Brief arrival motion for the main area (tab strip motion lives in useTabMotion). */
+@keyframes harbor-arrive{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.groups-overview{animation:harbor-arrive .16s cubic-bezier(.2,0,0,1)}
+@keyframes harbor-fade{from{opacity:.35}to{opacity:1}}
+.pane-workspace{animation:harbor-fade .14s cubic-bezier(.2,0,0,1)}
+@media (prefers-reduced-motion:reduce){.groups-overview,.pane-workspace{animation:none}}

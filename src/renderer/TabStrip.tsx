@@ -5,6 +5,7 @@ import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon } from './ChatStatusIcon';
 import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
 import { reorderTabs } from '../shared/panes';
+import { useTabMotion } from './useTabMotion';
 import { addToGroup, arrangeTabs, groupEntry, groupTabs, isCollapsed, layoutTabs, removeFromGroups, rollup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
 
 export interface GroupInfo { key:string; name:string; color:string; kind:'project'|'custom'; detail?:string }
@@ -32,6 +33,7 @@ export function TabStrip(props:TabStripProps) {
   const {segments,keyOf}=layoutTabs(tabs,groups,id=>byId.get(id)?.projectId,props.projects.map(p=>p.id));
   const selectedKey=selected?keyOf.get(selected):undefined;
   const strip=useRef<HTMLDivElement>(null);
+  useTabMotion(strip);
   const [width,setWidth]=useState(0);
   const [shrink,setShrink]=useState(0);
   const [edges,setEdges]=useState<{left:Edge;right:Edge}>({left:noEdge,right:noEdge});
