@@ -10,6 +10,7 @@ import type { Preferences, Session } from '../shared/types';
 import '@xterm/xterm/css/xterm.css';
 import { terminalColors } from '../shared/terminalTheme';
 import { osc52Text } from '../shared/osc52';
+import { measureGlyphsExactly } from './terminalGlyphs';
 
 export function TerminalPane({ session, onClose, onReconnect, report, preferences, reconnectKey = 0, showHeader = false, active = true }: { session: Session; onClose?: () => void; onReconnect?: () => void; report: (message: string) => void; preferences: Preferences['terminal']; reconnectKey?: number; showHeader?: boolean; active?: boolean }) {
   const activeRef=useRef(active);activeRef.current=active;
@@ -36,7 +37,7 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate, linkHandler));
     // OSC 52 writes (Claude Code /copy over SSH; local copies use pbcopy) go to the Mac clipboard. Queries are swallowed.
     terminal.parser.registerOscHandler(52, data => { const { text, error } = osc52Text(data); if (text !== undefined) void window.harbor.copyText(text).catch(err => reportRef.current(err.message)); else if (error) reportRef.current(error); return true; });
-    terminal.open(element.current!); fit.fit();
+    terminal.open(element.current!); measureGlyphsExactly(terminal); fit.fit();
     let disposed = false; let connected = false; let connecting = false; let attempts = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const retry = () => {
