@@ -151,6 +151,21 @@ test('tabs shrink step by step before scrolling, and edge markers report hidden 
   } finally {await app.close();}
 });
 
+test('turning shrink on mid-animation fits tabs as tightly as a click would, not tighter',async()=>{
+  const data=await fixture();const app=await data.launch();const page=await app.firstWindow();
+  try {
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1450,700));
+    for(const [,,name] of CHATS)await openChat(page,name);
+    const toggle=async()=>{await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.locator('.groups-menu label',{hasText:'Shrink tabs'}).click();await page.keyboard.press('Escape');};
+    await toggle();await expect(page.locator('.tab.compact,.tab.narrow')).toHaveCount(0);
+    // Sliding tabs still sit at their wide positions; the fit must ignore that and keep the active group's names.
+    await toggle();
+    await expect(page.locator('[data-tab-id="c1"]')).toHaveClass(/\bnarrow\b/);await expect(page.locator('[data-tab-id="a1"]')).toHaveClass(/\bcompact\b/);
+    await page.waitForTimeout(400);await expect(page.locator('[data-tab-id="c1"]')).toHaveClass(/\bnarrow\b/);
+    await mkdir('test-results/screenshots',{recursive:true});await page.screenshot({path:'test-results/screenshots/36-shrink-toggle-fit.png'});
+  } finally {await app.close();}
+});
+
 test('folding takes the group split with it, unfold undoes it, and folding everything shows the overview',async()=>{
   const data=await fixture();const app=await data.launch();const page=await app.firstWindow();
   try {

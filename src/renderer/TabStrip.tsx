@@ -17,6 +17,14 @@ export function groupInfo(key:string,groups:TabGroups,projects:Project[]):GroupI
 const CHAT='application/x-harbor-chat',GROUP='application/x-harbor-group';
 type Edge={count:number;attention:number;target?:string};
 const noEdge:Edge={count:0,attention:0};
+// Width the strip's content needs at rest. scrollWidth also counts in-flight FLIP
+// transforms and exit ghosts, which would make the fit loop over-shrink.
+const layoutWidth=(el:HTMLElement)=>{
+  const items=Array.from(el.children as HTMLCollectionOf<HTMLElement>).filter(c=>!c.classList.contains('motion-ghost'));
+  if(!items.length)return 0;
+  const first=items[0],last=items[items.length-1],css=getComputedStyle(el);
+  return last.offsetLeft+last.offsetWidth+parseFloat(getComputedStyle(last).marginRight)-first.offsetLeft+parseFloat(getComputedStyle(first).marginLeft)+parseFloat(css.paddingLeft)+parseFloat(css.paddingRight);
+};
 
 export interface TabStripProps {
   tabs:string[]; sessions:Session[]; projects:Project[]; groups:TabGroups; selected?:string; selection:Set<string>; busy?:string; dragging?:string;
@@ -44,7 +52,7 @@ export function TabStrip(props:TabStripProps) {
   useLayoutEffect(()=>{
     const el=strip.current;if(!el)return;
     if(fitted.current!==fitKey){fitted.current=fitKey;if(shrink!==0){setShrink(0);return;}}
-    if(groups.shrink&&shrink<3&&el.scrollWidth>el.clientWidth+1)setShrink(shrink+1);
+    if(groups.shrink&&shrink<3&&layoutWidth(el)>el.clientWidth+1)setShrink(shrink+1);
   },[fitKey,shrink,groups.shrink]);
   useEffect(()=>{const el=strip.current;if(!el)return;const observer=new ResizeObserver(()=>setWidth(Math.round(el.clientWidth)));observer.observe(el);return()=>observer.disconnect();},[]);
 
