@@ -186,7 +186,8 @@
 .chat-activity.starting { color:#91b5ed; }
 .chat-activity.completed,.chat-activity.working { color:#a9e4cc; }
 .chat-activity.error { color:#f18989; }
-.chat-activity.idle,.chat-activity.closed { color:#8492a2; }
+.chat-activity.idle { color:#8492a2; }
+.chat-activity.closed { min-height:14px; }
 .chat-activity.unknown { color:#a1adbd; opacity:1; }
 .chat-activity.external { color:#91b5ed; }
 .chat-activity.background { color:#c0aef0; }
