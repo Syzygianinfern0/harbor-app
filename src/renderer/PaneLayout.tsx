@@ -3,13 +3,14 @@ import { X, GripVertical } from 'lucide-react';
 import type { PaneNode, DropSide } from '../shared/panes';
 import type { Session } from '../shared/types';
 import { ResizeHandle } from './ResizeHandle';
+import { useDropCue } from './useDropCue';
 export interface PaneLayoutProps {
  node:PaneNode;sessions:Session[];selected?:string;dragging?:string;multiple:boolean;
  onFocus:(id:string)=>void;onDrop:(target:string,id:string,side:DropSide)=>void;onResize:(id:string,ratio:number)=>void;onRemove:(id:string)=>void;
  onDragStart:(event:DragEvent,id:string)=>void;onDragEnd:()=>void;render:(session:Session)=>ReactNode;
 }
 export function PaneLayout(props:PaneLayoutProps) {
- const {node}=props;const container=useRef<HTMLDivElement>(null);
+ const {node}=props;const container=useRef<HTMLDivElement>(null);const {cue,show,leave}=useDropCue<never,DropSide>();
  if(node.kind==='split') {
   const resize=(delta:number)=>{const bounds=container.current?.getBoundingClientRect();if(bounds)props.onResize(node.id,node.ratio+delta/(node.axis==='horizontal'?bounds.width:bounds.height));};
   return <div ref={container} className={`pane-split ${node.axis}`} data-split-id={node.id} style={node.axis==='horizontal'?{gridTemplateColumns:`minmax(0,${node.ratio}fr) 5px minmax(0,${1-node.ratio}fr)`}:{gridTemplateRows:`minmax(0,${node.ratio}fr) 5px minmax(0,${1-node.ratio}fr)`}}>
@@ -17,9 +18,9 @@ export function PaneLayout(props:PaneLayoutProps) {
   </div>;
  }
  const session=props.sessions.find(s=>s.id===node.sessionId);if(!session)return null;
- return <div className={`workspace-pane ${props.selected===session.id?'focused':''}`} data-session-id={session.id} onPointerDown={()=>props.onFocus(session.id)} onFocusCapture={()=>props.onFocus(session.id)}>
+ return <div className={`workspace-pane ${props.selected===session.id?'focused':''} ${props.dragging===session.id?'drag-source':''}`} data-session-id={session.id} onPointerDown={()=>props.onFocus(session.id)} onFocusCapture={()=>props.onFocus(session.id)}>
   {props.multiple&&<div className="pane-heading" draggable onDragStart={e=>props.onDragStart(e,session.id)} onDragEnd={props.onDragEnd}><GripVertical size={12}/><span>{session.name}</span><button className="icon-button" aria-label={`Close pane ${session.name}`} title="Remove pane from layout; keep chat open" onClick={e=>{e.stopPropagation();props.onRemove(session.id);}}><X size={13}/></button></div>}
   {props.render(session)}
-  {props.dragging&&props.dragging!==session.id&&<div className="pane-drop-targets">{(['left','right','top','bottom','center'] as const).map(side=><div key={side} className={`pane-drop-zone ${side}`} data-drop-side={side} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';e.currentTarget.classList.add('over');}} onDragLeave={e=>e.currentTarget.classList.remove('over')} onDrop={e=>{e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('application/x-harbor-chat');if(id)props.onDrop(session.id,id,side);props.onDragEnd();}}>{side==='center'?'Move here':`Split ${side}`}</div>)}</div>}
+  {props.dragging&&props.dragging!==session.id&&<div className={`pane-drop-targets ${cue?'has-cue':''}`}>{(['left','right','top','bottom','center'] as const).map(side=><div key={side} className={`pane-drop-zone ${side} ${cue===side?'over':''}`} data-drop-side={side} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';show(side);}} onDragLeave={e=>leave(e,c=>c===side)} onDrop={e=>{e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('application/x-harbor-chat');if(id)props.onDrop(session.id,id,side);props.onDragEnd();}}>{side==='center'?'Move here':`Split ${side}`}</div>)}{cue&&<div className={`pane-drop-preview ${cue}`} aria-hidden="true"/>}</div>}
  </div>;
 }

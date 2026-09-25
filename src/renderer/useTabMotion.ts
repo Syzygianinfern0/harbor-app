@@ -41,7 +41,7 @@ export function useTabMotion(strip:RefObject<HTMLElement|null>) {
         ghost.removeAttribute('data-tab-id');ghost.removeAttribute('data-group-key');ghost.removeAttribute('data-attention');
         ghost.setAttribute('aria-hidden','true');ghost.inert=true;
         // Selection moves at once; only the shape fades.
-        ghost.classList.remove('active','multi-selected','dragging');ghost.querySelectorAll('.tab-flare').forEach(f=>f.remove());ghost.classList.add('motion-ghost');
+        ghost.classList.remove('active','multi-selected','dragging','drag-source','drop-into');ghost.querySelectorAll('.tab-flare').forEach(f=>f.remove());ghost.classList.add('motion-ghost');
         Object.assign(ghost.style,{position:'absolute',left:`${rect.left-origin.left}px`,top:`${rect.top-origin.top}px`,width:`${rect.width}px`,height:`${rect.height}px`,margin:'0',pointerEvents:'none'});
         root.appendChild(ghost);ghosts.push(ghost);
         const exit=ghost.animate([{opacity:1,transform:'none'},{opacity:0,transform:'scale(.92)'}],{duration:EXIT,easing:EASE,fill:'forwards'});
