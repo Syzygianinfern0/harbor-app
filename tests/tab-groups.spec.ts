@@ -35,6 +35,8 @@ test('project and custom tab groups fold, report status, persist, and link to th
     expect(await tabOrder(page)).toEqual(['a1','a2','b1','b2','c1']);
     await expect(page.locator('.sidebar .chat-row.open-tab')).toHaveCount(5);
     await expect(page.locator('.sidebar .chat-row.open-tab',{hasText:'Release notes'})).toHaveCount(0);
+    // Tabs, their buttons, chips and sidebar rows all keep the standard arrow cursor.
+    for(const target of [page.locator('[data-tab-id="a1"]'),page.locator('[data-tab-id="a1"] > button').first(),page.locator('[data-tab-id="a1"] .tab-close'),page.locator('[data-group-key="p:app"]'),page.locator('.sidebar .chat-row').first()])await expect(target).toHaveCSS('cursor','default');
 
     // Folding the viewed group puts it away: the view moves to the most recently used chat still shown.
     const api=page.getByRole('button',{name:/^tessera-api group/});
