@@ -9,6 +9,7 @@ import { RefreshCw, TerminalSquare, X } from 'lucide-react';
 import type { Preferences, Session } from '../shared/types';
 import '@xterm/xterm/css/xterm.css';
 import { terminalColors } from '../shared/terminalTheme';
+import { osc52Text } from '../shared/osc52';
 
 export function TerminalPane({ session, onClose, onReconnect, report, preferences, reconnectKey = 0, showHeader = false, active = true }: { session: Session; onClose?: () => void; onReconnect?: () => void; report: (message: string) => void; preferences: Preferences['terminal']; reconnectKey?: number; showHeader?: boolean; active?: boolean }) {
   const activeRef=useRef(active);activeRef.current=active;
@@ -33,6 +34,8 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
     const terminal = new Terminal({ linkHandler, cursorBlink: preferences.cursorBlink, cursorStyle: 'bar', fontFamily: preferences.fontFamily, fontSize: preferences.fontSize, lineHeight: 1.2, scrollback: 10000, allowProposedApi: false, theme: { ...terminalColors, cursor: '#8ce0bf', selectionBackground: '#334a49', black: '#232731', red: '#f18989', green: '#9bd9ac', yellow: '#e4ca88', blue: '#91b5ed', magenta: '#c4a8e2', cyan: '#88d5d7', white: '#e3e7ef', brightBlack: '#697487', brightRed: '#ffacac', brightGreen: '#b7f0c5', brightYellow: '#f6dca0', brightBlue: '#b7d1fa', brightMagenta: '#e2c6fb', brightCyan: '#a6edf0', brightWhite: '#ffffff' } });
     const fit = new FitAddon(); terminal.loadAddon(fit); terminalRef.current = terminal; fitRef.current = fit;
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate, linkHandler));
+    // OSC 52 writes (Claude Code /copy over SSH; local copies use pbcopy) go to the Mac clipboard. Queries are swallowed.
+    terminal.parser.registerOscHandler(52, data => { const { text, error } = osc52Text(data); if (text !== undefined) void window.harbor.copyText(text).catch(err => reportRef.current(err.message)); else if (error) reportRef.current(error); return true; });
     terminal.open(element.current!); fit.fit();
     let disposed = false; let connected = false; let connecting = false; let attempts = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
