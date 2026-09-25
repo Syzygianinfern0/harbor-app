@@ -170,5 +170,11 @@ test('folding takes the group split with it, unfold undoes it, and folding every
     await overview.locator('.group-card-chat',{hasText:'Rate limiter'}).click();
     await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');await expect(page.getByRole('button',{name:/^tessera-api group/})).toHaveAttribute('aria-expanded','true');
     await expect(page.getByRole('button',{name:/^Agent-Manager group/})).toHaveAttribute('aria-expanded','false');
+    // Focus mode: folding the open group (or Collapse all) shows the overview; a chip then opens its group with its split.
+    await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.locator('.groups-menu label',{hasText:'Focus mode'}).click();await page.keyboard.press('Escape');
+    await page.getByRole('button',{name:/^tessera-api group/}).click();await expect(overview).toBeVisible();await expect(page.locator('.workspace-pane')).toHaveCount(0);
+    await page.getByRole('button',{name:/^Agent-Manager group/}).click();await expect(overview).toHaveCount(0);await expect(page.locator('.workspace-pane')).toHaveCount(2);
+    await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.getByRole('menuitem',{name:'Collapse all groups'}).click();await expect(overview).toBeVisible();
+    await overview.locator('.group-card-chat',{hasText:'Rate limiter'}).click();await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');expect(await tabOrder(page)).toEqual(['b1']);
   } finally {await app.close();}
 });

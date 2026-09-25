@@ -128,7 +128,8 @@ export function TabStrip(props:TabStripProps) {
     const members=ids.map(id=>byId.get(id)!);const summary=folded?rollup(members,s=>chatActivity(s)):undefined;
     const hidden=members.filter(s=>s.id!==selected);
     const toggle=()=>{
-      if(groups.focus){if(key!==selectedKey){const entry=byId.get(groupEntry(groups,segments,key));if(entry)props.onOpen(entry);}return;}
+      // Focus mode: a chip switches groups; the open group's label folds it (showing the overview).
+      if(groups.focus&&selected&&key!==selectedKey){const entry=byId.get(groupEntry(groups,segments,key));if(entry)props.onOpen(entry);return;}
       props.onToggleGroup(key);
     };
     const label=`${info.name} group, ${ids.length} ${ids.length===1?'chat':'chats'}${summary?`, ${activityLabel[summary.activity as ChatStatus].toLowerCase()}`:''}`;
@@ -136,7 +137,7 @@ export function TabStrip(props:TabStripProps) {
       className={`tab-group-chip ${folded?'collapsed':''} ${folded&&holds?'holds-active':''}`} style={{'--group-color':info.color} as CSSProperties}
       draggable onDragStart={event=>{event.dataTransfer.setData(GROUP,key);event.dataTransfer.effectAllowed='move';}} onDragOver={accepts} onDrop={event=>dropOnChip(event,key)}
       onContextMenu={event=>{event.preventDefault();event.stopPropagation();props.onGroupMenu(key,event.clientX,event.clientY);}}>
-      <span className="chip-pill"><button className="chip-label" aria-expanded={!folded} aria-label={label} title={`${info.name}${info.detail?` · ${info.detail}`:''} · ${ids.length} ${ids.length===1?'chat':'chats'}\n${groups.focus?(key===selectedKey?'Open group':'Switch to this group'):folded?'Click to expand':'Click to collapse'} · right-click for options`} onClick={toggle}>
+      <span className="chip-pill"><button className="chip-label" aria-expanded={!folded} aria-label={label} title={`${info.name}${info.detail?` · ${info.detail}`:''} · ${ids.length} ${ids.length===1?'chat':'chats'}\n${groups.focus&&selected?(key===selectedKey?'Click to collapse':'Switch to this group'):folded?'Click to expand':'Click to collapse'} · right-click for options`} onClick={toggle}>
         <span className="chip-name">{info.name}</span>{folded&&<span className="chip-count" aria-hidden="true">{ids.length}</span>}
       </button>
       {summary&&<button className="chip-rollup" aria-label={`Open ${summary.item.name}: ${activityLabel[summary.activity as ChatStatus]}`} title={`${activityLabel[summary.activity as ChatStatus]}: ${summary.item.name}${summary.count>1?` (+${summary.count-1} more)`:''}\nClick to open`} onClick={()=>props.onOpen(summary.item)}><StatusIcon activity={summary.activity as ChatStatus}/></button>}</span>

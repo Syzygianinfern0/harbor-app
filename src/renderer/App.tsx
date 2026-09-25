@@ -167,8 +167,9 @@ export function App() {
   const foldMemory=useRef<{keys:string;before:PaneNode|null;after:PaneNode|null;selected?:string}>(undefined);
   const savedSplits=useRef<Record<string,PaneNode>>({});
   const foldGroups=(requested:string[])=>{
-    const keys=requested.filter(k=>!isCollapsed(groups,k,selectedKey));if(!keys.length||groups.focus)return;
-    const next=keys.reduce((g,k)=>setGroupCollapsed(g,k,true),groups);
+    // In focus mode only the open group can fold; its stored fold flag is left alone.
+    const keys=requested.filter(k=>!isCollapsed(groups,k,selectedKey));if(!keys.length)return;
+    const next=groups.focus?groups:keys.reduce((g,k)=>setGroupCollapsed(g,k,true),groups);
     const hidden=keys.flatMap(k=>groupTabs(tabLayout.segments,k));
     for(const k of keys){const split=splitFor(layout,groupTabs(tabLayout.segments,k));if(split)savedSplits.current[k]=split;}
     const shown=stripTabs(layoutTabs(openTabs,next,projectOf,projects.map(p=>p.id)).segments,next,undefined);
@@ -178,7 +179,8 @@ export function App() {
   };
   const unfoldGroups=(requested:string[])=>{
     const keys=requested.filter(k=>isCollapsed(groups,k,selectedKey));if(!keys.length)return;
-    setGroups(v=>keys.reduce((g,k)=>setGroupCollapsed(g,k,false),v));
+    if(!groups.focus)setGroups(v=>keys.reduce((g,k)=>setGroupCollapsed(g,k,false),v));
+    else if(current){const entry=sessions.find(s=>s.id===groupEntry(groups,tabLayout.segments,keys[0]));if(entry)open(entry);return;}
     const memory=foldMemory.current;foldMemory.current=undefined;
     // Unfolding right after folding is an exact undo.
     if(memory&&memory.keys===JSON.stringify([...keys].sort())&&JSON.stringify(memory.after)===JSON.stringify(layout)&&paneIds(memory.before).every(id=>openTabs.includes(id))){setLayout(memory.before);setSelected(memory.selected);return;}
@@ -191,7 +193,7 @@ export function App() {
   const toggleGroup=(key:string)=>isCollapsed(groups,key,selectedKey)?unfoldGroups([key]):foldGroups([key]);
   // Opening a chat from a folded group (sidebar, bell, ⌘J) unfolds that group.
   useEffect(()=>{if(!selected||groups.focus)return;const key=tabLayout.keyOf.get(selected);if(key&&isCollapsed(groups,key,key))setGroups(v=>setGroupCollapsed(v,key,false));},[selected]);
-  const openGroup=(key:string)=>{if(!groups.focus)setGroups(v=>setGroupCollapsed(v,key,false));const entry=sessions.find(s=>s.id===groupEntry(groups,tabLayout.segments,key));if(entry)open(entry);};
+  const openGroup=(key:string)=>{if(!current&&isCollapsed(groups,key,selectedKey)){unfoldGroups([key]);return;}if(!groups.focus)setGroups(v=>setGroupCollapsed(v,key,false));const entry=sessions.find(s=>s.id===groupEntry(groups,tabLayout.segments,key));if(entry)open(entry);};
   const makeGroup=(ids:string[])=>{
     if(!ids.length)return;const shownProjects=groupKeys(tabLayout.segments).filter(k=>k.startsWith('p:')).map(k=>groups.projectColors[k.slice(2)]).filter(Boolean);
     const created=createGroup(groups,ids,shownProjects);setGroups(created.state);setSelection(new Set());setContext(undefined);pendingRename.current=`g:${created.id}`;
@@ -257,7 +259,7 @@ export function App() {
           <div className="popover-title">TAB GROUPS</div>
           {([['byProject','Group tabs by project','⌘ ⇧ G'],['focus','Focus mode: one group open',''],['shrink','Shrink tabs before scrolling','']] as const).map(([key,label,keys])=><label key={key} className="hide-closed-toggle menu-toggle"><span>{label}{keys&&<kbd>{keys}</kbd>}</span><input type="checkbox" role="switch" checked={groups[key]} onChange={event=>setGroups(v=>({...v,[key]:event.target.checked}))}/><span className="toggle-track" aria-hidden="true"><span/></span></label>)}
           <hr/>
-          <button role="menuitem" disabled={groups.focus||!groupKeys(tabLayout.segments).length} onClick={()=>{foldGroups(groupKeys(tabLayout.segments));setGroupsMenu(false);}}>Collapse all groups</button>
+          <button role="menuitem" disabled={!groupKeys(tabLayout.segments).length||(groups.focus&&!selectedKey)} onClick={()=>{foldGroups(groupKeys(tabLayout.segments));setGroupsMenu(false);}}>Collapse all groups</button>
           <button role="menuitem" disabled={groups.focus||!groupKeys(tabLayout.segments).length} onClick={()=>{unfoldGroups(groupKeys(tabLayout.segments));setGroupsMenu(false);}}>Expand all groups</button>
           <button role="menuitem" disabled={!selection.size&&!selected} onClick={()=>{setGroupsMenu(false);makeGroup(selection.size?[...selection]:[selected!]);}}><span>{selection.size>1?`Group ${selection.size} selected tabs`:'Group current tab'}</span><kbd>⌘ G</kbd></button>
         </div>}</div>{current&&<><div className="popover-anchor"><button className="icon-button" aria-label="Split view" title="Split view" onClick={()=>setSplitMenu(v=>!v)}><Columns2 size={16}/></button>{splitMenu&&<div className="popover split-picker">{sessions.filter(s=>s.id!==current.id&&visibleChat(s)).map(s=><button key={s.id} onClick={()=>drop(current.id,s.id,'right')}><AgentIcon launcher={s.launcher}/>{s.name}</button>)}</div>}</div><div className="popover-anchor"><button className="icon-button" aria-label="Chat actions" onClick={()=>setMenu(v=>!v)}><MoreHorizontal size={19}/></button>{menu&&<div className="popover actions-menu" role="menu">{chatMenu(current)}</div>}</div></>}{refreshButton}</div></div><h1 className="sr-only">{current?.name??'Open chats'}</h1>
@@ -275,6 +277,7 @@ export function App() {
       <div className="popover-title">{custom?'CUSTOM GROUP':`PROJECT${info.detail?` · ${info.detail}`:''}`}</div>
       {custom&&<input className="group-rename" aria-label="Group name" defaultValue={custom.name} maxLength={60} autoFocus={context.rename} onFocus={event=>event.currentTarget.select()} onKeyDown={event=>{if(event.key==='Enter'){setGroups(v=>updateGroup(v,custom.id,{name:event.currentTarget.value}));setContext(undefined);}}} onBlur={event=>{const name=event.currentTarget.value;setGroups(v=>updateGroup(v,custom.id,{name}));}}/>}
       {colorSwatches('Group color',info.color,value=>setGroups(v=>custom?updateGroup(v,custom.id,{color:value}):{...v,projectColors:{...v.projectColors,[key.slice(2)]:value}}))}
+      {groups.focus&&key===selectedKey&&<><hr/><button role="menuitem" onClick={()=>{foldGroups([key]);setContext(undefined);}}>Collapse group</button></>}
       {!groups.focus&&<><hr/><button role="menuitem" onClick={()=>{toggleGroup(key);setContext(undefined);}}>{folded?'Expand group':'Collapse group'}</button>
       <button role="menuitem" onClick={()=>{foldGroups(groupKeys(tabLayout.segments).filter(k=>k!==key));setContext(undefined);}}>Collapse other groups</button></>}
       {custom&&<><hr/><button role="menuitem" onClick={()=>{setGroups(v=>ungroup(v,custom.id));setContext(undefined);}}>Ungroup</button></>}
