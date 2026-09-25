@@ -1,4 +1,5 @@
 import { ChatPreviewPanel } from './ChatPreviewPanel';
+import { TerminalSearch } from './TerminalSearch';
 import { groupShortcut, tabShortcut } from '../shared/shortcuts';
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
@@ -137,6 +138,7 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
     {showHeader ? <div className="terminal-bar"><span className={`status-dot ${state === 'Connected' ? session.status : 'checking'}`} /><TerminalSquare size={14} /><strong>{session.name}</strong><span className="terminal-host">{session.host === 'local' ? 'This Mac' : session.host}</span><div className="spacer" /><span className="connection-label">{state}</span><button className="icon-button" aria-label={`Reconnect ${session.name}`} title="Reconnect terminal" onClick={() => onReconnect ? onReconnect() : reconnect.current()}><RefreshCw size={14} /></button>{onClose && <button className="icon-button" aria-label="Close split" onClick={onClose}><X size={15} /></button>}</div> : <span className="sr-only connection-label">{state}</span>}
     {error && <div className="connection-error"><span>{error}</span><button onClick={() => onReconnect ? onReconnect() : reconnect.current()}>Reconnect</button></div>}
     {error&&<div className="disconnected-preview"><ChatPreviewPanel session={session} version={reconnectKey}/></div>}
+    <TerminalSearch terminal={terminalRef} surface={element} />
     <div className="terminal-surface" ref={element} />
   </section>;
 }
