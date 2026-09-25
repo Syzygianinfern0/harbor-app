@@ -4,9 +4,10 @@ import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon } from './ChatStatusIcon';
 import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
-import { reorderTabs } from '../shared/panes';
+import { dropSide, planStripDrop, type StripSource } from '../shared/dropCue';
+import { useDropCue } from './useDropCue';
 import { useTabMotion } from './useTabMotion';
-import { addToGroup, arrangeTabs, groupEntry, groupTabs, isCollapsed, layoutTabs, removeFromGroups, rollup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
+import { groupEntry, isCollapsed, layoutTabs, rollup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
 
 export interface GroupInfo { key:string; name:string; color:string; kind:'project'|'custom'; detail?:string }
 export function groupInfo(key:string,groups:TabGroups,projects:Project[]):GroupInfo {
@@ -40,6 +41,7 @@ export function TabStrip(props:TabStripProps) {
   const tabs=props.tabs.filter(id=>byId.has(id));
   const {segments,keyOf}=layoutTabs(tabs,groups,id=>byId.get(id)?.projectId,props.projects.map(p=>p.id));
   const selectedKey=selected?keyOf.get(selected):undefined;
+  const stripState={tabs,groups,projectOf:(id:string)=>byId.get(id)?.projectId,projectOrder:props.projects.map(p=>p.id)};
   const strip=useRef<HTMLDivElement>(null);
   useTabMotion(strip);
   const [width,setWidth]=useState(0);
@@ -81,41 +83,44 @@ export function TabStrip(props:TabStripProps) {
     if(item)item.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});else el.scrollBy({left:(side==='left'?-1:1)*el.clientWidth*.7,behavior:'smooth'});
   };
 
-  const accepts=(event:DragEvent)=>{const types=event.dataTransfer.types;if(types.includes(CHAT)||types.includes(GROUP)){event.preventDefault();event.dataTransfer.dropEffect='move';}};
-  const arranged=arrangeTabs(segments);
-  const moveBlock=(key:string,target:{tab?:string;key?:string},after:boolean)=>{
-    const block=groupTabs(segments,key);if(!block.length)return;
-    props.setTabs(()=>{
-      const rest=arranged.filter(id=>!block.includes(id));
-      const anchor=target.tab?[target.tab]:groupTabs(segments,target.key!);if(!anchor.length||block.includes(anchor[0]))return arranged;
-      const at=after?rest.indexOf(anchor.at(-1)!)+1:rest.indexOf(anchor[0]);rest.splice(at,0,...block);return rest;
-    });
+  // Drops: every cue comes from the same plan the drop applies, so the line marks where the item lands.
+  type Target={tab:string}|{key:string};
+  const drag=useDropCue<string,{target:string;x?:number}>();
+  const members=(key:string)=>Array.from(strip.current?.querySelectorAll<HTMLElement>('[data-tab-id],[data-group-key]')??[]).filter(el=>el.dataset.groupKey===key||!!el.dataset.tabId&&keyOf.get(el.dataset.tabId)===key);
+  const resolve=(event:DragEvent,target:Target,source:StripSource|undefined)=>{
+    if(!source)return;
+    if('chat' in source&&'key' in target){const plan=planStripDrop(stripState,source,target,'into');return plan&&{plan,place:'into' as const};}
+    // A tab lands beside a tab; a group lands beside the whole target group (or an ungrouped tab).
+    const key='group' in source?('key' in target?target.key:keyOf.get(target.tab)):undefined;
+    const els=key?members(key):[event.currentTarget as HTMLElement];if(!els.length)return;
+    const first=els[0],last=els.at(-1)!,left=first.getBoundingClientRect().left,right=last.getBoundingClientRect().right;
+    const place=dropSide({left,top:0,width:right-left,height:0},event.clientX,event.clientY,'x');
+    const plan=planStripDrop(stripState,source,target,place);if(!plan)return;
+    // Center the line in the gap to the neighbor, so it reads the same between tabs and before a chip.
+    const edge=place==='before'?first:last,near=(place==='before'?edge.previousElementSibling:edge.nextElementSibling) as HTMLElement|null;
+    const r=edge.getBoundingClientRect(),n=near&&!near.classList.contains('motion-ghost')?near.getBoundingClientRect():undefined;
+    const x=place==='before'?(n?(n.right+r.left)/2:r.left-parseFloat(getComputedStyle(edge).marginLeft)/2):(n?(r.right+n.left)/2:r.right-1);
+    return {plan,place,x};
   };
-  const dropGroup=(source:string,target:{tab?:string;key?:string},after:boolean)=>{
-    const targetKey=target.key??(target.tab?keyOf.get(target.tab):undefined);if(targetKey===source)return;
-    if(source.startsWith('p:')&&targetKey?.startsWith('p:'))props.onMoveProject(source.slice(2),targetKey.slice(2),after);
-    else moveBlock(source,target,after);
+  const over=(event:DragEvent,target:Target,id:string)=>{
+    const types=event.dataTransfer.types;if(!types.includes(CHAT)&&!types.includes(GROUP))return;event.stopPropagation();
+    const hit=resolve(event,target,drag.source?{group:drag.source}:props.dragging?{chat:props.dragging}:undefined);
+    if(!hit){drag.show(undefined);return;}
+    event.preventDefault();event.dataTransfer.dropEffect='move';
+    const wrap=strip.current!.parentElement!.getBoundingClientRect();
+    drag.show({target:id,x:hit.x===undefined?undefined:Math.round(Math.max(1,Math.min(wrap.width-1,hit.x-wrap.left)))});
   };
-  const dropOnTab=(event:DragEvent,target:string)=>{
-    event.preventDefault();const bounds=event.currentTarget.getBoundingClientRect();const after=event.clientX>bounds.x+bounds.width/2;
+  const drop=(event:DragEvent,target:Target)=>{
+    event.preventDefault();event.stopPropagation();
     const group=event.dataTransfer.getData(GROUP),chat=event.dataTransfer.getData(CHAT);props.onDragEnd();
-    if(group){dropGroup(group,{tab:target},after);return;}
-    if(!chat||chat===target||!tabs.includes(chat))return;
-    const targetKey=keyOf.get(target),sourceKey=keyOf.get(chat);
-    if(targetKey!==sourceKey)props.setGroups(g=>targetKey?.startsWith('g:')?addToGroup(g,targetKey.slice(2),[chat]):sourceKey?.startsWith('g:')?removeFromGroups(g,[chat]):g);
-    props.setTabs(()=>reorderTabs(arranged,chat,target,after));
-  };
-  const dropOnChip=(event:DragEvent,key:string)=>{
-    event.preventDefault();event.stopPropagation();const bounds=event.currentTarget.getBoundingClientRect();
-    const group=event.dataTransfer.getData(GROUP),chat=event.dataTransfer.getData(CHAT);props.onDragEnd();
-    if(group){dropGroup(group,{key},event.clientX>bounds.x+bounds.width/2);return;}
-    const session=chat&&byId.get(chat);if(!session)return;
-    if(key.startsWith('g:'))props.setGroups(g=>addToGroup(g,key.slice(2),[chat]));
-    else if(session.projectId===key.slice(2))props.setGroups(g=>removeFromGroups(g,[chat]));
-    else return;
+    const hit=resolve(event,target,group?{group}:chat?{chat}:undefined);if(!hit)return;const {plan}=hit;
+    if(plan.project){props.onMoveProject(plan.project.source,plan.project.target,plan.project.after);return;}
+    if(plan.groups!==groups)props.setGroups(()=>plan.groups);
     // Adding to a folded group keeps it folded; the chip's count is the feedback.
-    props.setTabs(v=>v.includes(chat)?v:[...v,chat]);
+    if(hit.place==='into')props.setTabs(v=>v.includes(chat)?v:[...v,chat]);else props.setTabs(()=>plan.tabs);
   };
+  const cueOf=(id:string)=>drag.cue?.target===id?drag.cue:undefined;
+  const targetProps=(target:Target,id:string)=>({onDragOver:(event:DragEvent)=>over(event,target,id),onDragLeave:(event:DragEvent)=>drag.leave(event,c=>c.target===id),onDrop:(event:DragEvent)=>drop(event,target)});
 
   const click=(event:MouseEvent,session:Session)=>{
     if(event.metaKey||event.shiftKey){
@@ -131,7 +136,7 @@ export function TabStrip(props:TabStripProps) {
       style={{'--tab-color':color??(s.projectId&&groups.projectColors[s.projectId])??GROUP_COLORS[0].value,...(color?{'--group-color':color}:{})} as CSSProperties}
       onMouseDown={event=>{if(event.button===1)event.preventDefault();}} onAuxClick={event=>{if(event.button===1){event.preventDefault();props.onClose(s);}}}
       onContextMenu={event=>{event.preventDefault();event.stopPropagation();props.onTabMenu(id,event.clientX,event.clientY);}}
-      draggable onDragStart={event=>props.onDragStart(event,id)} onDragEnd={props.onDragEnd} onDragOver={accepts} onDrop={event=>dropOnTab(event,id)}
+      draggable onDragStart={event=>props.onDragStart(event,id)} onDragEnd={props.onDragEnd} {...targetProps({tab:id},id)}
       className={`tab ${active?'active':''} ${props.dragging===id?'dragging':''} ${color?'grouped':''} ${end?'group-end':''} ${size} ${selection.has(id)?'multi-selected':''}`}>
       <button onClick={event=>click(event,s)} aria-pressed={selection.size?selection.has(id):undefined}><AgentIcon launcher={s.launcher} size={14}/><span className="tab-name">{s.name}</span><ChatStatusIcon session={s}/></button>
       <button className="tab-close" disabled={props.busy===s.id} aria-label={`Close chat ${s.name}`} title="Close chat and stop its tmux session" onClick={()=>props.onClose(s)}><X size={12}/></button>
@@ -149,8 +154,8 @@ export function TabStrip(props:TabStripProps) {
     };
     const label=`${info.name} group, ${ids.length} ${ids.length===1?'chat':'chats'}${summary?`, ${activityLabel[summary.activity as ChatStatus].toLowerCase()}`:''}`;
     return <div key={key} data-group-key={key} data-hidden-count={folded?hidden.length:undefined} data-attention={folded?hidden.filter(s=>chatActivity(s)==='attention').map(s=>s.id).join(' '):undefined}
-      className={`tab-group-chip ${folded?'collapsed':''} ${folded&&holds?'holds-active':''}`} style={{'--group-color':info.color} as CSSProperties}
-      draggable onDragStart={event=>{event.dataTransfer.setData(GROUP,key);event.dataTransfer.effectAllowed='move';}} onDragOver={accepts} onDrop={event=>dropOnChip(event,key)}
+      className={`tab-group-chip ${folded?'collapsed':''} ${folded&&holds?'holds-active':''} ${drag.source===key?'drag-source':''} ${cueOf(key)&&cueOf(key)!.x===undefined?'drop-into':''}`} style={{'--group-color':info.color} as CSSProperties}
+      draggable onDragStart={event=>{event.dataTransfer.setData(GROUP,key);event.dataTransfer.effectAllowed='move';drag.setSource(key);}} onDragEnd={()=>drag.setSource(undefined)} {...targetProps({key},key)}
       onContextMenu={event=>{event.preventDefault();event.stopPropagation();props.onGroupMenu(key,event.clientX,event.clientY);}}>
       <span className="chip-pill"><button className="chip-label" aria-expanded={!folded} aria-label={label} title={`${info.name}${info.detail?` · ${info.detail}`:''} · ${ids.length} ${ids.length===1?'chat':'chats'}\n${groups.focus&&selected?(key===selectedKey?'Click to collapse':'Switch to this group'):folded?'Click to expand':'Click to collapse'} · right-click for options`} onClick={toggle}>
         <span className="chip-name">{info.name}</span>{folded&&<span className="chip-count" aria-hidden="true">{ids.length}</span>}
@@ -173,5 +178,6 @@ export function TabStrip(props:TabStripProps) {
       <button className="icon-button tab-add" aria-label="New chat tab" onClick={props.onNewChat}><Plus size={16}/></button>
     </div>
     {edge('left')}{edge('right')}
+    {drag.cue?.x!==undefined&&<span className="tab-drop-caret" style={{left:drag.cue.x}} aria-hidden="true"/>}
   </div>;
 }

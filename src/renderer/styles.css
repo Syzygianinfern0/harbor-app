@@ -148,7 +148,7 @@
 .pane-drop-targets{position:absolute;inset:0;z-index:9;display:grid;grid-template:30% 40% 30% / 30% 40% 30%;background:#11192399}
 .pane-drop-zone{display:flex;align-items:center;justify-content:center;border:1px dashed #8abda488;color:#d4efe0;background:#293d3277;font-size:11px;pointer-events:auto}
 .pane-drop-zone.over{background:#588e7299;border:2px solid #b4ead1}.pane-drop-zone.left{grid-column:1;grid-row:1/4}.pane-drop-zone.right{grid-column:3;grid-row:1/4}.pane-drop-zone.top{grid-column:2;grid-row:1}.pane-drop-zone.bottom{grid-column:2;grid-row:3}.pane-drop-zone.center{grid-column:2;grid-row:2}
-.session-toolbar .tab{ -webkit-app-region:no-drag;cursor:grab}.tab.dragging{opacity:.45}.tab>button:first-child{min-width:0}.preferences-tabs{gap:14px;flex-wrap:wrap}.preferences-tabs button{font-size:11px}
+.session-toolbar .tab{ -webkit-app-region:no-drag;cursor:grab}.tab>button:first-child{min-width:0}.preferences-tabs{gap:14px;flex-wrap:wrap}.preferences-tabs button{font-size:11px}
 /* Reserve the full traffic-light footprint, including while the rail is collapsed. */
 .sidebar-dock.is-collapsed{width:112px;min-width:112px}
 .global-refresh{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;padding:6px 8px;border-radius:5px;-webkit-app-region:no-drag}
@@ -368,4 +368,22 @@
 .groups-overview{animation:harbor-arrive .16s cubic-bezier(.2,0,0,1)}
 @keyframes harbor-fade{from{opacity:.35}to{opacity:1}}
 .pane-workspace{animation:harbor-fade .14s cubic-bezier(.2,0,0,1)}
-@media (prefers-reduced-motion:reduce){.groups-overview,.pane-workspace{animation:none}}
+/* Drag cues. The source dims a beat after dragstart, so the browser's drag image is taken from the undimmed item. */
+@keyframes drag-lift{to{opacity:.4;filter:saturate(.6)}}
+.tab.dragging,.drag-source{animation:drag-lift 1ms 40ms forwards}
+@keyframes drop-cue-in{from{opacity:0}}
+/* Insertion lines sit outside layout (absolute), so they never change the strip's width or the lists' spacing. */
+.tab-drop-caret{position:absolute;top:8px;bottom:8px;width:2px;margin-left:-1px;border-radius:1px;background:var(--mint);box-shadow:0 0 0 1px #191d24;z-index:4;pointer-events:none;animation:drop-cue-in .09s ease-out}
+.tab-drop-caret::before,.tab-drop-caret::after{content:"";position:absolute;left:-2px;width:6px;height:6px;border-radius:50%;background:inherit}.tab-drop-caret::before{top:-3px}.tab-drop-caret::after{bottom:-3px}
+.tab-group-chip.drop-into .chip-pill{background:color-mix(in srgb,var(--group-color) 34%,transparent);border-color:var(--group-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--group-color) 45%,transparent)}
+.project-section,.managed-project{position:relative}
+.drop-before::before,.drop-after::after{content:"";position:absolute;left:4px;right:4px;height:2px;border-radius:1px;background:var(--mint);box-shadow:0 0 0 1px #10121799;pointer-events:none;animation:drop-cue-in .09s ease-out}
+.project-section.drop-before::before{top:-7.5px}.project-section.drop-after::after{bottom:-7.5px}
+.managed-project.drop-before::before{top:-6px}.managed-project.drop-after::after{bottom:-6px}
+/* Panes: the hovered zone previews the space the chat will take, a half for a split, the whole pane for a move. */
+.has-cue .pane-drop-zone{background:transparent;border-color:#8abda422;color:#d4efe066}.has-cue .pane-drop-zone.over{border-color:transparent;color:#effaf4;font-weight:600}
+.pane-drop-preview{position:absolute;pointer-events:none;border:2px solid #9be1c4;border-radius:6px;background:#9be1c41f;animation:drop-cue-in .09s ease-out}
+.pane-drop-preview.left{left:6px;top:6px;bottom:6px;width:calc(50% - 9px)}.pane-drop-preview.right{right:6px;top:6px;bottom:6px;width:calc(50% - 9px)}
+.pane-drop-preview.top{left:6px;right:6px;top:6px;height:calc(50% - 9px)}.pane-drop-preview.bottom{left:6px;right:6px;bottom:6px;height:calc(50% - 9px)}
+.pane-drop-preview.center{inset:6px;background:#9be1c438;border-style:dashed}
+@media (prefers-reduced-motion:reduce){.groups-overview,.pane-workspace,.tab-drop-caret,.drop-before::before,.drop-after::after,.pane-drop-preview{animation:none}}
