@@ -2,6 +2,7 @@ import { app, clipboard, BrowserWindow, dialog, ipcMain, Menu, Notification, pow
 import path from 'node:path';
 import { openProjectInCursor } from './cursor';
 import { HarborEngine } from '../engine/engine';
+import { Transport } from '../engine/transport';
 
 app.setName('Harbor');
 if (process.env.HARBOR_DATA_DIR) app.setPath('userData', process.env.HARBOR_DATA_DIR);
@@ -23,7 +24,8 @@ else {
   };
   app.on('second-instance', () => { if (window) { window.show(); window.focus(); } });
   app.whenReady().then(async () => {
-    engine = new HarborEngine(app.getPath('userData'));
+    // HARBOR_TMUX_SOCKET isolates test profiles from the real `-L harbor` server.
+    engine = new HarborEngine(app.getPath('userData'), new Transport(process.env.HARBOR_TMUX_SOCKET || 'harbor'));
     await engine.init();
     function handle(channel: string, fn: (...args: any[]) => unknown) {
       ipcMain.handle(`harbor:${channel}`, (event, ...args) => {

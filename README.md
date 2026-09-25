@@ -120,7 +120,7 @@ HARBOR_TEST_AGENTS=1 HARBOR_TEST_SSH=devbox npm test
 HARBOR_TEST_AGENTS=1 HARBOR_TEST_SSH=devbox npm run test:e2e
 ```
 
-Live agent tests submit a short echo-only prompt in dedicated test directories. Remote test directories are created under `~/harbor-smoke-test-20260916/`. See [VALIDATION.md](VALIDATION.md).
+Live agent tests submit a short echo-only prompt in dedicated test directories. Remote test directories are created under `~/harbor-smoke-test-20260916/`. `HARBOR_TMUX_SOCKET=<name>` points the app at a private tmux server instead of `-L harbor`; `clipboard.spec.ts` uses one per run (and a removed `~/harbor-copytest-20260924/` directory remotely). See [VALIDATION.md](VALIDATION.md).
 
 Session/project state is stored atomically in `~/Library/Application Support/Harbor/sessions.json` (schema 2); preferences use `preferences.json`. Earlier indexes migrate without changing running tmux identities. No telemetry is added.
 
