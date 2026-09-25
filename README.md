@@ -29,7 +29,7 @@ Right-click a project and choose **Open in Cursor** to open its directory locall
 - **⌘ Backspace:** delete back to the beginning of the terminal input line (Ctrl-U).
 - **⌘ Left / ⌘ Right:** move to the beginning / end of the terminal input line (Ctrl-A / Ctrl-E).
 - **⌘ N / ⌘ T:** new chat in the selected project.
-- **⌘ K / ⌘ F:** search chat and project names.
+- **⌘ K / ⌘ F:** search chat and project names. With a terminal focused, **⌘ F** instead opens a find bar over that pane that searches its scrollback: all matches are highlighted and the count shows the current one ("3 of 12"). **Enter** steps to the next older match, **Shift-Enter** to the next newer one, and **Esc** closes the bar and returns to the terminal.
 - **⌘ B:** collapse/pin the sidebar. Hover over its collapsed rail to peek without resizing the terminal.
 - **⌘ 1–8:** select the numbered visible tab; **⌘ 9:** select the last visible tab. See [Tab groups](#tab-groups) for group shortcuts.
 - **⌘ 1 / ⌘ 2 / ⌘ 3 in the New chat dialog:** choose Codex / Claude Code / Terminal. Each option shows its shortcut.

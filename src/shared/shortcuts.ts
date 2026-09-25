@@ -18,3 +18,11 @@ export function groupShortcut(event:{key:string;code?:string;metaKey:boolean;ctr
   if(letter==='g')return event.shiftKey?'toggle-project-groups':'group-selected';
   if(letter==='j'&&!event.shiftKey)return 'next-attention';
 }
+/** Command-F alone opens the focused terminal's find bar (⌘G/⌘⇧G stay with tab groups). */
+export const findShortcut=(event:{key:string;metaKey:boolean;ctrlKey:boolean;shiftKey:boolean;altKey:boolean})=>event.metaKey&&!event.ctrlKey&&!event.altKey&&!event.shiftKey&&event.key.toLowerCase()==='f';
+/** Find-bar status: "3 of 12", "12 matches" with none current, "1000+" once capped at the highlight limit. */
+export function findStatus(query:string,index:number,count:number,limit:number):string {
+  if(!query)return '';if(!count)return 'No results';
+  const total=count>=limit?`${limit}+`:String(count);
+  return index<0?`${total} ${count===1?'match':'matches'}`:`${index+1} of ${total}`;
+}

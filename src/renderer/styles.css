@@ -193,6 +193,18 @@
 .terminal-pane { position:relative; }
 .file-drop-hover { outline:2px solid #8ce0bf; outline-offset:-2px; }
 .file-drop-indicator { position:absolute; z-index:10; top:12px; left:50%; transform:translateX(-50%); padding:8px 14px; border:1px solid #8ce0bf; border-radius:8px; background:#20352f; color:#dce1eb; pointer-events:none; white-space:nowrap; font-size:12px; }
+.terminal-find { position:absolute; z-index:11; top:8px; right:18px; display:flex; align-items:center; gap:1px; max-width:calc(100% - 36px); padding:3px 3px 3px 9px; border:1px solid var(--border); border-radius:8px; background:var(--panel); box-shadow:0 8px 22px #0009; color:#7b8594; animation:find-in .12s cubic-bezier(.2,0,0,1); }
+.terminal-bar~.terminal-find { top:37px; }
+.terminal-find:focus-within { border-color:#3c5d53; }
+.terminal-find input { width:190px; flex:0 1 190px; padding:4px 6px; border:0; background:none; font-size:12px; outline:0; }
+.terminal-find input:focus-visible { outline:0; }
+.terminal-find input::placeholder { color:#7b8594; }
+.terminal-find input.no-results { color:#f18989; }
+.terminal-find-count { min-width:64px; padding:0 6px 0 2px; font-size:11px; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+.terminal-find .icon-button { width:24px; height:24px; padding:0; }
+.terminal-find .icon-button:disabled { cursor:default; opacity:.4; }
+@keyframes find-in { from { opacity:0; transform:translateY(-4px); } }
+@media (prefers-reduced-motion:reduce) { .terminal-find { animation:none; } }
 .launch-command-modal { width:min(760px,90vw); max-height:85vh; overflow:auto; }
 .launch-command-modal dl { display:grid; grid-template-columns:auto 1fr; gap:8px 16px; font-size:13px; }
 .launch-command-modal dd { margin:0; overflow-wrap:anywhere; }
