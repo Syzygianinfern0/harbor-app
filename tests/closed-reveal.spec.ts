@@ -32,13 +32,14 @@ test('clicking a project name shows its closed chats even while closed chats are
     await expect(hide).toBeChecked();
     await page.screenshot({path:'test-results/screenshots/40-closed-reveal-project.png'});
 
-    // Opening one of those chats keeps the reveal, so rows do not jump out from under the pointer.
+    // Leaving the project page for a chat hands the sidebar back to the toggle: the closed chats hide again.
     await page.locator('.sidebar .chat-row',{hasText:'Rate limiter'}).click();
     await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
-    expect(await rows(page)).toEqual(['Rate limiter','Flaky auth test']);
-    // Clicking the name returns to the overview (still revealed); clicking it again from there hides them again.
+    await expect(page.locator('.sidebar .chat-row')).toHaveCount(0);
+    await expect(page.locator('.project-heading.reveals-closed')).toHaveCount(0);
+    // Clicking the name returns to the page and reveals them again; clicking it again from there hides them.
     await name(page,'tessera-api').click();await expect(page.locator('.project-overview h1')).toHaveText('tessera-api');
-    expect(await rows(page)).toEqual(['Rate limiter','Flaky auth test']);
+    await expect.poll(()=>rows(page)).toEqual(['Rate limiter','Flaky auth test']);
     await name(page,'tessera-api').click();await expect(page.locator('.sidebar .chat-row')).toHaveCount(0);
     // The project overview itself always lists every chat in the project.
     expect(await overview(page)).toEqual(['Rate limiter','Flaky auth test']);
