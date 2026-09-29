@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowUpRight, Pencil, Plus, StickyNote } from 'lucide-react';
 import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
@@ -9,14 +9,17 @@ import { NoteMarkdown } from './NoteMarkdown';
 /** A note shown in place: rendered, with tasks that save as they are checked, reordered or prioritized; Edit (or a
  *  double-click) swaps in the full editor. */
 function NoteCard({item,kind,label,title,actions,onError}:{item:Noted;kind:NoteKind;label:string;title:ReactNode;actions?:ReactNode;onError:(message:string)=>void}) {
-  const [editing,setEditing]=useState(false);const [pending,setPending]=useState<string>();
+  const [editing,setEditing]=useState(false);const [pending,setPending]=useState<string>();const [expanded,setExpanded]=useState(false);const [clipped,setClipped]=useState(false);const body=useRef<HTMLDivElement>(null);
   useEffect(()=>setPending(undefined),[item.note]);
   const shown=pending??item.note??'';
+  // Long notes start folded so one note cannot bury the rest of the page.
+  useLayoutEffect(()=>{const el=body.current;setClipped(!!el&&el.scrollHeight>el.clientHeight+1);},[shown,editing,expanded]);
   const change=(text:string)=>{setPending(text);saveNote(kind,item.id,text).catch(error=>{setPending(undefined);onError((error as Error).message.replace(/^Error invoking remote method '[^']+': Error: /,''));});};
   return <article className={`project-note-card ${kind}`} aria-label={label}>
     <header>{title}<span className="spacer"/>{actions}{!editing&&shown&&<button type="button" className="icon-button" aria-label={`Edit ${label.toLowerCase()}`} title="Edit note" onClick={()=>setEditing(true)}><Pencil size={13}/></button>}</header>
     {editing?<NoteEditor item={{...item,note:shown||undefined}} kind={kind} inline onClose={()=>setEditing(false)}/>
-      :shown?<div onDoubleClick={event=>{if(!(event.target as Element).closest('button'))setEditing(true);}}><NoteMarkdown text={shown} onChange={change}/></div>
+      :shown?<><div ref={body} className={`project-note-body ${expanded?'':'folded'} ${clipped?'clipped':''}`} onDoubleClick={event=>{if(!(event.target as Element).closest('button'))setEditing(true);}}><NoteMarkdown text={shown} onChange={change}/></div>
+        {(clipped||expanded)&&<button type="button" className="text-button project-note-more" aria-expanded={expanded} onClick={()=>setExpanded(v=>!v)}>{expanded?'Show less':'Show the whole note'}</button>}</>
       :<button type="button" className="text-button project-note-add" onClick={()=>setEditing(true)}><Plus size={13}/>Add a note for this project</button>}
   </article>;
 }

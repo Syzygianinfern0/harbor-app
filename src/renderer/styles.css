@@ -340,6 +340,8 @@ button.note-check:hover{color:#8d98a6}
 .project-note-card>header .icon-button{padding:5px}
 .project-note-chat{display:flex;align-items:center;gap:8px;min-width:0;font-size:12px;font-weight:500;color:#c9d2dc}.project-note-chat>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .project-note-add{font-size:11px}
+.project-note-body.folded{max-height:340px;overflow:hidden}.project-note-body.folded.clipped{-webkit-mask-image:linear-gradient(#000 calc(100% - 48px),transparent);mask-image:linear-gradient(#000 calc(100% - 48px),transparent)}
+.project-note-more{margin:6px 0 0 16px;font-size:10px}
 .project-notes-heading{display:flex;align-items:center;gap:8px;margin:22px 0 10px;font-size:9px;font-weight:650;letter-spacing:1.5px;text-transform:uppercase;color:#7b8796}.project-notes-heading>span{letter-spacing:0;color:#5e6b7d}
 /* Tab groups: labels fold a group into a chip that reports its most urgent status. */
 .tab-strip-wrap{position:relative;flex:1;min-width:0;height:41px;display:flex}
