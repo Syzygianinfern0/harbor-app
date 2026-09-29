@@ -180,4 +180,49 @@ class CostTests(unittest.TestCase):
    self.write(p,[row,{**row,'uuid':'two','message':{**row['message'],'model':'<synthetic>'}}]);result=bridge.usage_record(p,'claude')
    self.assertEqual(len(result['events']),1);self.assertAlmostEqual(bridge.cost_summary(result['events'],self.catalog())['usd'],.00052)
 
+ def claude_fixture(self,d):
+  cwd=os.path.realpath(d+'/work');os.makedirs(cwd);sid='aaaaaaaa-0000-4000-8000-000000000001';fork='aaaaaaaa-0000-4000-8000-000000000002'
+  project=pathlib.Path(d)/'claude/projects'/bridge.re.sub(r'[^a-zA-Z0-9]','-',cwd);(project/sid/'subagents/workflows/run1').mkdir(parents=True)
+  def req(mid,model,inp,out,session=sid,geo='global',stamp='2026-09-17T00:00:00Z'):return {'timestamp':stamp,'type':'assistant','sessionId':session,'cwd':cwd,'uuid':mid+session,'requestId':'r'+mid,'message':{'id':mid,'model':model,'usage':{'input_tokens':inp,'output_tokens':out,'inference_geo':geo}}}
+  user={'type':'user','sessionId':sid,'cwd':cwd,'message':{'content':'hi'}}
+  self.write(project/(sid+'.jsonl'),[user,req('m1','model-a',100,5),req('m1','model-a',100,10)])
+  self.write(project/sid/'subagents/agent-a1.jsonl',[{**req('m2','model-b',1000,100,geo='not_available'),'isSidechain':True}])
+  self.write(project/sid/'subagents/workflows/run1/agent-w1.jsonl',[req('m3','model-a',200,20),req('m1','model-a',100,10)])
+  self.write(project/sid/'subagents/workflows/run1/journal.jsonl',[req('m9','model-a',999999,0)])
+  self.write(project/'agent-l1.jsonl',[{'type':'summary'},req('m4','model-a',50,5)])
+  self.write(project/'agent-l2.jsonl',[req('m5','model-a',7000,0,session='bbbbbbbb-0000-4000-8000-000000000003')])
+  self.write(project/(fork+'.jsonl'),[{**user,'sessionId':fork},req('m1','model-a',100,10,session=fork),req('m6','model-a',10,1,session=fork)])
+  return cwd,sid
+ def test_claude_chat_counts_subagents_workflows_and_legacy_agents_once(self):
+  with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'CODEX_HOME':d+'/codex','CLAUDE_CONFIG_DIR':d+'/claude'}), patch.object(bridge,'ROOT',pathlib.Path(d)/'cache'), patch.object(bridge,'live_claude',return_value={}):
+   cwd,sid=self.claude_fixture(d)
+   before=bridge.usage_record(pathlib.Path(d)/'claude/projects'/bridge.re.sub(r'[^a-zA-Z0-9]','-',cwd)/(sid+'.jsonl'),'claude')['tokens']['totalTokens'];self.assertEqual(before,110)
+   for _ in range(2):
+    result=bridge.chat_usage('claude',cwd,sid,self.catalog())
+    self.assertEqual(result['tokens']['totalTokens'],110+1100+220+55);self.assertEqual(result['subagents'],3);self.assertFalse(result['partial'])
+    self.assertAlmostEqual(result['cost']['usd'],.0003+.006+.0006+.00015);self.assertEqual(result['cost']['estimated'],4);self.assertEqual(result['cost']['unpriced'],0)
+    self.assertEqual({m['model']:m['estimated'] for m in result['cost']['models']},{'model-a':3,'model-b':1})
+ def test_claude_overall_usage_groups_subagents_and_dedupes_copied_requests(self):
+  with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'CODEX_HOME':d+'/codex','CLAUDE_CONFIG_DIR':d+'/claude'}), patch.object(bridge,'ROOT',pathlib.Path(d)/'cache'):
+   self.claude_fixture(d)
+   with patch.object(bridge.time,'time',return_value=1789603200):
+    for _ in range(2):
+     claude=bridge.host_usage(self.catalog())['agents'][1]
+     self.assertEqual(claude['sessions'],3);self.assertEqual(claude['tokens']['totalTokens'],1485+7000+11)
+     month=claude['periods']['month'];self.assertEqual(month['sessions'],3);self.assertEqual(month['tokens']['totalTokens'],1485+7000+11)
+     self.assertAlmostEqual(month['cost']['usd'],.00705+.014+.00003);self.assertEqual(month['cost']['estimated'],6)
+ def test_codex_chat_includes_spawned_threads(self):
+  with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'CODEX_HOME':d+'/codex','CLAUDE_CONFIG_DIR':d+'/claude'}), patch.object(bridge,'ROOT',pathlib.Path(d)/'cache'):
+   cwd=os.path.realpath(d);root=pathlib.Path(d)/'codex/sessions';root.mkdir(parents=True);ids=['cccccccc-0000-4000-8000-00000000000'+str(n) for n in range(4)]
+   def rollout(i,n,source):
+    self.write(root/(ids[i]+'.jsonl'),[{'type':'session_meta','timestamp':'2026-09-17T00:00:00Z','payload':{'id':ids[i],'timestamp':'2026-09-17T00:00:00Z','source':source}},{'timestamp':'2026-09-17T00:01:00Z','type':'event_msg','payload':{'type':'token_count','info':{'total_token_usage':{'input_tokens':n,'total_tokens':n}}}}])
+   rollout(0,100,'cli');rollout(1,40,{'subagent':{'thread_spawn':{'parent_thread_id':ids[0]}}});rollout(2,8,{'subagent':{'thread_spawn':{'parent_thread_id':ids[1]}}});rollout(3,1000,'cli')
+   with sqlite3.connect(pathlib.Path(d)/'codex/state_5.sqlite') as db:
+    db.execute('create table threads(id,cwd,title,created_at,updated_at,source,rollout_path,has_user_event)');db.execute('create table thread_spawn_edges(parent_thread_id,child_thread_id,status)')
+    for i in range(4):db.execute('insert into threads values(?,?,?,?,?,?,?,1)',(ids[i],cwd,'t',1,1,'cli' if i in (0,3) else 'subagent',str(root/(ids[i]+'.jsonl'))))
+    db.executemany('insert into thread_spawn_edges values(?,?,?)',[(ids[0],ids[1],'done'),(ids[1],ids[2],'done'),(ids[2],ids[0],'done')])
+   result=bridge.chat_usage('codex',cwd,ids[0]);self.assertEqual(result['tokens']['totalTokens'],148);self.assertEqual(result['subagents'],2);self.assertEqual(result['conversationId'],ids[0])
+   self.assertEqual(bridge.chat_usage('codex',cwd,ids[3])['tokens']['totalTokens'],1000)
+   self.assertEqual(bridge.host_usage()['agents'][0]['tokens']['totalTokens'],1148)
+
 if __name__=='__main__':unittest.main()

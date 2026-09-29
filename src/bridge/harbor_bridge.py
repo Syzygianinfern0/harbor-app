@@ -329,7 +329,8 @@ def usage_record(file, agent):
                     if not isinstance(usage, dict) or not any(isinstance(usage.get(key), int) for key in ('input_tokens','output_tokens','total_tokens')): continue
                     seen_usage = True
                     key = (message.get('id') or record.get('uuid') or str(index), record.get('requestId'))
-                    event = requests.setdefault(key, {'at':timestamp(record.get('timestamp')), 'tokens':empty_tokens()})
+                    # Only a real message id identifies the request across files (forks, subagents).
+                    event = requests.setdefault(key, {'at':timestamp(record.get('timestamp')), 'tokens':empty_tokens(), 'key':[message['id'], record.get('requestId')] if message.get('id') else None})
                     event.update(model=message.get('model'), tier=usage.get('service_tier', 'standard'), speed=usage.get('speed', 'standard'), geo=usage.get('inference_geo', 'global'))
                     creation = usage.get('cache_creation') or {}
                     event['cacheWrite1h'] = max(event.get('cacheWrite1h', 0), number(creation.get('ephemeral_1h_input_tokens')))
@@ -360,6 +361,57 @@ def cached_usage(file, agent, cache):
     previous = cache.get(key)
     if previous and previous.get('fingerprint') == fingerprint: return previous
     return {'fingerprint': fingerprint, 'data': usage_record(file, agent)}
+
+def merge_usage(datas, seen=None):
+    """Combine one conversation's transcripts (Claude subagents, Codex spawned
+    threads). A Claude request copied into several files counts once."""
+    seen = set() if seen is None else seen
+    tokens = empty_tokens(); events = []; recorded = False; partial = False
+    for data in datas:
+        partial = partial or data.get('partial', False)
+        if data.get('tokens') is None: continue
+        recorded = True
+        for field in tokens: tokens[field] += data['tokens'][field]
+        for event in data.get('events', []):
+            key = tuple(event['key']) if event.get('key') else None
+            if key in seen:
+                for field in tokens: tokens[field] -= event['tokens'][field]
+                continue
+            if key: seen.add(key)
+            events.append(event)
+    return {'tokens':tokens if recorded else None, 'events':events, 'partial':partial}
+
+def claude_session(file):
+    try:
+        with open(file) as stream:
+            for _, line in zip(range(50), stream):
+                try: session = json.loads(line).get('sessionId')
+                except (ValueError, AttributeError): continue
+                if session: return session
+    except (OSError, UnicodeError): pass
+
+def claude_transcript(file):
+    # Chats are <project>/<uuid>.jsonl; subagents and Workflow agents are agent-*.jsonl
+    # under <project>/<uuid>/subagents/ (legacy: beside the chat). Skip workflow journals.
+    return file.name.startswith('agent-') or bool(UUID.match(file.stem))
+
+def related_transcripts(agent, file, identity):
+    """Transcripts whose usage belongs to this chat: Claude subagent/Workflow agent
+    logs, and Codex threads spawned from it (recursively)."""
+    if agent == 'claude':
+        files = sorted((file.parent/identity/'subagents').rglob('agent-*.jsonl'))
+        return files + [legacy for legacy in sorted(file.parent.glob('agent-*.jsonl')) if claude_session(legacy) == identity]
+    databases = sorted(home_for(agent).glob('state_*.sqlite'), key=lambda p: int(re.search(r'_(\d+)', p.name)[1]), reverse=True)
+    if not databases: return []
+    files = []; seen = {identity}; queue = [identity]
+    with sqlite3.connect('file:' + str(databases[0]) + '?mode=ro', uri=True, timeout=2) as db:
+        if not db.execute("select 1 from sqlite_master where type='table' and name='thread_spawn_edges'").fetchone(): return []
+        while queue and len(seen) < 500:
+            for child, rollout in db.execute('select e.child_thread_id, t.rollout_path from thread_spawn_edges e left join threads t on t.id=e.child_thread_id where e.parent_thread_id=?', (queue.pop(),)):
+                if child in seen: continue
+                seen.add(child); queue.append(child)
+                if rollout and pathlib.Path(rollout).is_file(): files.append(pathlib.Path(rollout))
+    return files
 
 def usage_periods(data, now):
     periods = {}
@@ -402,7 +454,8 @@ def event_cost(event, catalog):
     multiplier = 1
     provider = rates.get('provider_specific_entry', {})
     for option in [event.get('speed'), event.get('geo')]:
-        if option not in (None, 'standard', 'global'):
+        # Haiku reports inference_geo "not_available": no regional pricing applies.
+        if option not in (None, '', 'standard', 'global', 'not_available'):
             if option not in provider: return None, 'unavailable'
             multiplier *= provider[option]
     return sum(count*(price or 0) for count,price in parts)*multiplier, 'estimated'
@@ -425,26 +478,28 @@ def cost_summary(events, catalog):
 
 def host_usage(catalog=None):
     now = time.time(); catalog = catalog or {}
-    agents = []; cache_file = ROOT / 'usage-cache-v5.json'; old_cache = read(cache_file, {}); cache = {}
+    agents = []; cache_file = ROOT / 'usage-cache-v6.json'; old_cache = read(cache_file, {}); cache = {}
     for agent in ('codex', 'claude'):
         home = home_for(agent); roots = [home/'sessions', home/'archived_sessions'] if agent == 'codex' else [home/'projects']
-        totals = empty_tokens(); conversations = {}; errors = []; files = set()
+        totals = empty_tokens(); groups = {}; errors = []; files = set()
         for root in roots:
             try:
-                if root.exists(): files.update(root.rglob('*.jsonl'))
+                if root.exists(): files.update(file for file in root.rglob('*.jsonl') if agent == 'codex' or claude_transcript(file))
             except OSError: errors.append('Some transcript folders could not be read.')
         for file in sorted(files):
             try:
                 entry = cached_usage(file, agent, old_cache); cache[str(file.resolve())] = entry
                 data = entry['data']; identity = data.get('conversationId') or str(file)
-                # Claude subagents share the parent sessionId but have separate files.
-                if agent == 'claude' and 'subagents' in file.parts: identity = str(file)
-                if identity not in conversations or entry['fingerprint'][1] > conversations[identity]['fingerprint'][1]: conversations[identity] = entry
+                # Claude subagents share the parent sessionId, so they join its chat; the same
+                # Codex rollout may exist in sessions and archived_sessions, so keep the newest.
+                if agent == 'claude': groups.setdefault(identity, []).append(entry)
+                elif identity not in groups or entry['fingerprint'][1] > groups[identity][0]['fingerprint'][1]: groups[identity] = [entry]
             except OSError: errors.append('Some transcript files could not be read.')
+        seen = set(); conversations = [merge_usage([entry['data'] for entry in group], seen) for group in groups.values()]
         periods = {key:{'tokens':empty_tokens(), 'sessions':0} for key in ('day','week','month')}
         recorded = 0; partial = bool(errors); all_events = []
-        for entry in conversations.values():
-            data = entry['data']; partial = partial or data.get('partial', False)
+        for data in conversations:
+            partial = partial or data.get('partial', False)
             all_events.extend(data.get('events', []))
             for key, period in usage_periods(data, now).items():
                 periods[key]['sessions'] += period['sessions']
@@ -466,12 +521,21 @@ def chat_usage(agent, cwd, identity, catalog=None):
     if not conversation: return {'error':'No saved conversation is available yet.'}
     file = pathlib.Path(conversation['transcript'])
     # Per-file caching keeps polling active, large transcripts inexpensive.
-    cache_file = ROOT / 'usage-chats-v5' / (agent+'-'+identity+'.json')
+    cache_file = ROOT / 'usage-chats-v6' / (agent+'-'+identity+'.json')
     try:
-        entry = cached_usage(file, agent, read(cache_file, {}))
-        try: atomic(cache_file, {str(file.resolve()):entry})
+        old = read(cache_file, {}); cache = {}; entry = cached_usage(file, agent, old); cache[str(file.resolve())] = entry
+        datas = [entry['data']]; partial = False
+        try: related = related_transcripts(agent, file, identity)
+        except (OSError, sqlite3.Error): related = []; partial = True
+        for extra in related:
+            try: cache[str(extra.resolve())] = cached_usage(extra, agent, old); datas.append(cache[str(extra.resolve())]['data'])
+            except OSError: partial = True
+        try: atomic(cache_file, cache)
         except OSError: pass
-        return {**{key:value for key,value in entry['data'].items() if key != 'events'}, 'cost':cost_summary(entry['data'].get('events', []), catalog or {}) if entry['data'].get('tokens') is not None else None, 'pricingUpdatedAt':(catalog or {}).get('fetchedAt')}
+        merged = merge_usage(datas)
+        return {**{key:value for key,value in entry['data'].items() if key != 'events'}, 'tokens':merged['tokens'], 'partial':merged['partial'] or partial,
+                'subagents':sum(1 for data in datas[1:] if data.get('tokens') is not None),
+                'cost':cost_summary(merged['events'], catalog or {}) if merged['tokens'] is not None else None, 'pricingUpdatedAt':(catalog or {}).get('fetchedAt')}
     except OSError: return {'error':'Saved transcript is unavailable on this host.'}
 
 class WS:

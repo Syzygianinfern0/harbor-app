@@ -167,12 +167,12 @@ test('cost views show compact sidebar, rolling host and model totals, and lifeti
    const cost=(usd:number)=>({usd,estimated:1,recorded:0,unpriced:0,models:[{model:'gpt-6-astra',usd,estimated:1,recorded:0,unpriced:0}],days:[{day:'2026-09-17',model:'gpt-6-astra',usd,estimated:1,recorded:0,unpriced:0}]});
    const agent={agent:'codex',tokens:tokens(900),sessions:4,recordedSessions:4,periods:{day:{tokens:tokens(100),sessions:1,cost:cost(12.34)},week:{tokens:tokens(300),sessions:2,cost:cost(50)},month:{tokens:tokens(900),sessions:4,cost:cost(100)}}};
    ipcMain.removeHandler('harbor:usage');ipcMain.handle('harbor:usage',()=>[{hostId:'local',hostLabel:'This Mac',checkedAt:new Date().toISOString(),agents:[agent]},{hostId:'remote',hostLabel:'Research server',checkedAt:new Date().toISOString(),agents:[{...agent,agent:'claude'}]},{hostId:'offline',hostLabel:'Offline server',checkedAt:new Date().toISOString(),agents:[],error:'SSH connection timed out'}]);
-   ipcMain.removeHandler('harbor:chatUsage');ipcMain.handle('harbor:chatUsage',()=>({tokens:tokens(900),compactionCount:3,cost:cost(8.42)}));
+   ipcMain.removeHandler('harbor:chatUsage');ipcMain.handle('harbor:chatUsage',()=>({tokens:tokens(900),compactionCount:3,subagents:2,cost:cost(8.42)}));
   });
   await page.reload();
   const sidebar=page.getByRole('button',{name:'Usage cost in the last 24 hours',exact:true});
   await expect(sidebar).toContainText('$24.68');expect((await sidebar.boundingBox())!.height).toBeLessThan(32);
-  await page.locator('.sidebar .chat-row').first().click();const chat=page.getByLabel('Chat usage',{exact:true});await expect(chat).toContainText('3 recorded compactions');await expect(chat).toContainText('900 tokens');await expect(chat).toContainText('$8.42');await expect(chat.locator('select')).toHaveCount(0);
+  await page.locator('.sidebar .chat-row').first().click();const chat=page.getByLabel('Chat usage',{exact:true});await expect(chat).toContainText('3 recorded compactions');await expect(chat).toContainText('900 tokens');await expect(chat).toContainText('incl. 2 subagents');await expect(chat).toContainText('$8.42');await expect(chat.locator('select')).toHaveCount(0);
   await chat.getByRole('button',{name:'Chat total cost',exact:true}).click();await expect(page.getByRole('dialog',{name:'Chat total cost',exact:true})).toContainText('gpt-6-astra');await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'Chat total cost',exact:true})).toHaveCount(0);
   await page.screenshot({animations:'disabled',path:'test-results/screenshots/19-chat-usage.png'});
   await sidebar.click();const popover=page.getByRole('dialog',{name:'Usage cost',exact:true});await expect(popover).toBeVisible();await expect(popover).toContainText('gpt-6-astra');await expect(popover).not.toContainText('tokens');

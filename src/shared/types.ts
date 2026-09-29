@@ -8,7 +8,7 @@ export interface CostAmount { usd: number; estimated: number; recorded: number; 
 export interface CostModel extends CostAmount { model: string }
 export interface CostDay extends CostModel { day: string }
 export interface CostSummary extends CostAmount { models: CostModel[]; days: CostDay[] }
-export interface ChatUsage { cost?: CostSummary | null; pricingUpdatedAt?: string; periods?: Record<UsagePeriod, {tokens: TokenUsage; sessions: number; cost?: CostSummary}>; tokens?: TokenUsage | null; compactionCount?: number | null; partial?: boolean; error?: string }
+export interface ChatUsage { cost?: CostSummary | null; pricingUpdatedAt?: string; periods?: Record<UsagePeriod, {tokens: TokenUsage; sessions: number; cost?: CostSummary}>; tokens?: TokenUsage | null; compactionCount?: number | null; subagents?: number; partial?: boolean; error?: string }
 export type UsagePeriod = 'day' | 'week' | 'month';
 export interface AgentUsage extends ChatUsage { periods: Record<UsagePeriod, {tokens: TokenUsage; sessions: number; cost?: CostSummary}>; agent: 'codex' | 'claude'; sessions: number; recordedSessions: number }
 export interface HostUsage { pricingUpdatedAt?: string; hostId: string; hostLabel: string; checkedAt: string; agents: AgentUsage[]; error?: string }
