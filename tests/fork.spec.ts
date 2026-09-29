@@ -51,10 +51,10 @@ test('Fork chat opens the fork beside its original: next tab, same group, split 
     await expect.poll(async()=>{const p=await panes(page);return p.map(v=>v.id).join()+(p.length===2&&p[1].x>p[0].x&&p[1].y===p[0].y&&p[1].focused?' right':'');}).toBe('k1,f1 right');
     await expect(row(page,'Design review (fork)')).toBeVisible();expect(await forkCalls(app)).toEqual(['k1']);
     await page.screenshot({path:'test-results/screenshots/71-fork-split.png'});
-    // Tab menu, original not on screen: the fork opens in the focused pane, its tab still right after the original.
+    // Tab menu, original not on screen: the original is shown with the fork split in to its right; the earlier split is parked.
     await page.locator('[data-tab-id="k4"]').click({button:'right'});await page.getByRole('menuitem',{name:'Fork chat'}).click();
     await expect.poll(()=>tabOrder(page)).toEqual(['k4','f2','k1','f1']);
-    await expect.poll(async()=>(await panes(page)).map(p=>p.id)).toEqual(['k1','f2']);
+    await expect.poll(async()=>(await panes(page)).map(p=>p.id)).toEqual(['k4','f2']);
     // Custom group: a fork from the chat actions menu joins the original's group.
     await page.locator('[data-tab-id="k1"]').click();await page.locator('[data-tab-id="k1"]').click({button:'right'});await page.getByRole('menuitem',{name:/New group with this tab/}).click();await page.keyboard.press('Escape');
     const group=async()=>{const state=await page.evaluate(()=>JSON.parse(localStorage.getItem('harbor.tabGroups')||'{}'));return state.custom?.[0]?.members as string[]|undefined;};
