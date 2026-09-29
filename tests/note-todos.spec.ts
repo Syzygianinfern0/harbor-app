@@ -128,7 +128,7 @@ test('long notes, Markdown rendering, and Todoist-style tasks in the editor and 
     await page.screenshot({path:'test-results/screenshots/75-project-notes.png'});
     // A long note starts folded on the page and unfolds on request.
     const longCard=notes.getByRole('article',{name:'Note for Long chat'});const longBody=longCard.locator('.project-note-body');
-    expect((await longBody.boundingBox())!.height).toBeLessThanOrEqual(341);
+    expect((await longBody.boundingBox())!.height).toBeLessThanOrEqual(341);await longCard.screenshot({path:'test-results/screenshots/76-project-note-folded.png'});
     await longCard.getByRole('button',{name:'Show the whole note'}).click();
     expect((await longBody.boundingBox())!.height).toBeGreaterThan(5000);
     await longCard.getByRole('button',{name:'Show less'}).click();await expect(todoCard.getByRole('button',{name:'Show the whole note'})).toHaveCount(0);
