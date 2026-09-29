@@ -128,6 +128,16 @@ def permission_args(agent, mode, help_text=''):
     standard = 'manual' if re.search(r'["\']manual["\']', help_text) else 'default'
     return ['--permission-mode', {'standard':standard, 'accept-edits':'acceptEdits', 'plan':'plan'}[mode]]
 
+def session_args(agent, resume=None, fork=None, identity=None):
+    # A fork starts from the saved conversation under a new ID and leaves the original untouched.
+    if agent == 'codex': return ['resume', resume] if resume else ['fork', fork] if fork else []
+    return ['--resume', resume] if resume else ['--resume', fork, '--fork-session', '--session-id', identity] if fork else ['--session-id', identity]
+
+def codex_thread(records, current=None, fork=None):
+    # Subagent threads and the fork's source (if the server loads it) are never this chat's conversation.
+    records = [r for r in records if not r.get('parentThreadId') and (not fork or r.get('id') != fork)]
+    return next((r for r in records if r.get('id') == current), next((r for r in records if fork and r.get('forkedFromId') == fork), records[0] if records else None))
+
 def codex_server_permissions(mode):
     flags = permission_args('codex', mode)
     return ['-c', 'sandbox_mode="'+flags[1]+'"', '-c', 'approval_policy="'+flags[3]+'"']
@@ -574,7 +584,7 @@ def claude_activity(event):
 def run(args):
     chat = ROOT / 'chats' / args.chat; chat.mkdir(parents=True, exist_ok=True, mode=0o700)
     generation = args.generation; meta_file = chat / 'metadata.json'
-    meta = {'generation': generation, 'launcher': args.agent, 'conversationId': args.resume, 'resumable': bool(args.resume), 'activity': 'starting', 'updatedAt': time.time(), 'cwd': os.getcwd(), **({'hasMessages':False} if not args.resume else {})}
+    meta = {'generation': generation, 'launcher': args.agent, 'conversationId': args.resume, 'resumable': bool(args.resume), 'activity': 'starting', 'updatedAt': time.time(), 'cwd': os.getcwd(), **({'hasMessages':bool(args.fork)} if not args.resume else {}), **({'forkedFrom':args.fork} if args.fork else {})}
     atomic(meta_file, meta); stop = threading.Event(); server = None; terminal = None; ws = None
     def update(**values):
         if stop.is_set(): return
@@ -604,15 +614,14 @@ def run(args):
                     except (OSError, RuntimeError): pass
                 time.sleep(.1)
             if ws is None: raise RuntimeError('Timed out starting the Codex app server')
-            command = ['codex'] + (['resume', args.resume] if args.resume else []) + ['--remote', 'unix://'+str(endpoint)] + ([] if args.resume else permission_args('codex', args.permission_mode))
+            command = ['codex'] + session_args('codex', args.resume, args.fork) + ['--remote', 'unix://'+str(endpoint)] + ([] if args.resume or args.fork else permission_args('codex', args.permission_mode))
             def monitor():
                 while not stop.wait(1):
                     try:
                         ids = ws.rpc('thread/loaded/list', {})['data']
                         records = [ws.rpc('thread/read', {'threadId': i, 'includeTurns': False})['thread'] for i in ids]
-                        records = [r for r in records if not r.get('parentThreadId')]
-                        if not records: continue
-                        record = next((r for r in records if r['id'] == meta.get('conversationId')), records[0])
+                        record = codex_thread(records, meta.get('conversationId'), args.fork)
+                        if not record: continue
                         activity, reason = codex_activity(record.get('status', {}))
                         if activity == 'idle':
                             try: terminals = ws.rpc('thread/backgroundTerminals/list', {'threadId': record['id']}).get('data') or []
@@ -628,7 +637,7 @@ def run(args):
             events = ['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','PermissionRequest','Elicitation','ElicitationResult','Notification','Stop','StopFailure','SessionEnd']
             settings = {'hooks': {event: [{'hooks': [{'type': 'command', 'command': hook_command, 'timeout': 3}]}] for event in events}}
             help_text = subprocess.check_output(['claude','--help'], text=True, timeout=15) if args.permission_mode == 'standard' else ''
-            command = ['claude', '--resume' if args.resume else '--session-id', identity, '--settings', json.dumps(settings)] + permission_args('claude', args.permission_mode, help_text)
+            command = ['claude'] + session_args('claude', args.resume, args.fork, identity) + ['--settings', json.dumps(settings)] + permission_args('claude', args.permission_mode, help_text)
             def monitor():
                 quiet_since = None
                 while not stop.wait(2):
@@ -691,7 +700,7 @@ def hook(chat_id, generation):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(); sub = parser.add_subparsers(dest='action', required=True)
-    launch = sub.add_parser('run'); launch.add_argument('agent', choices=['codex','claude']); launch.add_argument('chat'); launch.add_argument('generation'); launch.add_argument('--resume'); launch.add_argument('--permission-mode', default='standard', choices=['standard','read-only','full-access','accept-edits','plan'])
+    launch = sub.add_parser('run'); launch.add_argument('agent', choices=['codex','claude']); launch.add_argument('chat'); launch.add_argument('generation'); launch.add_argument('--resume'); launch.add_argument('--fork'); launch.add_argument('--permission-mode', default='standard', choices=['standard','read-only','full-access','accept-edits','plan'])
     event = sub.add_parser('hook'); event.add_argument('chat'); event.add_argument('generation')
     identification = sub.add_parser('identify'); identification.add_argument('agent', choices=['codex','claude']); identification.add_argument('pid', type=int)
     available = sub.add_parser('available'); available.add_argument('agent', choices=['codex','claude']); available.add_argument('identity')
@@ -703,6 +712,7 @@ if __name__ == '__main__':
     meta = sub.add_parser('metadata'); meta.add_argument('chats', nargs='+')
     args = parser.parse_args()
     if args.action in ('run','hook') and (not UUID.match(args.chat) or not UUID.match(args.generation)): sys.exit(2)
+    if args.action == 'run' and args.fork and (args.resume or not UUID.match(args.fork)): sys.exit(2)
     if args.action == 'run': sys.exit(run(args))
     elif args.action == 'hook': hook(args.chat, args.generation)
     elif args.action == 'identify': print(json.dumps({'conversationId': identify(args.agent,args.pid)}))

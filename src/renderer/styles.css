@@ -387,3 +387,4 @@
 .pane-drop-preview.top{left:6px;right:6px;top:6px;height:calc(50% - 9px)}.pane-drop-preview.bottom{left:6px;right:6px;bottom:6px;height:calc(50% - 9px)}
 .pane-drop-preview.center{inset:6px;background:#9be1c438;border-style:dashed}
 @media (prefers-reduced-motion:reduce){.groups-overview,.pane-workspace,.tab-drop-caret,.drop-before::before,.drop-after::after,.pane-drop-preview{animation:none}}
+.chat-context-menu button[aria-disabled=true],.actions-menu button[aria-disabled=true]{opacity:.55}

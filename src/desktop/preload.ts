@@ -20,6 +20,7 @@ const api: HarborApi = {
   chatPreview: id => ipcRenderer.invoke('harbor:chatPreview', id),
   importHistory: id => ipcRenderer.invoke('harbor:importHistory', id),
   resume: (id,restart) => ipcRenderer.invoke('harbor:resume', id,restart),
+  fork: id => ipcRenderer.invoke('harbor:fork', id),
   checkUpdates: force => ipcRenderer.invoke('harbor:checkUpdates', force),
   updateAllAgents: () => ipcRenderer.invoke('harbor:updateAllAgents'),
   openProjectInCursor: id => ipcRenderer.invoke('harbor:openProjectInCursor', id),
