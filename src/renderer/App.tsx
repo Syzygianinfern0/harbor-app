@@ -63,6 +63,8 @@ export function App() {
   const [hideClosed,setHideClosed]=useState(()=>saved('harbor.hideClosed',false));
   // The project whose name was clicked shows its closed chats despite the toggle, only while its page is showing; opening a chat or flipping the toggle ends it.
   const [reveal,setReveal]=useState<string>();
+  // Set by clicking a project name so its page shows even when no tab is left in the strip (focus mode, everything folded).
+  const [projectPage,setProjectPage]=useState(false);
   const [notesOnly,setNotesOnly]=useState(()=>saved('harbor.notesOnly',false));
   const [commandSession,setCommandSession]=useState<Session>();
   useEffect(()=>{localStorage.setItem('harbor.hideClosed',JSON.stringify(hideClosed));},[hideClosed]);
@@ -99,7 +101,7 @@ export function App() {
   const arrangedTabs=tabLayout.segments.flatMap(s=>s.kind==='tab'?[s.id]:s.tabs);
   const visibleTabs=stripTabs(tabLayout.segments,groups,selected);
   const selectedKey=selected?tabLayout.keyOf.get(selected):undefined;
-  const showOverview=!current&&openTabs.length>0&&visibleTabs.length===0;
+  const showOverview=!current&&!projectPage&&openTabs.length>0&&visibleTabs.length===0;
   const projectColor=(id?:string)=>(id&&groups.projectColors[id])||GROUP_COLORS[0].value;
   const colorSwatches=(label:string,current:string,pick:(value:string)=>void)=><div className="group-colors" role="group" aria-label={label}>{GROUP_COLORS.map(c=><button key={c.value} role="menuitemradio" aria-checked={current===c.value} aria-label={c.name} title={c.name} className={current===c.value?'current':''} style={{'--swatch':c.value} as CSSProperties} onClick={()=>pick(c.value)}/>)}</div>;
   const liveChats=(id:string)=>sessions.filter(s=>s.projectId===id&&!s.archived&&s.launcher!=='shell'&&!['closed','external'].includes(chatActivity(s)));
@@ -167,6 +169,7 @@ export function App() {
   };
   // Folding puts a group away: its panes leave the view, which moves to the most recently used chat still shown.
   const recent=useRef<string[]>([]);
+  useEffect(()=>{if(selected)setProjectPage(false);},[selected]);
   useEffect(()=>{if(selected)recent.current=[selected,...recent.current.filter(id=>id!==selected)].slice(0,100);},[selected]);
   const foldMemory=useRef<{keys:string;before:PaneNode|null;after:PaneNode|null;selected?:string}>(undefined);
   const savedSplits=useRef<Record<string,PaneNode>>({});
@@ -233,7 +236,7 @@ export function App() {
   };
   const revealed=!current&&reveal===projectId?reveal:undefined;
   const visibleChat=(session:Session,shown=revealed)=>chatVisible(session,{hideClosed,notesOnly,reveal:shown,fresh:freshChats});
-  const openProject=(id:string)=>{setReveal(v=>nextReveal(v,id,projectId===id&&!current));setProjectId(id);setSelected(undefined);};
+  const openProject=(id:string)=>{setProjectPage(true);setReveal(v=>nextReveal(v,id,projectId===id&&!current));setProjectId(id);setSelected(undefined);};
   const resumeChat=async(session:Session,restart=false)=>{setBusy(session.id);setContext(undefined);setMenu(false);try{const resumed=await window.harbor.resume(session.id,restart);setFreshChats(v=>new Set(v).add(resumed.id));open(resumed);}catch(error){report((error as Error).message);}finally{setBusy(undefined);}};
   const pin=async(session:Session)=>{setContext(undefined);setMenu(false);try{await window.harbor.update(session.id,{pinned:!session.pinned});}catch(error){report((error as Error).message);}};
   const chatMenu=(session:Session)=><><button role="menuitem" onClick={()=>{setCommandSession(session);setMenu(false);setContext(undefined);}}>View launch command…</button><button role="menuitem" onClick={()=>{setRename({kind:'chat',id:session.id,name:session.name});setContext(undefined);setMenu(false);}}>Rename chat…</button><button role="menuitem" onClick={()=>{setNoteEditor(context&&(!context.kind||context.kind==='tab')?{kind:'chat',id:session.id,x:context.x,y:context.y}:{kind:'chat',id:session.id,x:innerWidth/2-160,y:innerHeight/3});setContext(undefined);setMenu(false);}}><StickyNote size={14}/>{session.note?'Edit note…':'Add note…'}</button><button role="menuitem" onClick={()=>void pin(session)}><Pin size={14}/>{session.pinned?'Unpin':'Pin'} chat</button>{session.status==='closed'?<button role="menuitem" disabled={busy===session.id||session.externalActive} onClick={()=>void resumeChat(session)}><RefreshCw size={14}/>{session.launcher==='shell'?'Reopen terminal':'Resume chat'}</button>:<><button role="menuitem" disabled={busy===session.id} onClick={()=>void resumeChat(session,true)}><RefreshCw size={14}/>Reconnect & resume</button><button role="menuitem" disabled={busy===session.id} onClick={()=>void closeChat(session)}><X size={14}/>Close chat</button></>}<hr/><button role="menuitem" onClick={async()=>{setContext(undefined);setMenu(false);if(await window.harbor.forget(session.id)){removeFromWorkspace(session.id,true);}}}>Remove from sidebar…</button></>;
@@ -245,7 +248,7 @@ export function App() {
   const allFolded=projects.length>0&&projects.every(p=>folded.includes(p.id));
   return <div className={`app-shell ${peeking?'sidebar-peeking':''}`} style={{'--sidebar-width':`${sidebarWidth}px`} as CSSProperties}>
     <div className={`sidebar-dock ${collapsed?'is-collapsed':''} ${peeking?'is-peeking':''}`} onMouseOver={hoverDock} onMouseLeave={()=>schedulePeek(false,350)}>
-      {collapsed&&<nav className="sidebar-rail" aria-label="Collapsed sidebar"><div className="traffic-spacer"/><button className="icon-button rail-expand" aria-label="Expand sidebar" onClick={toggleSidebar}><PanelLeftOpen size={19}/></button><button className="rail-new" aria-label="New chat" onClick={()=>newChat()}><Plus size={20}/></button><div className="rail-sessions">{projects.map(p=>{const summary=rollup(liveChats(p.id),s=>chatActivity(s));const key=`p:${p.id}`;return <button key={p.id} className={`rail-session ${projectId===p.id?'active':''}`} title={`${p.name}${summary?` · ${activityLabel[summary.activity as ChatStatus]}: ${summary.item.name}`:''}`} aria-label={`Open project ${p.name}`} onClick={()=>{if(groups.focus&&groupKeys(tabLayout.segments).includes(key)){openGroup(key);return;}openProject(p.id);}}><Folder size={19} style={{color:projectColor(p.id)}} fill={projectColor(p.id)} fillOpacity={.18}/>{summary&&<span className="rail-badge" aria-hidden="true"><StatusIcon activity={summary.activity as ChatStatus}/></span>}</button>;})}</div><SidebarCost state={usage} onDetails={showUsage} collapsed/><button className="icon-button rail-preferences" aria-label="Preferences" onClick={()=>setDialog('preferences')}><Settings2 size={19}/></button></nav>}
+      {collapsed&&<nav className="sidebar-rail" aria-label="Collapsed sidebar"><div className="traffic-spacer"/><button className="icon-button rail-expand" aria-label="Expand sidebar" onClick={toggleSidebar}><PanelLeftOpen size={19}/></button><button className="rail-new" aria-label="New chat" onClick={()=>newChat()}><Plus size={20}/></button><div className="rail-sessions">{projects.map(p=>{const summary=rollup(liveChats(p.id),s=>chatActivity(s));const key=`p:${p.id}`;return <button key={p.id} className={`rail-session ${projectId===p.id?'active':''}`} title={`${p.name}${summary?` · ${activityLabel[summary.activity as ChatStatus]}: ${summary.item.name}`:''}`} aria-label={`Open project ${p.name}`} onClick={()=>{if(groups.focus&&key!==selectedKey&&groupKeys(tabLayout.segments).includes(key)){openGroup(key);return;}openProject(p.id);}}><Folder size={19} style={{color:projectColor(p.id)}} fill={projectColor(p.id)} fillOpacity={.18}/>{summary&&<span className="rail-badge" aria-hidden="true"><StatusIcon activity={summary.activity as ChatStatus}/></span>}</button>;})}</div><SidebarCost state={usage} onDetails={showUsage} collapsed/><button className="icon-button rail-preferences" aria-label="Preferences" onClick={()=>setDialog('preferences')}><Settings2 size={19}/></button></nav>}
       <aside className="sidebar" inert={collapsed&&!peeking?true:undefined}><div className="traffic-spacer"><button className="icon-button sidebar-toggle" aria-label={collapsed?'Pin sidebar open':'Collapse sidebar'} title="Toggle sidebar (⌘ B)" onClick={toggleSidebar}>{collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</button></div>
         <div className="brand"><div className="brand-icon"><Anchor size={23}/></div><span>harbor<span className="brand-period">.</span></span></div>
         <button className="new-session-button" onClick={()=>newChat()}><Plus size={17}/>New chat<kbd>⌘ N</kbd></button>
@@ -292,7 +295,7 @@ export function App() {
     {context&&!context.kind&&sessions.find(s=>s.id===context.id)&&<div className="popover chat-context-menu" role="menu" style={{left:context.x,top:context.y}} onClick={e=>e.stopPropagation()}>{chatMenu(sessions.find(s=>s.id===context.id)!)}</div>}
     {toast&&<div className="toast" role="alert">{toast}<button aria-label="Dismiss message" onClick={()=>setToast('')}><X size={15}/></button></div>}
     {dialog==='preferences'&&snapshot&&<PreferencesDialog initial={snapshot.preferences} projects={snapshot.projects} initialTab={preferencesTab} usage={usage} onClose={()=>{setDialog(null);setPreferencesTab('hosts');}}/>}
-    {dialog==='project'&&snapshot&&<ProjectDialog snapshot={snapshot} onPreferences={()=>setDialog('preferences')} onClose={()=>setDialog(null)} onCreated={p=>{setProjectId(p.id);setSelected(undefined);setDialog(null);loadedHistory.current.add(p.id);}}/>}
+    {dialog==='project'&&snapshot&&<ProjectDialog snapshot={snapshot} onPreferences={()=>setDialog('preferences')} onClose={()=>setDialog(null)} onCreated={p=>{setProjectId(p.id);setSelected(undefined);setProjectPage(true);setDialog(null);loadedHistory.current.add(p.id);}}/>}
     {dialog==='chat'&&project&&<ChatDialog project={project} defaults={snapshot!.preferences.agents} shortcut={chatShortcut} onClose={()=>setDialog(null)} onCreated={s=>{setFreshChats(v=>new Set(v).add(s.id));setDialog(null);const key=selected?tabLayout.keyOf.get(selected):undefined;if(key?.startsWith('g:')&&sessions.find(v=>v.id===selected)?.projectId===s.projectId)setGroups(v=>addToGroup(v,key.slice(2),[s.id]));open(s);}}/>}
     {commandSession&&<LaunchCommandDialog session={commandSession} onClose={()=>setCommandSession(undefined)}/>}
     {noteEditor&&noteTarget&&<ChatNoteEditor key={noteEditor.kind+noteEditor.id} item={noteTarget} anchor={noteEditor} onClose={()=>setNoteEditor(undefined)}/>}
