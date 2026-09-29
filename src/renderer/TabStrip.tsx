@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent } from 'react';
-import { Bell, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
+import { Bell, ChevronLeft, ChevronRight, Columns2, Plus, X } from 'lucide-react';
 import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon } from './ChatStatusIcon';
 import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
 import { dropSide, planStripDrop, type StripSource } from '../shared/dropCue';
+import { splitRuns } from '../shared/splits';
 import { useDropCue } from './useDropCue';
 import { useTabMotion } from './useTabMotion';
 import { groupEntry, isCollapsed, layoutTabs, rollup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
@@ -29,6 +30,7 @@ const layoutWidth=(el:HTMLElement)=>{
 
 export interface TabStripProps {
   tabs:string[]; sessions:Session[]; projects:Project[]; groups:TabGroups; selected?:string; selection:Set<string>; busy?:string; dragging?:string;
+  /** Chats tiled together (pane order), and the chats in the view now. */ splits?:string[][]; view?:string[];
   onOpen:(session:Session)=>void; onClose:(session:Session)=>void; onSelection:(ids:Set<string>)=>void;
   setTabs:(update:(tabs:string[])=>string[])=>void; setGroups:(update:(groups:TabGroups)=>TabGroups)=>void;
   onDragStart:(event:DragEvent,id:string)=>void; onDragEnd:()=>void; onNewChat:()=>void;
@@ -39,9 +41,10 @@ export function TabStrip(props:TabStripProps) {
   const {groups,selected,selection}=props;
   const byId=new Map(props.sessions.map(s=>[s.id,s]));
   const tabs=props.tabs.filter(id=>byId.has(id));
-  const {segments,keyOf}=layoutTabs(tabs,groups,id=>byId.get(id)?.projectId,props.projects.map(p=>p.id));
+  const splits=props.splits??[];
+  const {segments,keyOf}=layoutTabs(tabs,groups,id=>byId.get(id)?.projectId,props.projects.map(p=>p.id),splits);
   const selectedKey=selected?keyOf.get(selected):undefined;
-  const stripState={tabs,groups,projectOf:(id:string)=>byId.get(id)?.projectId,projectOrder:props.projects.map(p=>p.id)};
+  const stripState={tabs,groups,projectOf:(id:string)=>byId.get(id)?.projectId,projectOrder:props.projects.map(p=>p.id),splits};
   const strip=useRef<HTMLDivElement>(null);
   useTabMotion(strip);
   const [width,setWidth]=useState(0);
@@ -52,8 +55,11 @@ export function TabStrip(props:TabStripProps) {
   // they become icons one at a time: other groups before the current one, farthest from the active tab first.
   const shown=segments.flatMap(s=>s.kind==='tab'?[s.id]:isCollapsed(groups,s.key,selectedKey)?(selected&&s.tabs.includes(selected)?[selected]:[]):s.tabs);
   const at=selected?shown.indexOf(selected):-1;
+  // A split's tabs share one outline; the one in view is lit as a unit, its focused pane brightest.
+  const runs=splitRuns(segments.flatMap(s=>s.kind==='tab'?[s.id]:[undefined,...shown.filter(id=>keyOf.get(id)===s.key),undefined]),splits);
+  const inView=new Set((props.view?.length??0)>1?props.view:[]);
   const iconOrder=shown.filter(id=>id!==selected).sort((a,b)=>Number(keyOf.get(b)!==selectedKey)-Number(keyOf.get(a)!==selectedKey)||Math.abs(shown.indexOf(b)-at)-Math.abs(shown.indexOf(a)-at));
-  const fitKey=JSON.stringify([width,groups.shrink,selected,segments.map(s=>s.kind==='tab'?s.id:[s.key,isCollapsed(groups,s.key,selectedKey),s.tabs.map(id=>byId.get(id)?.name)]),tabs.map(id=>byId.get(id)?.name)]);
+  const fitKey=JSON.stringify([width,groups.shrink,selected,splits,segments.map(s=>s.kind==='tab'?s.id:[s.key,isCollapsed(groups,s.key,selectedKey),s.tabs.map(id=>byId.get(id)?.name)]),tabs.map(id=>byId.get(id)?.name)]);
   const fitted=useRef('');
   useLayoutEffect(()=>{
     const el=strip.current;if(!el)return;
@@ -92,7 +98,8 @@ export function TabStrip(props:TabStripProps) {
     if('chat' in source&&'key' in target){const plan=planStripDrop(stripState,source,target,'into');return plan&&{plan,place:'into' as const};}
     // A tab lands beside a tab; a group lands beside the whole target group (or an ungrouped tab).
     const key='group' in source?('key' in target?target.key:keyOf.get(target.tab)):undefined;
-    const els=key?members(key):[event.currentTarget as HTMLElement];if(!els.length)return;
+    const run='tab' in target&&!key?runs.get(target.tab):undefined;
+    const els=key?members(key):run?run.flatMap(id=>strip.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(id)}"]`)??[]):[event.currentTarget as HTMLElement];if(!els.length)return;
     const first=els[0],last=els.at(-1)!,left=first.getBoundingClientRect().left,right=last.getBoundingClientRect().right;
     const place=dropSide({left,top:0,width:right-left,height:0},event.clientX,event.clientY,'x');
     const plan=planStripDrop(stripState,source,target,place);if(!plan)return;
@@ -132,13 +139,15 @@ export function TabStrip(props:TabStripProps) {
   const tab=(id:string,color?:string,end=false)=>{
     const s=byId.get(id)!;const active=id===selected;const activity=chatActivity(s);
     const size=active||!groups.shrink?'':icons.has(id)?'compact':'narrow';
+    const run=runs.get(id),partners=run?.filter(v=>v!==id).map(v=>byId.get(v)?.name).join(', ');
+    const split=run?`split ${run[0]===id?'split-start':''} ${run.at(-1)===id?'split-end':''} ${inView.has(id)?'split-view':''}`:'';
     return <div key={id} data-tab-id={id} data-attention={activity==='attention'?id:undefined} title={size==='compact'?`${s.name}\n${activityLabel[activity]}`:undefined}
       style={{'--tab-color':color??(s.projectId&&groups.projectColors[s.projectId])??GROUP_COLORS[0].value,...(color?{'--group-color':color}:{})} as CSSProperties}
       onMouseDown={event=>{if(event.button===1)event.preventDefault();}} onAuxClick={event=>{if(event.button===1){event.preventDefault();props.onClose(s);}}}
       onContextMenu={event=>{event.preventDefault();event.stopPropagation();props.onTabMenu(id,event.clientX,event.clientY);}}
       draggable onDragStart={event=>props.onDragStart(event,id)} onDragEnd={props.onDragEnd} {...targetProps({tab:id},id)}
-      className={`tab ${active?'active':''} ${props.dragging===id?'dragging':''} ${color?'grouped':''} ${end?'group-end':''} ${size} ${selection.has(id)?'multi-selected':''}`}>
-      <button onClick={event=>click(event,s)} aria-pressed={selection.size?selection.has(id):undefined}><AgentIcon launcher={s.launcher} size={14}/><span className="tab-name">{s.name}</span><ChatStatusIcon session={s}/></button>
+      data-split={run?.join(' ')} className={`tab ${split} ${active?'active':''} ${props.dragging===id||!!props.dragging&&!!run?.includes(props.dragging)?'dragging':''} ${color?'grouped':''} ${end?'group-end':''} ${size} ${selection.has(id)?'multi-selected':''}`}>
+      <button onClick={event=>click(event,s)} aria-pressed={selection.size?selection.has(id):undefined} aria-description={run?`Split view with ${partners}`:undefined}>{run?.[0]===id&&<Columns2 className="split-mark" size={11} aria-hidden="true"/>}<AgentIcon launcher={s.launcher} size={14}/><span className="tab-name">{s.name}</span><ChatStatusIcon session={s}/></button>
       <button className="tab-close" disabled={props.busy===s.id} aria-label={`Close chat ${s.name}`} title="Close chat and stop its tmux session" onClick={()=>props.onClose(s)}><X size={12}/></button>
       {active&&<><span className="tab-flare left" aria-hidden="true"/><span className="tab-flare right" aria-hidden="true"/></>}
     </div>;

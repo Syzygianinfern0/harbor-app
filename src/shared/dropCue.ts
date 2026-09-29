@@ -1,7 +1,7 @@
 // Where a dragged item will land. Cues are drawn from these plans, and drops apply the same plans,
 // so the insertion line always marks the real landing spot; a drop that would change nothing (or land
 // somewhere other than the line) has no plan and shows no cue.
-import { reorderTabs } from './panes';
+import { splitRuns } from './splits';
 import { addToGroup, arrangeTabs, groupTabs, layoutTabs, removeFromGroups, type ProjectOf, type Segment, type TabGroups } from './tabGroups';
 
 export type DropPlace='before'|'after'|'into';
@@ -17,37 +17,43 @@ export function moveItem(ids:string[],id:string,target:string,after:boolean):str
 
 export type StripSource={chat:string}|{group:string};
 export type StripTarget={tab:string}|{key:string};
-export interface StripState {tabs:string[];groups:TabGroups;projectOf:ProjectOf;projectOrder:string[]}
+export interface StripState {tabs:string[];groups:TabGroups;projectOf:ProjectOf;projectOrder:string[];splits?:string[][]}
 export interface StripPlan {tabs:string[];groups:TabGroups;projectOrder:string[];project?:{source:string;target:string;after:boolean}}
 const segKey=(s:Segment)=>s.kind==='tab'?`t:${s.id}`:s.key;
+/** A split's tabs as they sit together in the strip; they move as one. */
+export const stripRuns=(segments:Segment[],splits:string[][]=[])=>splitRuns(segments.flatMap(s=>s.kind==='tab'?[s.id]:[undefined,...s.tabs,undefined]),splits);
 /** The tab strip's drops: a tab moves beside a tab (joining or leaving a custom group with it), a tab drops into a
- *  group chip, and a group moves as a block beside a tab or another group. */
+ *  group chip, and a group moves as a block beside a tab or another group. A split's tabs move (and join groups) together,
+ *  and nothing lands between them. */
 export function planStripDrop(state:StripState,source:StripSource,target:StripTarget,place:DropPlace):StripPlan|undefined {
   const {groups,projectOf,projectOrder}=state;
-  const now=layoutTabs(state.tabs,groups,projectOf,projectOrder),arranged=arrangeTabs(now.segments);
-  const relayout=(p:StripPlan)=>layoutTabs(p.tabs,p.groups,projectOf,p.projectOrder);
+  const now=layoutTabs(state.tabs,groups,projectOf,projectOrder,state.splits),arranged=arrangeTabs(now.segments);
+  const relayout=(p:StripPlan)=>layoutTabs(p.tabs,p.groups,projectOf,p.projectOrder,state.splits);
+  const runs=stripRuns(now.segments,state.splits),runOf=(id:string)=>runs.get(id)??[id];
   if('chat' in source){
-    const chat=source.chat;
+    const chat=source.chat,block=runOf(chat);
     if('key' in target){
-      if(place!=='into')return;const key=target.key;
-      const next=key.startsWith('g:')?addToGroup(groups,key.slice(2),[chat]):projectOf(chat)===key.slice(2)?removeFromGroups(groups,[chat]):undefined;if(!next)return;
-      const plan={tabs:state.tabs.includes(chat)?state.tabs:[...state.tabs,chat],groups:next,projectOrder};
-      const was=now.keyOf.get(chat),lands=relayout(plan).keyOf.get(chat);
-      return state.tabs.includes(chat)&&was===lands?undefined:plan;
+      if(place!=='into')return;const key=target.key,open=state.tabs.includes(chat),moving=open?block:[chat],own=moving.filter(id=>projectOf(id)===key.slice(2));
+      const next=key.startsWith('g:')?addToGroup(groups,key.slice(2),moving):own.length?removeFromGroups(groups,own):undefined;if(!next)return;
+      const plan={tabs:open?state.tabs:[...state.tabs,chat],groups:next,projectOrder};
+      const lands=relayout(plan).keyOf;
+      return open&&moving.every(id=>now.keyOf.get(id)===lands.get(id))?undefined:plan;
     }
-    const tab=target.tab;if(place==='into'||chat===tab||!arranged.includes(chat)||!arranged.includes(tab))return;
-    const to=now.keyOf.get(tab),from=now.keyOf.get(chat);
-    const next=to===from?groups:to?.startsWith('g:')?addToGroup(groups,to.slice(2),[chat]):from?.startsWith('g:')?removeFromGroups(groups,[chat]):groups;
-    const plan={tabs:reorderTabs(arranged,chat,tab,place==='after'),groups:next,projectOrder};
+    const tab=target.tab;if(place==='into'||block.includes(tab)||!arranged.includes(chat)||!arranged.includes(tab))return;
+    const to=now.keyOf.get(tab),anchor=runOf(tab),after=place==='after';
+    const next=block.reduce((g,id)=>{const from=now.keyOf.get(id);return to===from?g:to?.startsWith('g:')?addToGroup(g,to.slice(2),[id]):from?.startsWith('g:')?removeFromGroups(g,[id]):g;},groups);
+    const rest=arranged.filter(id=>!block.includes(id));rest.splice(after?rest.indexOf(anchor.at(-1)!)+1:rest.indexOf(anchor[0]),0,...block);
+    const plan={tabs:rest,groups:next,projectOrder};
     // Neighbors as drawn, chips included: landing across a group boundary is not landing beside the tab.
-    const after=relayout(plan),order=arrangeTabs(after.segments),drawn=after.segments.flatMap(s=>s.kind==='tab'?[s.id]:[s.key,...s.tabs]);
-    const landed=drawn[drawn.indexOf(tab)+(place==='after'?1:-1)]===chat;
-    const changed=order.some((v,i)=>v!==arranged[i])||after.keyOf.get(chat)!==from;
+    const laid=relayout(plan),order=arrangeTabs(laid.segments),drawn=laid.segments.flatMap(s=>s.kind==='tab'?[s.id]:[s.key,...s.tabs]);
+    const landed=drawn[drawn.indexOf(after?anchor.at(-1)!:anchor[0])+(after?1:-1)]===(after?block[0]:block.at(-1));
+    const changed=order.some((v,i)=>v!==arranged[i])||block.some(id=>laid.keyOf.get(id)!==now.keyOf.get(id));
     return landed&&changed?plan:undefined;
   }
   const key=source.group;if(place==='into'||!groupTabs(now.segments,key).length)return;
   const targetKey='key' in target?target.key:now.keyOf.get(target.tab);
-  const anchorSeg=targetKey?targetKey:'tab' in target?`t:${target.tab}`:undefined;
+  const lone='tab' in target&&!targetKey?runOf(target.tab):undefined;
+  const anchorSeg=targetKey?targetKey:lone?`t:${place==='after'?lone.at(-1):lone[0]}`:undefined;
   if(!anchorSeg||targetKey===key||!now.segments.some(s=>segKey(s)===anchorSeg))return;
   const after=place==='after';let plan:StripPlan;
   if(key.startsWith('p:')&&targetKey?.startsWith('p:')){
@@ -55,7 +61,7 @@ export function planStripDrop(state:StripState,source:StripSource,target:StripTa
     plan={tabs:arranged,groups,projectOrder:order,project:{source:key.slice(2),target:targetKey.slice(2),after}};
   } else {
     const block=groupTabs(now.segments,key),rest=arranged.filter(id=>!block.includes(id));
-    const anchor=targetKey?groupTabs(now.segments,targetKey):[(target as {tab:string}).tab];
+    const anchor=targetKey?groupTabs(now.segments,targetKey):lone!;
     rest.splice(after?rest.indexOf(anchor.at(-1)!)+1:rest.indexOf(anchor[0]),0,...block);
     plan={tabs:rest,groups,projectOrder};
   }
