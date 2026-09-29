@@ -66,7 +66,7 @@ export class HarborEngine extends EventEmitter {
       const parsed = JSON.parse(await readFile(path.join(this.dataDir, 'sessions.json'), 'utf8'));
       if (![1, 2].includes(parsed.version) || !Array.isArray(parsed.sessions) || !parsed.sessions.every((s: Session) => typeof s.id === 'string' && /^harbor-[a-f0-9-]+$/.test(s.tmuxName) && /^%\d+$/.test(s.paneId) && typeof s.name === 'string' && typeof s.cwd === 'string' && typeof s.group === 'string' && Array.isArray(s.tags) && ['shell', 'codex', 'claude', 'custom'].includes(s.launcher))) throw new Error('Invalid session index.');
       this.projects = Array.isArray(parsed.projects) ? parsed.projects : [];
-      this.sessions = parsed.sessions.map((session: Session) => { validateHost(session.host); if (session.connection) validateConnection(session.connection); return { ...session, status: session.status === 'closed' ? 'closed' : 'checking', activity: session.status === 'closed' ? 'closed' : 'unknown' }; });
+      this.sessions = parsed.sessions.map((session: Session) => { validateHost(session.host); if (session.connection) validateConnection(session.connection); return { ...session, unread: session.unread === true || undefined, status: session.status === 'closed' ? 'closed' : 'checking', activity: session.status === 'closed' ? 'closed' : 'unknown' }; });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`Cannot read the session index at ${this.dataDir}. It has been preserved. ${String(error)}`);
     }
@@ -321,6 +321,12 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     if (patch.name !== undefined) session.nameSource = 'manual';
     // A note is an annotation, not activity, so it does not reorder the chat list.
     if (Object.keys(patch).some(key => key !== 'note')) session.updatedAt = new Date().toISOString();
+    await this.persist(); this.changed();
+  }
+  /** The unread marker (see shared/unread.ts); only a real change is persisted. */
+  async setUnread(id: string, unread: boolean) {
+    const session = this.sessions.find(s => s.id === id); if (!session || !!session.unread === unread) return;
+    if (unread) session.unread = true; else delete session.unread;
     await this.persist(); this.changed();
   }
   async refresh() {

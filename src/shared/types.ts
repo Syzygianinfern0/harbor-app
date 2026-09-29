@@ -31,6 +31,8 @@ export interface Session {
   status: SessionStatus; detail?: string;
   hostId?: string; hostLabel?: string; connection?: SshConnection;
   projectId?: string; projectRemoved?: boolean; conversationId?: string; generation?: string; activity?: Activity; activityDetail?: string; activityAt?: number; attentionAt?: number; completedAt?: number; resumable?: boolean; nameSource?: 'auto' | 'manual'; imported?: boolean; externalActive?: boolean; note?: string;
+  /** Set when a notification-worthy event arrived while the chat was not on screen; cleared once it is viewed. Persisted. */
+  unread?: boolean;
 }
 export interface CreateSession {
   name: string; host: string; cwd: string; launcher: Launcher; projectId?: string;
@@ -40,6 +42,8 @@ export interface CreateSession {
 export interface Diagnostics { host: string; ok: boolean; home?: string; tmux?: string; shell?: string; codex?: string; claude?: string; error?: string }
 export interface Snapshot { agentUpdates?: AgentUpdateState; projects: Project[]; sessions: Session[]; hosts: SavedHost[]; preferences: Preferences; dataDir: string; home: string }
 export interface DirectoryListing { directory: string; parent: string | null; home: string; query: string; entries: {name: string; path: string}[]; truncated: boolean }
+/** What the renderer is showing: the focused pane's chat and every chat in a visible pane. */
+export interface ChatView { focused: string | null; visible: string[] }
 export type TerminalEvent = { id: string; type: 'data' | 'disconnected'; data: string };
 export interface HarborApi {
   snapshot(): Promise<Snapshot>;
@@ -66,6 +70,7 @@ export interface HarborApi {
   openNotificationSettings(): Promise<void>;
   testNotification(sound?: boolean): Promise<string>;
   onOpenSession(callback: (id: string) => void): () => void;
+  setChatView(view: ChatView): Promise<void>;
   update(id: string, patch: Partial<Pick<Session, 'name' | 'group' | 'tags' | 'pinned' | 'archived' | 'note'>>): Promise<void>;
   terminate(id: string): Promise<boolean>;
   forget(id: string): Promise<boolean>;
