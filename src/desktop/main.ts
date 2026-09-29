@@ -3,6 +3,7 @@ import path from 'node:path';
 import { openProjectInCursor } from './cursor';
 import { HarborEngine } from '../engine/engine';
 import { Transport } from '../engine/transport';
+import { dockBadge, NO_VIEW, shouldMarkUnread, unreadCount, validView, viewedChat } from '../shared/unread';
 
 app.setName('Harbor');
 if (process.env.HARBOR_DATA_DIR) app.setPath('userData', process.env.HARBOR_DATA_DIR);
@@ -13,12 +14,13 @@ else {
   let quitting = false;
   const activeNotifications=new Set<Notification>();
   let confirmingClose=false;
+  let chatView=NO_VIEW;
   const createWindow = () => {
     window = new BrowserWindow({ width: 1440, height: 920, minWidth: 950, minHeight: 640, title: 'Harbor', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 20, y: 21 }, backgroundColor: '#101217', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-    window.on('closed', () => { window = undefined; for (const session of engine.snapshot().sessions) engine.detach(session.id); });
+    window.on('closed', () => { window = undefined; chatView = NO_VIEW; for (const session of engine.snapshot().sessions) engine.detach(session.id); });
     if (!app.isPackaged && process.env.HARBOR_DEV_URL === 'http://127.0.0.1:5173') void window.loadURL(process.env.HARBOR_DEV_URL);
     else void window.loadFile(path.join(__dirname, '../renderer/index.html'));
   };
@@ -63,6 +65,10 @@ else {
       notification.once('close',()=>activeNotifications.delete(notification));
       notification.show();
     }));
+    // A chat is read once it is the focused pane of the focused window: on view changes (including notification clicks) and on window focus.
+    const markViewed=()=>{const id=viewedChat(!!window?.isFocused(),chatView);if(id)void engine.setUnread(id,false).catch(error=>console.error('Harbor unread:',error));};
+    handle('setChatView', view => {chatView=validView(view);markViewed();});
+    app.on('browser-window-focus', markViewed);
     handle('create', input => engine.create(input));
     handle('update', (id, patch) => engine.update(id, patch));
     handle('attach', (id, cols, rows) => engine.attach(id, cols, rows));
@@ -95,6 +101,7 @@ else {
     handle('openExternal', (url: string) => { const parsed = new URL(url); if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('Only web links can be opened.'); return shell.openExternal(parsed.toString()); });
     engine.on('attention', ({session,completed}) => {
       const settings=engine.snapshot().preferences.notifications;
+      if(shouldMarkUnread(session.id,completed,settings,!!window?.isFocused(),chatView))void engine.setUnread(session.id,true).catch(error=>console.error('Harbor unread:',error));
       if(!settings.enabled || (completed && !settings.onComplete) || (window?.isFocused() && !settings.whenFocused) || !Notification.isSupported()) return;
       const notification=new Notification({title:session.name,body:completed?'Finished and ready for your next message.':session.activityDetail||'This chat needs your attention.',silent:!settings.sound});
       activeNotifications.add(notification);
@@ -103,7 +110,11 @@ else {
       notification.on('click',()=>{if(!window) createWindow(); window?.show(); window?.focus(); window?.webContents.send('harbor:open-session',session.id);});
       notification.show();
     });
-    engine.on('snapshot', snapshot => window?.webContents.send('harbor:snapshot-changed', snapshot));
+    let badge='';const setBadge=(sessions:{unread?:boolean;archived:boolean}[])=>{const next=dockBadge(unreadCount(sessions));if(next!==badge){badge=next;app.dock?.setBadge(next);}};
+    setBadge(engine.snapshot().sessions);
+    engine.on('snapshot', snapshot => {setBadge(snapshot.sessions);window?.webContents.send('harbor:snapshot-changed', snapshot);});
+    // Lets e2e specs drive engine events (e.g. `attention`) in isolated profiles; off unless explicitly requested.
+    if(process.env.HARBOR_TEST_HOOKS==='1')(globalThis as any).harborTest={engine};
     engine.on('terminal', event => window?.webContents.send('harbor:terminal', event));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: 'Harbor', submenu: [{ role: 'about' }, { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },

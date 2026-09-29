@@ -387,3 +387,12 @@
 .pane-drop-preview.top{left:6px;right:6px;top:6px;height:calc(50% - 9px)}.pane-drop-preview.bottom{left:6px;right:6px;bottom:6px;height:calc(50% - 9px)}
 .pane-drop-preview.center{inset:6px;background:#9be1c438;border-style:dashed}
 @media (prefers-reduced-motion:reduce){.groups-overview,.pane-workspace,.tab-drop-caret,.drop-before::before,.drop-after::after,.pane-drop-preview{animation:none}}
+/* Unread: a chat raised a notification-worthy event while off screen. A small blue dot beside the status icon, brighter title; rollups on chips, headings and the rail. */
+:root{--unread:#6fa8ff}
+.unread-dot{flex-shrink:0;width:7px;height:7px;border-radius:50%;background:var(--unread);box-shadow:0 0 0 2px #6fa8ff26}
+.chat-row:has(.unread-dot) .chat-title,.tab:has(.unread-dot) .tab-name,.group-card-chat:has(.unread-dot) .chat-title{color:#eef3f9;font-weight:600}
+.tab-group-chip .unread-dot{margin:0 6px 0 -1px}
+.project-heading .unread-dot{margin:0 5px 0 1px}
+.rail-session .unread-dot{position:absolute;top:6px;right:7px;box-shadow:0 0 0 2px #191c23}
+.group-card-title .unread-dot{margin-left:-2px}
+.groups-overview .unread-text{color:var(--unread)}

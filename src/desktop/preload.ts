@@ -30,6 +30,7 @@ const api: HarborApi = {
   onTabShortcut: callback => subscribe('harbor:tab-shortcut',callback),
   onCloseSession: callback => subscribe('harbor:close-session',callback),
   onOpenSession: callback => subscribe<string>('harbor:open-session',callback),
+  setChatView: view => ipcRenderer.invoke('harbor:setChatView', view),
   create: input => ipcRenderer.invoke('harbor:create', input),
   update: (id, patch) => ipcRenderer.invoke('harbor:update', id, patch),
   terminate: id => ipcRenderer.invoke('harbor:terminate', id),

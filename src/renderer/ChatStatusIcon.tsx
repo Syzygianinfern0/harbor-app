@@ -1,11 +1,19 @@
 import { Bell, Circle, CircleCheck, CircleHelp, ExternalLink, Hourglass, LoaderCircle, TriangleAlert } from 'lucide-react';
 import type { Session } from '../shared/types';
 import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
+import { isUnread, unreadCount } from '../shared/unread';
 
 export function ChatStatusIcon({ session }: { session: Session }) {
   const activity = chatActivity(session);
   const detail = activity === 'completed' ? 'The agent is idle after its last turn. Task success is not verified.' : session.activityDetail;
-  return <StatusIcon activity={activity} detail={detail}/>;
+  return <>{isUnread(session)&&<UnreadDot sessions={[session]}/>}<StatusIcon activity={activity} detail={detail}/></>;
+}
+
+/** A calm dot for chats that raised a notification while off screen; a rollup when given several chats. Renders nothing when none are unread. */
+export function UnreadDot({ sessions, rollup }: { sessions: Pick<Session, 'unread' | 'archived' | 'name'>[]; rollup?: boolean }) {
+  const count = unreadCount(sessions); if (!count) return null;
+  const label = rollup ? `${count} unread ${count === 1 ? 'chat' : 'chats'}` : 'Unread';
+  return <span role="img" className={`unread-dot ${rollup ? 'rollup' : ''}`} aria-label={label} title={rollup ? `${label}: ${sessions.filter(isUnread).map(s => s.name).join(', ')}` : 'Unread: needed you while you were away'}/>;
 }
 
 export function StatusIcon({ activity, detail }: { activity: ChatStatus; detail?: string }) {

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { Bell, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
-import { ChatStatusIcon, StatusIcon } from './ChatStatusIcon';
+import { ChatStatusIcon, StatusIcon, UnreadDot } from './ChatStatusIcon';
 import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
 import { dropSide, planStripDrop, type StripSource } from '../shared/dropCue';
 import { useDropCue } from './useDropCue';
@@ -160,7 +160,7 @@ export function TabStrip(props:TabStripProps) {
       <span className="chip-pill"><button className="chip-label" aria-expanded={!folded} aria-label={label} title={`${info.name}${info.detail?` · ${info.detail}`:''} · ${ids.length} ${ids.length===1?'chat':'chats'}\n${groups.focus&&selected?(key===selectedKey?'Click to collapse':'Switch to this group'):folded?'Click to expand':'Click to collapse'} · right-click for options`} onClick={toggle}>
         <span className="chip-name">{info.name}</span>{folded&&<span className="chip-count" aria-hidden="true">{ids.length}</span>}
       </button>
-      {summary&&<button className="chip-rollup" aria-label={`Open ${summary.item.name}: ${activityLabel[summary.activity as ChatStatus]}`} title={`${activityLabel[summary.activity as ChatStatus]}: ${summary.item.name}${summary.count>1?` (+${summary.count-1} more)`:''}\nClick to open`} onClick={()=>props.onOpen(summary.item)}><StatusIcon activity={summary.activity as ChatStatus}/></button>}</span>
+      {summary&&<button className="chip-rollup" aria-label={`Open ${summary.item.name}: ${activityLabel[summary.activity as ChatStatus]}`} title={`${activityLabel[summary.activity as ChatStatus]}: ${summary.item.name}${summary.count>1?` (+${summary.count-1} more)`:''}\nClick to open`} onClick={()=>props.onOpen(summary.item)}><StatusIcon activity={summary.activity as ChatStatus}/></button>}{folded&&<UnreadDot sessions={hidden} rollup/>}</span>
     </div>;
   };
   const edge=(side:'left'|'right')=>{const e=edges[side];if(!e.count)return null;const Arrow=side==='left'?ChevronLeft:ChevronRight;
