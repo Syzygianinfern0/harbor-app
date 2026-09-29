@@ -198,3 +198,38 @@ test('folding takes the group split with it, unfold undoes it, and folding every
     await overview.locator('.group-card-chat',{hasText:'Rate limiter'}).click();await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');expect(await tabOrder(page)).toEqual(['b1']);
   } finally {await app.close();}
 });
+
+test('clicking a project name shows its project page in focus mode and with every group folded',async()=>{
+  const data=await fixture();const app=await data.launch();const page=await app.firstWindow();
+  try {
+    await mkdir('test-results/screenshots',{recursive:true});
+    for(const name of ['Tab groups design','Fix SSH reattach','Rate limiter'])await openChat(page,name);
+    await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.locator('.groups-menu label',{hasText:'Focus mode'}).click();await page.keyboard.press('Escape');
+    expect(await tabOrder(page)).toEqual(['b1']);
+    const heading=page.locator('.project-overview h1');const overview=page.locator('.groups-overview');const name=(project:string)=>page.locator('.sidebar .project-name',{hasText:project});
+    // The project page wins over the folded-groups overview, for the open group's project and for another one.
+    await name('tessera-api').click();await expect(heading).toHaveText('tessera-api');await expect(overview).toHaveCount(0);
+    await page.screenshot({path:'test-results/screenshots/36-focus-project-page.png'});
+    await name('Agent-Manager').click();await expect(heading).toHaveText('Agent-Manager');await expect(overview).toHaveCount(0);
+    // Opening a chat leaves the page for that chat's group, with focus mode intact.
+    await openChat(page,'Fix SSH reattach');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','a2');expect(await tabOrder(page)).toEqual(['a1','a2']);await expect(heading).toHaveCount(0);
+    // ⌥⌘ group shortcuts work from the page and open the group's last-used tab.
+    await name('Agent-Manager').click();await expect(heading).toHaveText('Agent-Manager');
+    await page.keyboard.press('Alt+Meta+Digit2');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');expect(await tabOrder(page)).toEqual(['b1']);
+    await name('Agent-Manager').click();await page.keyboard.press('Alt+Meta+Digit1');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','a2');expect(await tabOrder(page)).toEqual(['a1','a2']);
+    // Folding the open group still shows the overview; a project name then leaves it for the page.
+    await page.getByRole('button',{name:/^Agent-Manager group/}).click();await expect(overview).toBeVisible();
+    await name('tessera-api').click();await expect(heading).toHaveText('tessera-api');await expect(overview).toHaveCount(0);
+    // Collapsed rail in focus mode: another project's button switches to its group; the open group's button, or a project without tabs, shows the page.
+    await openChat(page,'Tab groups design');await page.keyboard.press('Meta+b');
+    await page.getByRole('button',{name:'Open project tessera-api',exact:true}).click();await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
+    await page.getByRole('button',{name:'Open project tessera-api',exact:true}).click();await expect(heading).toHaveText('tessera-api');await expect(overview).toHaveCount(0);
+    await page.getByRole('button',{name:'Open project neurips-paper',exact:true}).click();await expect(heading).toHaveText('neurips-paper');
+    await page.keyboard.press('Meta+b');
+    // Without focus mode, a project name also shows the page when every group is folded.
+    await openChat(page,'Rate limiter');await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.locator('.groups-menu label',{hasText:'Focus mode'}).click();
+    await page.getByRole('menuitem',{name:'Collapse all groups'}).click();await expect(overview).toBeVisible();
+    await name('Agent-Manager').click();await expect(heading).toHaveText('Agent-Manager');await expect(overview).toHaveCount(0);
+    await openChat(page,'Rate limiter');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
+  } finally {await app.close();}
+});
