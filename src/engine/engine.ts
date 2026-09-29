@@ -156,7 +156,7 @@ export class HarborEngine extends EventEmitter {
     const project = this.projects.find(p=>p.id===id); if (!project) throw new Error('Project not found.');
     if (!patch || typeof patch !== 'object') throw new Error('Invalid project update.');
     if (patch.name !== undefined) { bounded(patch.name,'project name',100); if (!patch.name.trim()) throw new Error('Enter a project name.'); project.name=patch.name.trim(); }
-    if (patch.note !== undefined) { const note = bounded(patch.note, 'note', 4000).trim(); if (note) project.note = note; else delete project.note; }
+    if (patch.note !== undefined) { const note = bounded(patch.note, 'note', 20000).trim(); if (note) project.note = note; else delete project.note; }
     await this.persist(); this.changed();
   }
   async manageProjects(items: {id:string;hidden:boolean}[]) {
@@ -330,7 +330,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     for (const key of ['name', 'group'] as const) if (patch[key] !== undefined) { bounded(patch[key], key, 100); if (!patch[key]?.trim()) throw new Error(`${key} cannot be empty.`); session[key] = patch[key]!.trim(); }
     if (patch.tags !== undefined) { if (!Array.isArray(patch.tags) || patch.tags.length > 20) throw new Error('Invalid tags.'); patch.tags.forEach(tag => bounded(tag, 'tag', 50)); session.tags = patch.tags; }
     for (const key of ['pinned', 'archived'] as const) if (patch[key] !== undefined) { if (typeof patch[key] !== 'boolean') throw new Error(`Invalid ${key}.`); session[key] = patch[key]!; }
-    if (patch.note !== undefined) { const note = bounded(patch.note, 'note', 4000).trim(); if (note) session.note = note; else delete session.note; }
+    if (patch.note !== undefined) { const note = bounded(patch.note, 'note', 20000).trim(); if (note) session.note = note; else delete session.note; }
     if (patch.name !== undefined) session.nameSource = 'manual';
     // A note is an annotation, not activity, so it does not reorder the chat list.
     if (Object.keys(patch).some(key => key !== 'note')) session.updatedAt = new Date().toISOString();
