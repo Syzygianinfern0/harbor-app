@@ -7,6 +7,7 @@ import { ControlClient } from './control';
 import { discoverHosts } from './hosts';
 import { checkAgentUpdates, updateMachines, installAgentUpdate } from './updates';
 import { validateMode } from '../shared/agentModes';
+import { forkBlocker, forkName } from '../shared/fork';
 import { UpdateManager } from './updateManager';
 import { AgentBridge } from './bridge';
 import { PricingStore } from './pricing';
@@ -277,18 +278,30 @@ printf 'HARBOR_CLAUDE='; command -v claude || true
     const task = this.createInternal(input); this.launches.add(task);
     try { return await task; } finally { this.launches.delete(task); }
   }
-  private async createInternal(input: CreateSession) {
+  /** A new chat in the original's folder, host, launcher and mode that starts from its conversation under a new ID; the original is untouched. */
+  async fork(id: string) {
+    if (this.disposed) throw new Error('Harbor is shutting down.');
+    const source = this.get(id);
+    if (this.operations.has(id)) throw new Error('This chat is changing state. Fork it again in a moment.');
+    const blocked = forkBlocker(source); if (blocked) throw new Error(blocked);
+    const project = source.projectRemoved ? undefined : source.projectId;
+    const task = this.createInternal({ name: forkName(source.name), host: source.host, cwd: source.cwd, launcher: source.launcher, projectId: project && this.projects.some(p => p.id === project) ? project : undefined, permissionMode: source.permissionMode, group: source.group, tags: [...source.tags] }, source);
+    this.launches.add(task);
+    try { return await task; } finally { this.launches.delete(task); }
+  }
+  private async createInternal(input: CreateSession, forkOf?: Session) {
     validateCreate(input);
     const project = input.projectId ? this.projects.find(p => p.id === input.projectId) : undefined;
     if (input.projectId && !project) throw new Error('Project not found.');
     const profile = this.preferencesStore.value.hosts.find(host => host.id === input.host && host.enabled);
-    if (!project && !profile) throw new Error('Choose an enabled host from Preferences first.');
-    const connection: Connection = structuredClone(project?.connection ?? profile?.connection ?? 'local');
-    if (project) input = { ...input, cwd: project.cwd };
+    if (!project && !profile && !forkOf) throw new Error('Choose an enabled host from Preferences first.');
+    const connection: Connection = structuredClone(project?.connection ?? (forkOf ? this.connection(forkOf) : profile?.connection) ?? 'local');
+    // A fork keeps the original's folder: agents file conversations by the folder they ran in.
+    if (project && !forkOf) input = { ...input, cwd: project.cwd };
     const id = randomUUID(); const tmuxName = `harbor-${id}`; const generation = randomUUID();
     const agent = input.launcher === 'codex' || input.launcher === 'claude';
     const permissionMode=agent?validateMode(input.launcher,input.permissionMode??this.preferencesStore.value.agents[input.launcher as 'codex'|'claude']):undefined;
-    const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${input.launcher} ${quote(id)} ${quote(generation)} --permission-mode ${quote(permissionMode!)}` : input.launcher === 'custom' ? input.command! : '';
+    const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${input.launcher} ${quote(id)} ${quote(generation)} --permission-mode ${quote(permissionMode!)}${forkOf ? ` --fork ${quote(forkOf.conversationId!)}` : ''}` : input.launcher === 'custom' ? input.command! : '';
     const variables = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${quote(value)}`).join(' ');
     const inner = `cd -- ${directory(input.cwd)} || exit 1\n${launch ? launch : 'exec "${SHELL:-/bin/bash}" -l'}`;
     // Start the intended command directly, after the login shell initializes: no send-keys readiness race.
@@ -302,8 +315,8 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     const paneId = result.match(/^HARBOR_PANE=(%\d+)$/m)?.[1];
     if (!paneId) throw new Error(`The host did not return a pane ID. A session may exist as ${tmuxName}; do not automatically retry.`);
     const now = new Date().toISOString();
-    const session: Session = { originalLaunchCommand: command, latestLaunchCommand: command, permissionMode, ...(agent?{hasMessages:false}:{}), id, tmuxName, paneId, name: input.name.trim(), host: typeof connection === 'string' ? connection : connection.target, hostId: project?.hostId ?? profile?.id, hostLabel: project?.hostLabel ?? profile?.label, projectId: project?.id, generation, activity: agent ? 'starting' : 'idle', nameSource: /^New (chat|terminal)$/.test(input.name) ? 'auto' : 'manual', ...(typeof connection === 'object' ? { connection } : {}), cwd: input.cwd || '~', launcher: input.launcher, command: launch, group: input.group?.trim() || 'Ungrouped', tags: input.tags ?? [], pinned: false, archived: false, createdAt: now, updatedAt: now, status: 'running' };
-    if (!session.projectId) {
+    const session: Session = { originalLaunchCommand: command, latestLaunchCommand: command, permissionMode, ...(agent?{hasMessages:!!forkOf}:{}), ...(forkOf?{forkedFrom:forkOf.conversationId,resumable:false,...(forkOf.projectRemoved?{projectRemoved:true}:{})}:{}), id, tmuxName, paneId, name: input.name.trim(), host: typeof connection === 'string' ? connection : connection.target, hostId: project?.hostId ?? profile?.id ?? forkOf?.hostId, hostLabel: project?.hostLabel ?? profile?.label ?? forkOf?.hostLabel, projectId: project?.id, generation, activity: agent ? 'starting' : 'idle', nameSource: /^New (chat|terminal)$/.test(input.name) ? 'auto' : 'manual', ...(typeof connection === 'object' ? { connection } : {}), cwd: input.cwd || '~', launcher: input.launcher, command: launch, group: input.group?.trim() || 'Ungrouped', tags: input.tags ?? [], pinned: false, archived: false, createdAt: now, updatedAt: now, status: 'running' };
+    if (!session.projectId && !session.projectRemoved) {
       let inferred = this.projects.find(p => p.cwd === input.cwd && JSON.stringify(p.connection) === JSON.stringify(connection));
       if (!inferred) { inferred = { id: randomUUID(), name: input.cwd === '~' ? 'Home' : path.basename(input.cwd), cwd: input.cwd, hostId: profile?.id, hostLabel: profile?.label || 'This Mac', connection, createdAt: now }; this.projects.push(inferred); }
       session.projectId = inferred.id;
@@ -462,7 +475,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
       }
       await this.transport.run(connection, this.transport.setup() + `if ${this.transport.tmux(['has-session','-t',`=${session.tmuxName}`])} 2>/dev/null; then ${this.transport.tmux(['kill-session','-t',`=${session.tmuxName}`])}; fi`);
       const permissionMode=agent?validateMode(session.launcher,session.permissionMode??this.preferencesStore.value.agents[session.launcher as 'codex'|'claude']):undefined;
-      const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${session.launcher} ${quote(id)} ${quote(generation)} --permission-mode ${quote(permissionMode!)}${session.conversationId && session.resumable !== false ? ` --resume ${quote(session.conversationId)}` : ''}` : session.launcher === 'custom' ? session.command : '';
+      const launch = agent ? `python3 ${await this.bridge.ensure(connection)} run ${session.launcher} ${quote(id)} ${quote(generation)} --permission-mode ${quote(permissionMode!)}${session.conversationId && session.resumable !== false ? ` --resume ${quote(session.conversationId)}` : session.forkedFrom ? ` --fork ${quote(session.forkedFrom)}` : ''}` : session.launcher === 'custom' ? session.command : '';
       const inner = `cd -- ${directory(session.cwd)} || exit 1\n${launch || 'exec "${SHELL:-/bin/bash}" -l'}`;
       const command = this.transport.terminalCommand(`exec env ${unsetStripped} TERM=xterm-256color COLORTERM=truecolor "\${SHELL:-/bin/bash}" -lic ${quote(inner)}`);
       // A new tmux name per incarnation prevents a delayed detach/kill from touching its successor.

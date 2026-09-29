@@ -48,6 +48,7 @@ else {
     handle('chatPreview', id => engine.chatPreview(id));
     handle('importHistory', id => engine.importHistory(id));
     handle('resume', (id,restart) => engine.resume(id,restart));
+    handle('fork', id => engine.fork(id));
     handle('checkUpdates', force => engine.checkUpdates(force));
     handle('updateAllAgents', () => engine.updateAllAgents());
     handle('openProjectInCursor', async id => openProjectInCursor(await engine.projectForEditor(id)));

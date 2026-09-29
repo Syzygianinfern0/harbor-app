@@ -179,6 +179,22 @@ class CostTests(unittest.TestCase):
    row={'timestamp':'2026-09-17T00:00:00Z','type':'assistant','uuid':'one','message':{'model':'model-a','usage':{'input_tokens':10,'output_tokens':10,'cache_creation_input_tokens':100,'cache_creation':{'ephemeral_1h_input_tokens':100}}}}
    self.write(p,[row,{**row,'uuid':'two','message':{**row['message'],'model':'<synthetic>'}}]);result=bridge.usage_record(p,'claude')
    self.assertEqual(len(result['events']),1);self.assertAlmostEqual(bridge.cost_summary(result['events'],self.catalog())['usd'],.00052)
+ def test_fork_launch_arguments_start_a_new_conversation_from_the_original(self):
+  src,new='11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222'
+  self.assertEqual(bridge.session_args('claude',fork=src,identity=new),['--resume',src,'--fork-session','--session-id',new])
+  self.assertEqual(bridge.session_args('claude',resume=src,identity=src),['--resume',src])
+  self.assertEqual(bridge.session_args('claude',identity=new),['--session-id',new])
+  self.assertEqual(bridge.session_args('codex',fork=src),['fork',src]);self.assertEqual(bridge.session_args('codex',resume=src),['resume',src]);self.assertEqual(bridge.session_args('codex'),[])
+ def test_codex_fork_monitor_follows_the_fork_never_its_source_or_subagents(self):
+  src={'id':'source'};fork={'id':'fork','forkedFromId':'source'};sub={'id':'sub','parentThreadId':'fork'}
+  self.assertEqual(bridge.codex_thread([src,sub,fork],None,'source'),fork)
+  self.assertIsNone(bridge.codex_thread([src,sub],None,'source'))
+  self.assertEqual(bridge.codex_thread([src,fork,{'id':'other'}],'other','source')['id'],'other')
+  self.assertEqual(bridge.codex_thread([sub,{'id':'plain'}])['id'],'plain');self.assertIsNone(bridge.codex_thread([]))
+ def test_fork_run_rejects_invalid_or_conflicting_sources(self):
+  script=str(pathlib.Path(__file__).parents[1]/'src/bridge/harbor_bridge.py');chat='33333333-3333-3333-3333-333333333333'
+  for extra in (['--fork','not-a-uuid'],['--fork',chat,'--resume',chat]):
+   self.assertEqual(__import__('subprocess').run(['python3',script,'run','claude',chat,chat,*extra],capture_output=True).returncode,2)
 
  def claude_fixture(self,d):
   cwd=os.path.realpath(d+'/work');os.makedirs(cwd);sid='aaaaaaaa-0000-4000-8000-000000000001';fork='aaaaaaaa-0000-4000-8000-000000000002'

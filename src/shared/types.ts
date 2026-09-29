@@ -33,6 +33,8 @@ export interface Session {
   projectId?: string; projectRemoved?: boolean; conversationId?: string; generation?: string; activity?: Activity; activityDetail?: string; activityAt?: number; attentionAt?: number; completedAt?: number; resumable?: boolean; nameSource?: 'auto' | 'manual'; imported?: boolean; externalActive?: boolean; note?: string;
   /** Set when a notification-worthy event arrived while the chat was not on screen; cleared once it is viewed. Persisted. */
   unread?: boolean;
+  /** Conversation this chat was forked from; used to fork again if the fork never saved its own conversation. */
+  forkedFrom?: string;
 }
 export interface CreateSession {
   name: string; host: string; cwd: string; launcher: Launcher; projectId?: string;
@@ -60,6 +62,7 @@ export interface HarborApi {
   chatPreview(id: string): Promise<ChatPreview>;
   importHistory(projectId: string): Promise<void>;
   resume(id: string, restart?: boolean): Promise<Session>;
+  fork(id: string): Promise<Session>;
   openProjectInCursor(id: string): Promise<void>;
   updateAllAgents(): Promise<void>;
   checkUpdates(force?: boolean): Promise<AgentUpdate[]>;

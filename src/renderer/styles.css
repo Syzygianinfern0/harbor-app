@@ -396,3 +396,4 @@
 .rail-session .unread-dot{position:absolute;top:6px;right:7px;box-shadow:0 0 0 2px #191c23}
 .group-card-title .unread-dot{margin-left:-2px}
 .groups-overview .unread-text{color:var(--unread)}
+.chat-context-menu button[aria-disabled=true],.actions-menu button[aria-disabled=true]{opacity:.55}
