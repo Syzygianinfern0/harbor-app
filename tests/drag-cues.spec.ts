@@ -56,7 +56,7 @@ test('drag cues mark exactly where tabs, groups, projects and panes land, and cl
     await expect.poll(async()=>Math.abs(await tab('a3').evaluate(e=>e.getBoundingClientRect().left)-line)).toBeLessThanOrEqual(1.5);
     // Dropping after a tab: the line is centered in the gap to the next group's chip, and the tab lands in that gap (tabs before it close up first).
     const rightEdge=(id:string)=>tab(id).evaluate(e=>e.getBoundingClientRect().right);
-    await fire(tab('a3'),'dragstart');expect(await fire(tab('a2'),'dragover','right')).toBe(true);const gap=await tab('a2').evaluate(e=>(e.getBoundingClientRect().right+e.nextElementSibling!.getBoundingClientRect().left)/2);expect(Math.abs(await caretX(page)-gap)).toBeLessThanOrEqual(1.5);
+    await page.waitForTimeout(300);await fire(tab('a3'),'dragstart');expect(await fire(tab('a2'),'dragover','right')).toBe(true);const gap=await tab('a2').evaluate(e=>(e.getBoundingClientRect().right+e.nextElementSibling!.getBoundingClientRect().left)/2);expect(Math.abs(await caretX(page)-gap)).toBeLessThanOrEqual(1.5);
     await fire(tab('a2'),'drop','right');await fire(tab('a3'),'dragend');await expect.poll(()=>tabOrder(page)).toEqual(['a1','a2','a3','b1','c1']);
     await expect.poll(async()=>Math.abs(await tab('a3').evaluate(e=>e.getBoundingClientRect().left)-await rightEdge('a2'))).toBeLessThanOrEqual(1.5);
 
@@ -150,7 +150,7 @@ test('a split\'s tabs drag as one unit, and nothing drops between them',async()=
     await fire(tab('a3'),'drop','right');await fire(tab('a2'),'dragend');
     await expect.poll(()=>tabOrder(page)).toEqual(['a3','a1','a2','b1']);await expect(page.locator('.tab.dragging')).toHaveCount(0);
     // A tab dragged onto a split lands beside the whole split: the line sits at the split's edge, never between its tabs.
-    await fire(tab('a3'),'dragstart');expect(await fire(tab('a2'),'dragover','right')).toBe(true);
+    await page.waitForTimeout(300);await fire(tab('a3'),'dragstart');expect(await fire(tab('a2'),'dragover','right')).toBe(true);
     const edge=await tab('a2').evaluate(e=>(e.getBoundingClientRect().right+e.nextElementSibling!.getBoundingClientRect().left)/2);expect(Math.abs(await caretX(page)-edge)).toBeLessThanOrEqual(1.5);
     expect(await fire(tab('a1'),'dragover','left')).toBe(false);await expect(page.locator('.tab-drop-caret')).toHaveCount(0);
     await fire(tab('a2'),'dragover','right');await fire(tab('a2'),'drop','right');await fire(tab('a3'),'dragend');
