@@ -54,7 +54,7 @@ export function setPriority(text:string,line:number,priority:Priority):string {
 /** Move an item (with its subtree) before or after another item's subtree, taking that item's depth and list style.
  *  Undefined when the move changes nothing or would drop an item inside itself. */
 export function moveTask(text:string,from:number,to:number,after:boolean):string|undefined {
-  const src=find(text,from)?.node,dst=find(text,to)?.node;if(!src||!dst)return;
+  const found=find(text,from),dst=find(text,to)?.node;if(!found||!dst)return;const {node:src,siblings}=found;
   if(dst.line>=src.line&&dst.line<src.end)return;
   let at=after?dst.end:dst.line;
   if(at>=src.line&&at<=src.end&&dst.indent===src.indent)return;
@@ -64,7 +64,7 @@ export function moveTask(text:string,from:number,to:number,after:boolean):string
   // numbered runs keep their first number whether the item leaves or joins the front.
   const [,,num,delim]=/^([ \t]*)(?:(\d{1,9})([.)])|[-*+])/.exec(lines[dst.line])!,marker=num?`${Number(num)+(after?1:0)}${delim}`:/^[ \t]*([-*+])/.exec(lines[dst.line])![1];
   shifted[0]=shifted[0].replace(/^([ \t]*)([-*+]|\d{1,9}[.)])/,(_,space)=>space+marker);
-  const {siblings}=find(text,from)!,k=siblings.indexOf(src),prev=siblings[k-1],follow=siblings[k+1],srcNum=NUM.exec(lines[src.line]);
+  const k=siblings.indexOf(src),prev=siblings[k-1],follow=siblings[k+1],srcNum=NUM.exec(lines[src.line]);
   if(srcNum&&follow&&!(prev&&NUM.test(lines[prev.line]))&&NUM.test(lines[follow.line]))lines[follow.line]=lines[follow.line].replace(NUM,`$1${srcNum[2]}$3`);
   lines.splice(src.line,moved.length);if(at>src.line)at-=moved.length;
   lines.splice(at,0,...shifted);

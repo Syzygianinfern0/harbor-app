@@ -91,7 +91,7 @@ test('chat notes persist, trim, clear, and do not reorder chats',async()=>{
  let engine=new HarborEngine(dir,new Transport('harbor-notes-'+Date.now()));await engine.init(false);
  await engine.update('noted',{note:'  Remember the flaky test\n\tline two  '});
  assert.equal(engine.snapshot().sessions[0].note,'Remember the flaky test\n\tline two');assert.equal(engine.snapshot().sessions[0].updatedAt,createdAt);
- await assert.rejects(engine.update('noted',{note:'x'.repeat(4001)}),/Invalid note/);await assert.rejects(engine.update('noted',{note:'bad\x07'}),/Invalid note/);
+ await assert.rejects(engine.update('noted',{note:'x'.repeat(20001)}),/Invalid note/);await assert.rejects(engine.update('noted',{note:'bad\x07'}),/Invalid note/);
  await engine.dispose();engine=new HarborEngine(dir,new Transport('harbor-notes-'+Date.now()));await engine.init(false);
  assert.equal(engine.snapshot().sessions[0].note,'Remember the flaky test\n\tline two');
  await engine.update('noted',{note:'   '});assert.equal('note' in engine.snapshot().sessions[0],false);
@@ -103,7 +103,7 @@ test('project notes persist, trim, clear, and leave the name alone',async()=>{
  let engine=new HarborEngine(dir,new Transport('harbor-project-notes-'+Date.now()));await engine.init(false);
  await engine.updateProject('p',{note:'  Deploy from main only \n'});
  assert.equal(engine.snapshot().projects[0].note,'Deploy from main only');assert.equal(engine.snapshot().projects[0].name,'Noted project');
- await assert.rejects(engine.updateProject('p',{note:'x'.repeat(4001)}),/Invalid note/);await assert.rejects(engine.updateProject('p',{name:'  '}),/Enter a project name/);
+ await assert.rejects(engine.updateProject('p',{note:'x'.repeat(20001)}),/Invalid note/);await assert.rejects(engine.updateProject('p',{name:'  '}),/Enter a project name/);
  await engine.dispose();engine=new HarborEngine(dir,new Transport('harbor-project-notes-'+Date.now()));await engine.init(false);
  assert.equal(engine.snapshot().projects[0].note,'Deploy from main only');
  await engine.updateProject('p',{note:''});assert.equal('note' in engine.snapshot().projects[0],false);

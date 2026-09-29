@@ -6,7 +6,7 @@ export type Priority=1|2|3|4;
 export type Inline={t:'text';v:string}|{t:'code';v:string}|{t:'strong'|'em';c:Inline[]};
 export interface LineInfo {kind:'blank'|'heading'|'item'|'text'|'fence'|'code';indent:number;level?:number;ordered?:boolean;num?:number;delim?:string;bullet?:string;task?:boolean;checked?:boolean;priority?:Priority;content:string}
 /** A list item and its subtree: lines [line, end) of the note, children nested by indentation. */
-export interface ListNode {line:number;end:number;indent:number;ordered:boolean;task:boolean;checked:boolean;priority:Priority;content:string;more:string[];children:ListNode[]}
+export interface ListNode {line:number;end:number;indent:number;ordered:boolean;num:number;task:boolean;checked:boolean;priority:Priority;content:string;more:string[];children:ListNode[]}
 export interface List {t:'list';ordered:boolean;start:number;items:ListNode[]}
 export type Block={t:'heading';level:1|2|3;text:string}|{t:'para';lines:string[]}|{t:'code';v:string}|List;
 
@@ -44,7 +44,7 @@ export function listRegions(lines:LineInfo[]):{start:number;end:number;roots:Lis
       // Continuation text belongs to the item just above it, so an item's subtree is always a contiguous run of lines.
       if(l.kind==='text'){last!.more.push(l.content);continue;}
       while(stack.length&&stack.at(-1)!.indent>=l.indent)stack.pop();
-      const node:ListNode={line:i,end:i+1,indent:l.indent,ordered:!!l.ordered,task:!!l.task,checked:!!l.checked,priority:l.priority??4,content:l.content,more:[],children:[]};
+      const node:ListNode={line:i,end:i+1,indent:l.indent,ordered:!!l.ordered,num:l.num??1,task:!!l.task,checked:!!l.checked,priority:l.priority??4,content:l.content,more:[],children:[]};
       (stack.at(-1)?.children??roots).push(node);stack.push(node);last=node;
     }
     const close=(nodes:ListNode[],end:number)=>nodes.forEach((n,k)=>{n.end=k+1<nodes.length?nodes[k+1].line:end;close(n.children,n.end);});
@@ -54,9 +54,9 @@ export function listRegions(lines:LineInfo[]):{start:number;end:number;roots:Lis
 }
 
 /** Siblings split into lists wherever bullets and numbers alternate, as Markdown does. */
-export function groupLists(nodes:ListNode[],lines:LineInfo[]):List[] {
+export function groupLists(nodes:ListNode[]):List[] {
   const lists:List[]=[];
-  for(const n of nodes){const prev=lists.at(-1);if(prev&&prev.ordered===n.ordered)prev.items.push(n);else lists.push({t:'list',ordered:n.ordered,start:lines[n.line].num??1,items:[n]});}
+  for(const n of nodes){const prev=lists.at(-1);if(prev&&prev.ordered===n.ordered)prev.items.push(n);else lists.push({t:'list',ordered:n.ordered,start:n.num,items:[n]});}
   return lists;
 }
 
@@ -69,7 +69,7 @@ export function parseBlocks(text:string):Block[] {
     if(l.kind==='fence'){const body:string[]=[];for(i++;i<lines.length&&lines[i].kind==='code';i++)body.push(raw[i]);if(lines[i]?.kind==='fence')i++;blocks.push({t:'code',v:body.join('\n')});continue;}
     if(l.kind==='code'){i++;continue;}
     const region=regions.get(i);
-    if(region){blocks.push(...groupLists(region.roots,lines));i=region.end;continue;}
+    if(region){blocks.push(...groupLists(region.roots));i=region.end;continue;}
     const para:string[]=[];for(;i<lines.length&&lines[i].kind==='text';i++)para.push(lines[i].content);blocks.push({t:'para',lines:para});
   }
   return blocks;
