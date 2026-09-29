@@ -345,6 +345,22 @@
 .tab.grouped .tab-flare{display:block;position:absolute;bottom:0;width:8px;height:8px;pointer-events:none}
 .tab.grouped .tab-flare.left{left:-6px;background:radial-gradient(circle at 0 0,transparent 5.6px,var(--group-color) 6.2px,var(--group-color) 7.6px,var(--tab-fill) 8.2px)}
 .tab.grouped .tab-flare.right{right:-6px;background:radial-gradient(circle at 100% 0,transparent 5.6px,var(--group-color) 6.2px,var(--group-color) 7.6px,var(--tab-fill) 8.2px)}
+/* Split view (after Chrome's): a split's tabs share one rounded outline, drawn in pieces so each tab keeps its own
+   motion. The split in view is lit as a unit and its focused pane's tab is filled brightest; a hairline divides them. */
+.session-toolbar .tab.split{position:relative;--split-edge:#3b4452;--split-fill:transparent;--split-divider:#2e3540}
+.session-toolbar .tab.split::before{content:"";position:absolute;top:6px;bottom:6px;left:0;right:-1px;border-block:1px solid var(--split-edge);background:var(--split-fill);pointer-events:none}
+.session-toolbar .tab.split-start::before{left:4px;border-left:1px solid var(--split-edge);border-radius:8px 0 0 8px}
+.session-toolbar .tab.split-end::before{right:4px;border-right:1px solid var(--split-edge);border-radius:0 8px 8px 0}
+.session-toolbar .tab.split-start.split-end::before{border-radius:8px}
+.session-toolbar .tab.split:not(.split-end){border-right-color:transparent}
+.session-toolbar .tab.split:not(.split-end)::before{box-shadow:inset -1px 0 0 var(--split-divider)}
+.session-toolbar .tab.split>button{position:relative}
+.session-toolbar .tab.split-view{--split-edge:color-mix(in srgb,var(--tab-color) 60%,transparent);--split-fill:color-mix(in srgb,var(--tab-color) 6%,transparent);--split-divider:color-mix(in srgb,var(--tab-color) 30%,transparent);color:#aeb9c6}
+.session-toolbar .tab.split-view.active{--split-fill:color-mix(in srgb,var(--tab-color) 26%,transparent);color:#eef3f1}
+.session-toolbar .tab.split.active,.session-toolbar .tab.split.active.grouped{background:none;border-top-color:transparent;border-radius:0;box-shadow:none;z-index:auto}
+.session-toolbar .tab.active.grouped.split::after{display:block}
+.tab.split .tab-flare{display:none}
+.tab .split-mark{color:#7d8899;margin-right:-3px}.tab.split-view .split-mark{color:var(--tab-color)}.tab.compact .split-mark{display:none}
 /* Everything folded: a zoomed-out overview of the open groups. */
 .pane-workspace[hidden]{display:none}
 .groups-overview{flex:1;min-height:0;overflow:auto;padding:38px 40px 30px}

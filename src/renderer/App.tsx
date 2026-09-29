@@ -11,12 +11,13 @@ import { ChatUsageBar, SidebarCost, useHostUsage } from './UsagePanel';
 import { PersistentChat } from './PersistentChat';
 import { PaneLayout } from './PaneLayout';
 import { ResizeHandle } from './ResizeHandle';
-import { dropPane, leaf, paneIds, removePane, replacePane, resizePane, restorePanes, type DropSide, type PaneNode } from '../shared/panes';
+import { dropPane, leaf, paneIds, removePane, resizePane, restorePanes, type DropSide, type PaneNode } from '../shared/panes';
 import { groupShortcut, tabShortcut, type GroupShortcut } from '../shared/shortcuts';
 import { addToGroup, assignProjectColors, createGroup, groupEntry, groupKeys, groupTabs, isCollapsed, layoutTabs, pruneGroups, removeFromGroups, restoreTabGroups, rollup, setCollapsed as setGroupCollapsed, stripTabs, ungroup, updateGroup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
 import { TabStrip, groupInfo } from './TabStrip';
 import { GroupsOverview } from './GroupsOverview';
 import { foldView, splitFor } from '../shared/folding';
+import { liveParked, restoreParked, showTab, splitSets } from '../shared/splits';
 import { LaunchCommandDialog } from './LaunchCommandDialog';
 import { TerminalPane } from './TerminalPane';
 import { PreferencesDialog } from './PreferencesDialog';
@@ -40,11 +41,14 @@ export function App() {
   const projectRef=useRef(projectId); projectRef.current=projectId;
   const [tabs,setTabs]=useState<string[]>(()=>saved('harbor.tabs',[]));
   const [layout,setLayout]=useState<PaneNode|null>(null);
+  // Splits switched away from stay parked, linked in the strip, until one of their tabs brings them back.
+  const [parkedState,setParked]=useState<PaneNode[]>([]);const parked=liveParked(parkedState,layout,tabs);
+  useEffect(()=>{if(parked!==parkedState)setParked(parked);},[parked]);
   const [hydrated,setHydrated]=useState(false);
   const [sidebarWidth,setSidebarWidth]=useState(()=>Math.max(200,Math.min(600,saved('harbor.sidebarWidth',272))));
   const [dragging,setDragging]=useState<string>();
   const [freshChats,setFreshChats]=useState<Set<string>>(()=>new Set());
-  const workspaceRef=useRef({selected,tabs,layout});workspaceRef.current={selected,tabs,layout};
+  const workspaceRef=useRef({selected,tabs,layout,parked});workspaceRef.current={selected,tabs,layout,parked};
   const navigateTabs=useRef<(action:TabShortcut)=>void>(()=>{});
   const groupAction=useRef<(action:GroupShortcut)=>void>(()=>{});
   const [groups,setGroups]=useState<TabGroups>(()=>restoreTabGroups(saved('harbor.tabGroups',null)));
@@ -100,7 +104,7 @@ export function App() {
   const project=projects.find(p=>p.id===projectId);
   const openTabs=tabs.filter(id=>sessions.some(s=>s.id===id));
   const projectOf=(id:string)=>sessions.find(s=>s.id===id)?.projectId;
-  const tabLayout=layoutTabs(openTabs,groups,projectOf,projects.map(p=>p.id));
+  const tabSplits=splitSets(layout,parked);const tabLayout=layoutTabs(openTabs,groups,projectOf,projects.map(p=>p.id),tabSplits);
   const arrangedTabs=tabLayout.segments.flatMap(s=>s.kind==='tab'?[s.id]:s.tabs);
   const visibleTabs=stripTabs(tabLayout.segments,groups,selected);
   const selectedKey=selected?tabLayout.keyOf.get(selected):undefined;
@@ -108,10 +112,10 @@ export function App() {
   const projectColor=(id?:string)=>(id&&groups.projectColors[id])||GROUP_COLORS[0].value;
   const colorSwatches=(label:string,current:string,pick:(value:string)=>void)=><div className="group-colors" role="group" aria-label={label}>{GROUP_COLORS.map(c=><button key={c.value} role="menuitemradio" aria-checked={current===c.value} aria-label={c.name} title={c.name} className={current===c.value?'current':''} style={{'--swatch':c.value} as CSSProperties} onClick={()=>pick(c.value)}/>)}</div>;
   const liveChats=(id:string)=>sessions.filter(s=>s.projectId===id&&!s.archived&&s.launcher!=='shell'&&!['closed','external'].includes(chatActivity(s)));
-  const open=useCallback((session:Session)=>{setLayout(v=>paneIds(v).includes(session.id)?v:replacePane(v,workspaceRef.current.selected??paneIds(v)[0],session.id));setSelected(session.id);if(session.projectId)setProjectId(session.projectId);setTabs(v=>v.includes(session.id)?v:[...v,session.id]);setMenu(false);setContext(undefined);},[]);
+  const open=useCallback((session:Session)=>{const w=workspaceRef.current,view=showTab(w.layout,w.parked,session.id);setLayout(view.layout);if(view.parked!==w.parked)setParked(view.parked);setSelected(session.id);if(session.projectId)setProjectId(session.projectId);setTabs(v=>v.includes(session.id)?v:[...v,session.id]);setMenu(false);setContext(undefined);},[]);
   const refreshHistory=async(id:string)=>{setBusy(id);try{await window.harbor.importHistory(id);}catch(error){report((error as Error).message);}finally{setBusy(undefined);}};
   useEffect(()=>{
-    window.harbor.snapshot().then(data=>{setSnapshot(data);const restored=saved<string[]>('harbor.tabs',[]).filter(id=>data.sessions.some(s=>s.id===id));setTabs(restored);const tree=restorePanes(saved('harbor.layout',null),restored)??(restored[0]?leaf(restored[0]):null);setLayout(tree);const active=saved('harbor.selected','');setSelected(paneIds(tree).includes(active)?active:paneIds(tree)[0]);setHydrated(true);setProjectId(saved('harbor.project','')||data.sessions.find(s=>s.id===restored[0])?.projectId||data.projects[0]?.id||'');}).catch(e=>report(e.message));
+    window.harbor.snapshot().then(data=>{setSnapshot(data);const restored=saved<string[]>('harbor.tabs',[]).filter(id=>data.sessions.some(s=>s.id===id));setTabs(restored);const tree=restorePanes(saved('harbor.layout',null),restored)??(restored[0]?leaf(restored[0]):null);setLayout(tree);setParked(restoreParked(saved('harbor.splits',[]),restored,new Set(paneIds(tree))));const active=saved('harbor.selected','');setSelected(paneIds(tree).includes(active)?active:paneIds(tree)[0]);setHydrated(true);setProjectId(saved('harbor.project','')||data.sessions.find(s=>s.id===restored[0])?.projectId||data.projects[0]?.id||'');}).catch(e=>report(e.message));
     const off=window.harbor.onSnapshot(setSnapshot); const offNew=window.harbor.onNewSession(()=>newChat());
     const offPrefs=window.harbor.onPreferences(()=>setDialog('preferences'));
     const offOpen=window.harbor.onOpenSession(id=>{void window.harbor.snapshot().then(data=>{const session=data.sessions.find(s=>s.id===id);if(session)open(session);});});
@@ -119,7 +123,7 @@ export function App() {
   },[newChat,open,report]);
   useEffect(()=>{if(project && !loadedHistory.current.has(project.id)){loadedHistory.current.add(project.id);void refreshHistory(project.id);}},[project?.id]);
   useEffect(()=>{if(!hydrated)return;localStorage.setItem('harbor.tabs',JSON.stringify(tabs));},[tabs,hydrated]);
-  useEffect(()=>{if(!hydrated)return;localStorage.setItem('harbor.layout',JSON.stringify(layout));localStorage.setItem('harbor.selected',JSON.stringify(selected));},[layout,selected,hydrated]);
+  useEffect(()=>{if(!hydrated)return;localStorage.setItem('harbor.layout',JSON.stringify(layout));localStorage.setItem('harbor.selected',JSON.stringify(selected));localStorage.setItem('harbor.splits',JSON.stringify(parked));},[layout,selected,parked,hydrated]);
   useEffect(()=>{localStorage.setItem('harbor.sidebarWidth',JSON.stringify(sidebarWidth));},[sidebarWidth]);
   useEffect(()=>{if(hydrated)localStorage.setItem('harbor.tabGroups',JSON.stringify(groups));},[groups,hydrated]);
   useEffect(()=>{if(hydrated)setGroups(v=>pruneGroups(v,tabs));setSelection(v=>[...v].every(id=>tabs.includes(id))?v:new Set([...v].filter(id=>tabs.includes(id))));},[tabs,hydrated]);
@@ -183,7 +187,11 @@ export function App() {
     const hidden=keys.flatMap(k=>groupTabs(tabLayout.segments,k));
     for(const k of keys){const split=splitFor(layout,groupTabs(tabLayout.segments,k));if(split)savedSplits.current[k]=split;}
     const shown=stripTabs(layoutTabs(openTabs,next,projectOf,projects.map(p=>p.id)).segments,next,undefined);
-    const view=foldView(layout,selected,hidden,shown,recent.current);
+    let view=foldView(layout,selected,hidden,shown,recent.current);
+    // A folded group's split is parked with it, so its tabs stay linked and bring it back; a chat shown in its place brings its own split.
+    const kept=keys.map(k=>splitFor(layout,groupTabs(tabLayout.segments,k))).filter((s):s is PaneNode=>paneIds(s).length>1);
+    const moved=view.selected&&!paneIds(layout).includes(view.selected)?showTab(null,parked,view.selected):undefined;if(moved)view={...view,layout:moved.layout};
+    if(kept.length||moved)setParked([...(moved?.parked??parked),...kept]);
     foldMemory.current={keys:JSON.stringify([...keys].sort()),before:layout,after:view.layout,selected};
     setGroups(next);setLayout(view.layout);setSelected(view.selected);
   };
@@ -271,7 +279,7 @@ export function App() {
     </div>
 
     <main className={`workspace ${current?'has-terminal':''}`}>
-      {current||showOverview?<><div className="session-toolbar"><TabStrip tabs={tabs} sessions={sessions} projects={projects} groups={groups} selected={selected} selection={selection} busy={busy} dragging={dragging} onOpen={open} onClose={session=>void closeChat(session)} onSelection={setSelection} setTabs={setTabs} setGroups={setGroups} onDragStart={beginDrag} onDragEnd={()=>setDragging(undefined)} onToggleGroup={toggleGroup} onNewChat={()=>newChat(current?.projectId)} onTabMenu={(id,x,y)=>setContext({kind:'tab',id,x:Math.min(x,innerWidth-250),y:Math.min(y,innerHeight-420)})} onGroupMenu={(key,x,y)=>setContext({kind:'group',id:key,x:Math.min(x,innerWidth-250),y:Math.min(y,innerHeight-260)})} onMoveProject={moveProject}/><div className="session-actions"><div className="popover-anchor"><button className={`icon-button ${groupsMenu?'active':''}`} aria-label="Tab groups" title="Tab groups" aria-expanded={groupsMenu} onClick={event=>{event.stopPropagation();setGroupsMenu(v=>!v);setMenu(false);setSplitMenu(false);}}><Layers size={16}/></button>{groupsMenu&&<div className="popover groups-menu" role="menu" aria-label="Tab groups" onClick={event=>event.stopPropagation()}>
+      {current||showOverview?<><div className="session-toolbar"><TabStrip tabs={tabs} splits={tabSplits} view={paneIds(layout)} sessions={sessions} projects={projects} groups={groups} selected={selected} selection={selection} busy={busy} dragging={dragging} onOpen={open} onClose={session=>void closeChat(session)} onSelection={setSelection} setTabs={setTabs} setGroups={setGroups} onDragStart={beginDrag} onDragEnd={()=>setDragging(undefined)} onToggleGroup={toggleGroup} onNewChat={()=>newChat(current?.projectId)} onTabMenu={(id,x,y)=>setContext({kind:'tab',id,x:Math.min(x,innerWidth-250),y:Math.min(y,innerHeight-420)})} onGroupMenu={(key,x,y)=>setContext({kind:'group',id:key,x:Math.min(x,innerWidth-250),y:Math.min(y,innerHeight-260)})} onMoveProject={moveProject}/><div className="session-actions"><div className="popover-anchor"><button className={`icon-button ${groupsMenu?'active':''}`} aria-label="Tab groups" title="Tab groups" aria-expanded={groupsMenu} onClick={event=>{event.stopPropagation();setGroupsMenu(v=>!v);setMenu(false);setSplitMenu(false);}}><Layers size={16}/></button>{groupsMenu&&<div className="popover groups-menu" role="menu" aria-label="Tab groups" onClick={event=>event.stopPropagation()}>
           <div className="popover-title">TAB GROUPS</div>
           {([['byProject','Group tabs by project','⌘ ⇧ G'],['focus','Focus mode: one group open',''],['shrink','Shrink tabs before scrolling','']] as const).map(([key,label,keys])=><label key={key} className="hide-closed-toggle menu-toggle"><span>{label}{keys&&<kbd>{keys}</kbd>}</span><input type="checkbox" role="switch" checked={groups[key]} onChange={event=>setGroups(v=>({...v,[key]:event.target.checked}))}/><span className="toggle-track" aria-hidden="true"><span/></span></label>)}
           <hr/>

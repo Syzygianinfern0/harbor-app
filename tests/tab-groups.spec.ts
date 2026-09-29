@@ -233,3 +233,50 @@ test('clicking a project name shows its project page in focus mode and with ever
     await openChat(page,'Rate limiter');await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
   } finally {await app.close();}
 });
+
+test('split views show as linked tabs that come back whole, stay linked when folded or relaunched, and collapse when a tab closes',async()=>{
+  const data=await fixture();let app=await data.launch();let page=await app.firstWindow();
+  const tab=(id:string)=>page.locator(`[data-tab-id="${id}"]`);const panes=()=>page.locator('.workspace-pane').evaluateAll(e=>e.map(p=>(p as HTMLElement).dataset.sessionId));
+  const before=(id:string)=>tab(id).evaluate(e=>{const s=getComputedStyle(e,'::before');return {content:s.content,left:s.borderLeftWidth,right:s.borderRightWidth,fill:s.backgroundColor,edge:s.borderTopColor};});
+  const click=(id:string)=>tab(id).locator('button').first().click();
+  try {
+    await mkdir('test-results/screenshots',{recursive:true});
+    for(const name of ['Tab groups design','Release notes','Fix SSH reattach','Rate limiter','Tab groups design'])await openChat(page,name);
+    await expect.poll(()=>tabOrder(page)).toEqual(['a1','a3','a2','b1']);await expect(page.locator('.tab.split')).toHaveCount(0);
+    // Split a1 with a2: the pair moves next to each other in pane order, inside one outline, lit as the split in view.
+    await page.getByRole('button',{name:'Split view',exact:true}).click();await page.locator('.split-picker button',{hasText:'Fix SSH reattach'}).click();
+    await expect.poll(panes).toEqual(['a1','a2']);await expect.poll(()=>tabOrder(page)).toEqual(['a1','a2','a3','b1']);
+    await expect(tab('a1')).toHaveClass(/split-start/);await expect(tab('a1')).not.toHaveClass(/split-end/);await expect(tab('a2')).toHaveClass(/split-end/);
+    await expect(page.locator('.tab.split-view')).toHaveCount(2);await expect(tab('a2')).toHaveClass(/active/);await expect(tab('a1')).toHaveAttribute('data-split','a1 a2');
+    await expect(tab('a1').locator('.split-mark')).toHaveCount(1);await expect(tab('a2').locator('.split-mark')).toHaveCount(0);
+    await expect(tab('a1').locator('button').first()).toHaveAttribute('aria-description','Split view with Fix SSH reattach');
+    await expect.poll(async()=>{const [one,two]=[await tab('a1').boundingBox(),await tab('a2').boundingBox()];return Math.abs(one!.x+one!.width-two!.x);}).toBeLessThanOrEqual(1);
+    const [lit,focused]=[await before('a1'),await before('a2')];expect(lit.content).not.toBe('none');expect([lit.left,lit.right,focused.left,focused.right]).toEqual(['1px','0px','0px','1px']);expect(focused.fill).not.toBe(lit.fill);expect(focused.edge).toBe(lit.edge);
+    await page.waitForTimeout(250);await page.screenshot({animations:'disabled',path:'test-results/screenshots/70-split-tabs-in-view.png'});
+    await page.locator('.session-toolbar').screenshot({animations:'disabled',path:'test-results/screenshots/70b-split-tabs-strip.png'});
+    // Clicking the other half focuses it within the split.
+    await click('a1');await expect(tab('a1')).toHaveClass(/active/);await expect.poll(panes).toEqual(['a1','a2']);
+    await expect(page.locator('.workspace-pane.focused')).toHaveAttribute('data-session-id','a1');
+    // Another tab shows alone and parks the split, still linked but no longer lit; either tab brings the whole split back.
+    await click('b1');await expect.poll(panes).toEqual(['b1']);
+    await expect(page.locator('.tab.split')).toHaveCount(2);await expect(page.locator('.tab.split-view')).toHaveCount(0);expect((await before('a1')).edge).not.toBe(lit.edge);
+    await page.waitForTimeout(250);await page.locator('.session-toolbar').screenshot({animations:'disabled',path:'test-results/screenshots/71-split-tabs-parked.png'});
+    await click('a2');await expect.poll(panes).toEqual(['a1','a2']);await expect(page.locator('.workspace-pane.focused')).toHaveAttribute('data-session-id','a2');
+    await openChat(page,'Rate limiter');await expect.poll(panes).toEqual(['b1']);
+    await page.keyboard.press('Meta+1');await expect.poll(panes).toEqual(['a1','a2']);await expect(tab('a1')).toHaveClass(/active/);
+    // Splits in two groups: each is its own linked set.
+    await click('b1');await page.getByRole('button',{name:'Split view',exact:true}).click();await page.locator('.split-picker button',{hasText:'Flaky auth test'}).click();
+    await expect.poll(panes).toEqual(['b1','b2']);await expect(page.locator('.tab.split')).toHaveCount(4);await expect(page.locator('.tab.split-view')).toHaveCount(2);await expect(tab('b1')).toHaveAttribute('data-split','b1 b2');
+    await page.waitForTimeout(250);await page.locator('.session-toolbar').screenshot({animations:'disabled',path:'test-results/screenshots/72-split-tabs-two.png'});
+    // Parked splits persist across a relaunch.
+    await app.close();app=await data.launch();page=await app.firstWindow();
+    await expect.poll(panes).toEqual(['b1','b2']);await expect(tab('a1')).toHaveAttribute('data-split','a1 a2');await expect(page.locator('.tab.split-view')).toHaveCount(2);
+    // Folding a group parks its split; unfolding and clicking a tab brings it back.
+    await click('a1');await expect.poll(panes).toEqual(['a1','a2']);
+    const appGroup=page.getByRole('button',{name:/^Agent-Manager group/});await appGroup.click();await expect.poll(panes).toEqual(['b1','b2']);
+    await expect(tab('a1')).toHaveCount(0);await appGroup.click();await expect.poll(panes).toEqual(['a1','a2']);await expect(tab('a1')).toHaveAttribute('data-split','a1 a2');
+    // Closing a pane or a tab collapses the split: the other tab becomes a plain tab.
+    await page.getByRole('button',{name:'Close pane Fix SSH reattach',exact:true}).click();await expect.poll(panes).toEqual(['a1']);await expect(tab('a1')).not.toHaveClass(/split/);await expect(tab('a2')).not.toHaveClass(/split/);
+    await tab('b2').getByRole('button',{name:'Close chat Flaky auth test'}).click();await expect(tab('b2')).toHaveCount(0);await expect(tab('b1')).not.toHaveClass(/split/);await expect(page.locator('.tab.split')).toHaveCount(0);
+  } finally {await app.close();}
+});

@@ -1,5 +1,6 @@
 // Tab groups organize the open tabs (the working set) without ever closing a chat.
 // Keys: `p:<projectId>` for automatic project groups, `g:<id>` for custom groups.
+import { joinSplits } from './splits';
 export const GROUP_COLORS = [
   {name:'Mint',value:'#9be1c4'},{name:'Blue',value:'#8fb4e8'},{name:'Amber',value:'#e2c07f'},{name:'Violet',value:'#b9a3e6'},
   {name:'Rose',value:'#e3a1a8'},{name:'Teal',value:'#7fd0d6'},{name:'Orange',value:'#e5ab80'},{name:'Grey',value:'#a3adbb'},
@@ -30,8 +31,10 @@ export function restoreTabGroups(value:unknown):TabGroups {
 }
 
 /** Group every tab, gathering each group at its first tab's position. Project groups follow the sidebar's project order.
- *  A lone project group (every tab from one project, nothing else) is not shown: a label would add nothing. */
-export function layoutTabs(tabs:string[],state:TabGroups,projectOf:ProjectOf,projectOrder:string[]=[]) {
+ *  A lone project group (every tab from one project, nothing else) is not shown: a label would add nothing.
+ *  A split's tabs are gathered first, so within a group they sit side by side. */
+export function layoutTabs(given:string[],state:TabGroups,projectOf:ProjectOf,projectOrder:string[]=[],splits:string[][]=[]) {
+  const tabs=joinSplits(given,splits);
   const raw=tabs.map(id=>{const g=state.custom.find(g=>g.members.includes(id));if(g)return `g:${g.id}`;const p=state.byProject?projectOf(id):undefined;return p?`p:${p}`:undefined;});
   const distinct=new Set(raw);const solo=distinct.size===1&&raw[0]?.startsWith('p:');
   const keyOf=new Map<string,string|undefined>(tabs.map((id,i)=>[id,solo?undefined:raw[i]]));
