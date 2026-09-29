@@ -133,3 +133,30 @@ test('drag cues mark exactly where tabs, groups, projects and panes land, and cl
     await expect(page.locator('.managed-project.drop-before,.managed-project.drop-after,.managed-project.drag-source')).toHaveCount(0);
   } finally {await app.close();}
 });
+
+test('a split\'s tabs drag as one unit, and nothing drops between them',async()=>{
+  const data=await fixture();const app=await data.launch();const page=await app.firstWindow();
+  const tab=(id:string)=>page.locator(`[data-tab-id="${id}"]`);
+  try {
+    await mkdir('test-results/screenshots',{recursive:true});
+    for(const name of ['Tab groups design','Release notes','Fix SSH reattach','Rate limiter','Tab groups design'])await openChat(page,name);
+    await page.getByRole('button',{name:'Split view',exact:true}).click();await page.locator('.split-picker button',{hasText:'Fix SSH reattach'}).click();
+    await expect.poll(()=>tabOrder(page)).toEqual(['a1','a2','a3','b1']);await page.waitForTimeout(300);
+    // Dragging either half lifts both, and the line marks the gap the whole split lands in.
+    await fire(tab('a2'),'dragstart');await expect(page.locator('.tab.dragging')).toHaveCount(2);
+    expect(await fire(tab('a3'),'dragover','right')).toBe(true);
+    const gap=await tab('a3').evaluate(e=>(e.getBoundingClientRect().right+e.nextElementSibling!.getBoundingClientRect().left)/2);expect(Math.abs(await caretX(page)-gap)).toBeLessThanOrEqual(1.5);
+    await page.screenshot({animations:'disabled',path:'test-results/screenshots/73-split-drag.png'});
+    await fire(tab('a3'),'drop','right');await fire(tab('a2'),'dragend');
+    await expect.poll(()=>tabOrder(page)).toEqual(['a3','a1','a2','b1']);await expect(page.locator('.tab.dragging')).toHaveCount(0);
+    // A tab dragged onto a split lands beside the whole split: the line sits at the split's edge, never between its tabs.
+    await fire(tab('a3'),'dragstart');expect(await fire(tab('a2'),'dragover','right')).toBe(true);
+    const edge=await tab('a2').evaluate(e=>(e.getBoundingClientRect().right+e.nextElementSibling!.getBoundingClientRect().left)/2);expect(Math.abs(await caretX(page)-edge)).toBeLessThanOrEqual(1.5);
+    expect(await fire(tab('a1'),'dragover','left')).toBe(false);await expect(page.locator('.tab-drop-caret')).toHaveCount(0);
+    await fire(tab('a2'),'dragover','right');await fire(tab('a2'),'drop','right');await fire(tab('a3'),'dragend');
+    await expect.poll(()=>tabOrder(page)).toEqual(['a1','a2','a3','b1']);await expect(page.locator('.tab-drop-caret')).toHaveCount(0);
+    // Tabs of a split can't be pulled apart in the strip; dragging one to another pane still rearranges the split.
+    await fire(tab('a1'),'dragstart');expect(await fire(tab('a2'),'dragover','right')).toBe(false);await fire(tab('a1'),'dragend');
+    await expect(page.locator('.workspace-pane')).toHaveCount(2);
+  } finally {await app.close();}
+});

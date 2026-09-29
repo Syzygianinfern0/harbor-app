@@ -181,9 +181,11 @@ export function App() {
     const hidden=keys.flatMap(k=>groupTabs(tabLayout.segments,k));
     for(const k of keys){const split=splitFor(layout,groupTabs(tabLayout.segments,k));if(split)savedSplits.current[k]=split;}
     const shown=stripTabs(layoutTabs(openTabs,next,projectOf,projects.map(p=>p.id)).segments,next,undefined);
-    const view=foldView(layout,selected,hidden,shown,recent.current);
-    // A folded group's split is parked with it, so its tabs stay linked and bring it back.
-    const kept=keys.map(k=>splitFor(layout,groupTabs(tabLayout.segments,k))).filter((s):s is PaneNode=>paneIds(s).length>1);if(kept.length)setParked(v=>[...v,...kept]);
+    let view=foldView(layout,selected,hidden,shown,recent.current);
+    // A folded group's split is parked with it, so its tabs stay linked and bring it back; a chat shown in its place brings its own split.
+    const kept=keys.map(k=>splitFor(layout,groupTabs(tabLayout.segments,k))).filter((s):s is PaneNode=>paneIds(s).length>1);
+    const moved=view.selected&&!paneIds(layout).includes(view.selected)?showTab(null,parked,view.selected):undefined;if(moved)view={...view,layout:moved.layout};
+    if(kept.length||moved)setParked([...(moved?.parked??parked),...kept]);
     foldMemory.current={keys:JSON.stringify([...keys].sort()),before:layout,after:view.layout,selected};
     setGroups(next);setLayout(view.layout);setSelected(view.selected);
   };

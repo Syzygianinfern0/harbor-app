@@ -355,8 +355,8 @@
 .session-toolbar .tab.split:not(.split-end){border-right-color:transparent}
 .session-toolbar .tab.split:not(.split-end)::before{box-shadow:inset -1px 0 0 var(--split-divider)}
 .session-toolbar .tab.split>button{position:relative}
-.session-toolbar .tab.split-view{--split-edge:color-mix(in srgb,var(--tab-color) 60%,transparent);--split-fill:color-mix(in srgb,var(--tab-color) 7%,transparent);--split-divider:color-mix(in srgb,var(--tab-color) 30%,transparent);color:#aeb9c6}
-.session-toolbar .tab.split-view.active{--split-fill:color-mix(in srgb,var(--tab-color) 24%,transparent);color:#eef3f1}
+.session-toolbar .tab.split-view{--split-edge:color-mix(in srgb,var(--tab-color) 60%,transparent);--split-fill:color-mix(in srgb,var(--tab-color) 6%,transparent);--split-divider:color-mix(in srgb,var(--tab-color) 30%,transparent);color:#aeb9c6}
+.session-toolbar .tab.split-view.active{--split-fill:color-mix(in srgb,var(--tab-color) 26%,transparent);color:#eef3f1}
 .session-toolbar .tab.split.active,.session-toolbar .tab.split.active.grouped{background:none;border-top-color:transparent;border-radius:0;box-shadow:none;z-index:auto}
 .session-toolbar .tab.active.grouped.split::after{display:block}
 .tab.split .tab-flare{display:none}

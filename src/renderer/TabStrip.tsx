@@ -52,14 +52,14 @@ export function TabStrip(props:TabStripProps) {
   const [edges,setEdges]=useState<{left:Edge;right:Edge}>({left:noEdge,right:noEdge});
 
   // Inactive tabs keep their names and flex down to fill the strip; while that still overflows,
-  // they become icons one at a time: other groups before the current one, farthest from the active tab first.
+  // they become icons one at a time: other groups before the current one, farthest from the active tab first. The split in view keeps full width, like the active tab.
   const shown=segments.flatMap(s=>s.kind==='tab'?[s.id]:isCollapsed(groups,s.key,selectedKey)?(selected&&s.tabs.includes(selected)?[selected]:[]):s.tabs);
   const at=selected?shown.indexOf(selected):-1;
   // A split's tabs share one outline; the one in view is lit as a unit, its focused pane brightest.
   const runs=splitRuns(segments.flatMap(s=>s.kind==='tab'?[s.id]:[undefined,...shown.filter(id=>keyOf.get(id)===s.key),undefined]),splits);
   const inView=new Set((props.view?.length??0)>1?props.view:[]);
-  const iconOrder=shown.filter(id=>id!==selected).sort((a,b)=>Number(keyOf.get(b)!==selectedKey)-Number(keyOf.get(a)!==selectedKey)||Math.abs(shown.indexOf(b)-at)-Math.abs(shown.indexOf(a)-at));
-  const fitKey=JSON.stringify([width,groups.shrink,selected,splits,segments.map(s=>s.kind==='tab'?s.id:[s.key,isCollapsed(groups,s.key,selectedKey),s.tabs.map(id=>byId.get(id)?.name)]),tabs.map(id=>byId.get(id)?.name)]);
+  const iconOrder=shown.filter(id=>id!==selected&&!inView.has(id)).sort((a,b)=>Number(keyOf.get(b)!==selectedKey)-Number(keyOf.get(a)!==selectedKey)||Math.abs(shown.indexOf(b)-at)-Math.abs(shown.indexOf(a)-at));
+  const fitKey=JSON.stringify([width,groups.shrink,selected,splits,props.view,segments.map(s=>s.kind==='tab'?s.id:[s.key,isCollapsed(groups,s.key,selectedKey),s.tabs.map(id=>byId.get(id)?.name)]),tabs.map(id=>byId.get(id)?.name)]);
   const fitted=useRef('');
   useLayoutEffect(()=>{
     const el=strip.current;if(!el)return;
@@ -138,7 +138,7 @@ export function TabStrip(props:TabStripProps) {
   };
   const tab=(id:string,color?:string,end=false)=>{
     const s=byId.get(id)!;const active=id===selected;const activity=chatActivity(s);
-    const size=active||!groups.shrink?'':icons.has(id)?'compact':'narrow';
+    const size=active||inView.has(id)||!groups.shrink?'':icons.has(id)?'compact':'narrow';
     const run=runs.get(id),partners=run?.filter(v=>v!==id).map(v=>byId.get(v)?.name).join(', ');
     const split=run?`split ${run[0]===id?'split-start':''} ${run.at(-1)===id?'split-end':''} ${inView.has(id)?'split-view':''}`:'';
     return <div key={id} data-tab-id={id} data-attention={activity==='attention'?id:undefined} title={size==='compact'?`${s.name}\n${activityLabel[activity]}`:undefined}
