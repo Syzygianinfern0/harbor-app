@@ -13,7 +13,8 @@
     "start": "electron .",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
-    "package": "npm run build && electron-builder --mac dir"
+    "package": "npm run build && electron-builder --mac dir",
+    "site:shots": "playwright test --config site/tools/playwright.config.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

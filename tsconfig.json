@@ -5,5 +5,5 @@
     "strict": true, "esModuleInterop": true, "skipLibCheck": true,
     "resolveJsonModule": true, "noEmit": true, "types": ["node"]
   },
-  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "tests", "site/tools", "vite.config.ts", "playwright.config.ts"]
 }

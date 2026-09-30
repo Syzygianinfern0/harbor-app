@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harbor: persistent Codex and Claude Code chats for macOS</title>
+<meta name="description" content="Harbor is a macOS app for running Codex and Claude Code across all your projects, on your Mac and on remote servers, in sessions that keep working when you walk away.">
+<meta name="theme-color" content="#0d0f13">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Harbor: hand off the work. Close the laptop. Your agents keep going.">
+<meta property="og:description" content="Codex and Claude Code across every project, on your Mac and your servers, in sessions that outlive the app, the network and the lid.">
+<meta property="og:image" content="assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="Harbor home"><img src="assets/logo.png" alt="" width="28" height="28"><span>harbor<span class="dot">.</span></span></a>
+    <nav aria-label="Sections">
+      <a href="#outlive">Why Harbor</a>
+      <a href="#tabs">Try the tabs</a>
+      <a href="#install">Install</a>
+    </nav>
+    <!-- PLACEHOLDER: replace href with the release download URL. -->
+    <a class="button small" href="#install" data-placeholder>Download</a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero wrap">
+    <p class="eyebrow">For macOS · Codex + Claude Code · Your Mac + SSH</p>
+    <h1>Hand off the work.<br>Close the laptop.<br><span>Your agents keep going.</span></h1>
+    <p class="lede">Harbor is a macOS app for running Codex and Claude Code across all your projects, on your Mac and on remote servers, in persistent sessions that survive closing the app, dropped connections, and walking away.</p>
+    <div class="cta">
+      <!-- PLACEHOLDER: replace href with the release download URL. -->
+      <a class="button" href="#install" data-placeholder><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M3 13h10"/></svg>Download for macOS</a>
+      <a class="button ghost" href="#tabs">Try the live demo</a>
+    </div>
+    <ul class="needs" aria-label="Built for">
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h4l1.2 1.5H14v6.5H2z"/></svg>Many projects</li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3v10M3 8h4M9.5 4h4v8h-4z"/></svg>Codex + Claude</li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3h11v4h-11zM2.5 9h11v4h-11zM5 5h.01M5 11h.01"/></svg>Local + SSH</li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.5 9.5A5 5 0 0 1 6.5 3.5a5 5 0 1 0 6 6z"/></svg>Keeps working without you</li>
+    </ul>
+    <figure class="window hero-shot">
+      <img src="assets/shots/hero.webp" width="2880" height="1800" alt="Harbor with four projects in the sidebar, two on remote servers, and a Codex chat split beside a Claude Code chat that is asking for approval.">
+    </figure>
+  </section>
+
+  <section class="wrap for-you">
+    <h2>Made for people who do all four at once</h2>
+    <div class="four">
+      <div><span class="num">01</span><h3>Juggle several projects</h3><p>An API, a paper, a side project. Each gets its own place, its own chats, its own color.</p></div>
+      <div><span class="num">02</span><h3>Use Codex and Claude Code</h3><p>Pick the right agent for each job without switching apps or terminals.</p></div>
+      <div><span class="num">03</span><h3>Work on your Mac and on servers</h3><p>Local repos and remote GPU or build boxes sit side by side in one sidebar.</p></div>
+      <div><span class="num">04</span><h3>Hand off and step away</h3><p>Start long jobs, go to lunch or close the lid, and come back to finished work.</p></div>
+    </div>
+  </section>
+
+  <section class="feature wrap" id="outlive">
+    <div class="copy">
+      <p class="eyebrow">Sessions that outlive you</p>
+      <h2>Walk away. Nothing stops.</h2>
+      <p>Every chat runs in its own tmux session on the machine it belongs to. Harbor only attaches to it. Quit the app, lose Wi-Fi or close the lid, and the agent never notices.</p>
+      <ul class="points">
+        <li><b>Quit or close the window.</b> Chats keep running. Reopen Harbor and every tab reattaches.</li>
+        <li><b>Network drops.</b> Harbor reattaches automatically, without restarting the agent.</li>
+        <li><b>Resume anything.</b> Every chat keeps its exact Codex or Claude conversation ID, so even after a reboot you pick up the same conversation.</li>
+        <li><b>Nothing to import.</b> Harbor finds the conversations you already started in a plain terminal.</li>
+      </ul>
+    </div>
+    <div class="sim" id="lid-sim">
+      <div class="sim-controls" role="group" aria-label="What happens when you">
+        <button type="button" data-event="open" aria-pressed="true">Working</button>
+        <button type="button" data-event="quit" aria-pressed="false">Quit Harbor</button>
+        <button type="button" data-event="offline" aria-pressed="false">Lose Wi-Fi</button>
+        <button type="button" data-event="lid" aria-pressed="false">Close the lid</button>
+      </div>
+      <div class="machines">
+        <div class="machine" data-host="mac"><div class="machine-head"><span>This Mac</span><small>harbor-app</small></div><div class="job" data-job="mac"></div></div>
+        <div class="machine" data-host="build"><div class="machine-head"><span>build-01</span><small>tessera-api · SSH</small></div><div class="job" data-job="build"></div></div>
+        <div class="machine" data-host="gpu"><div class="machine-head"><span>gpu-box</span><small>vision-train · SSH</small></div><div class="job" data-job="gpu"></div></div>
+      </div>
+      <p class="sim-note" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <section class="feature wrap flip" id="needed">
+    <div class="copy">
+      <p class="eyebrow">Know when to come back</p>
+      <h2>Come back only when you’re needed.</h2>
+      <p>Handing off work is half the job. The other half is not checking every tab to see what happened.</p>
+      <ul class="status-list">
+        <li><i class="st working" aria-hidden="true"></i><b>Working</b> the agent is mid-turn</li>
+        <li><i class="st attention" aria-hidden="true"></i><b>Needs input</b> waiting on your approval or answer</li>
+        <li><i class="st background" aria-hidden="true"></i><b>Background work</b> the turn ended, but jobs it started are still running</li>
+        <li><i class="st idle" aria-hidden="true"></i><b>Turn finished</b> ready for your next prompt</li>
+      </ul>
+      <p>Desktop notifications, unread dots and a Dock badge tell you what changed. <kbd>⌘</kbd><kbd>J</kbd> jumps straight to the next chat that needs you. Fold everything away and Harbor shows one overview of every open chat.</p>
+    </div>
+    <figure class="window"><img src="assets/shots/overview.webp" width="2880" height="1800" loading="lazy" alt="The overview of open chats, grouped by project, showing one chat that needs input, three unread, and chats that are working or waiting on background jobs."></figure>
+  </section>
+
+  <section class="tabs-section" id="tabs">
+    <div class="wrap">
+      <div class="tabs-intro">
+        <p class="eyebrow">Tabs, the way you already use them</p>
+        <h2>If you can organize a browser, you already know Harbor.</h2>
+        <p>Harbor borrows the tab habits power users have built over years of daily browsing: groups, folding, split view, focus. There’s no new mental model to learn. Your chats simply behave like the tabs you already organize every day.</p>
+      </div>
+      <dl class="mapping">
+        <div><dt>Tab groups</dt><dd>Chats group by project automatically, each in its own color. ⌘-click a few tabs and press <kbd>⌘</kbd><kbd>G</kbd> for a group of your own.</dd></div>
+        <div><dt>Collapse a group</dt><dd>Fold a group into a chip. It still shows its most urgent status, so nothing that needs you goes quiet.</dd></div>
+        <div><dt>Split view</dt><dd>Drag a tab onto a pane’s edge. Split tabs stay linked in the tab bar, like Chrome’s split view.</dd></div>
+        <div><dt>Focus</dt><dd>Focus mode keeps only the current group open; click another chip to switch.</dd></div>
+        <div><dt>Shortcuts you know</dt><dd><kbd>⌘</kbd><kbd>1–9</kbd>, <kbd>⌃</kbd><kbd>Tab</kbd>, <kbd>⌘</kbd><kbd>W</kbd>, drag to reorder, tabs that shrink before they scroll.</dd></div>
+      </dl>
+
+      <div class="demo-frame">
+        <div class="demo-head">
+          <div>
+            <strong>Try it</strong>
+            <span>Fold a group, drag a tab onto the terminal to split, ⌘- or Shift-click tabs to group them, or turn on Focus mode. The agents are simulated and keep working while you play.</span>
+          </div>
+        </div>
+        <div id="demo" class="demo" aria-label="Interactive Harbor tab demo">
+          <noscript><img src="assets/shots/groups.webp" width="2880" height="1800" alt="Harbor tab groups"></noscript>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature wrap" id="agents">
+    <div class="copy">
+      <p class="eyebrow">Both agents, side by side</p>
+      <h2>Codex and Claude Code, first-class.</h2>
+      <p>Start either one from the same place with <kbd>⌘</kbd><kbd>N</kbd>. Both share the sidebar, the status icons and the notifications. Put them in adjacent panes, and let one review what the other wrote.</p>
+      <ul class="points">
+        <li><b>Real terminals.</b> Each chat is the agent’s own CLI, not a wrapper around it. Your config, credentials and history stay exactly where they are.</li>
+        <li><b>Fork a chat</b> to try a different approach without disturbing the original.</li>
+        <li><b>See the cost.</b> Token use and estimated cost per chat, plus a rolling 24-hour total.</li>
+      </ul>
+    </div>
+    <figure class="window"><img src="assets/shots/agents.webp" width="2336" height="1800" loading="lazy" alt="A Codex chat adding a rate limiter, split beside a Claude Code chat asking to approve an edit."></figure>
+  </section>
+
+  <section class="feature wrap flip" id="remote">
+    <div class="copy">
+      <p class="eyebrow">Your Mac and your servers</p>
+      <h2>Every machine, one sidebar.</h2>
+      <p>A project is a folder on a host: your Mac, a build server, a GPU box. Harbor reaches them over plain SSH and runs each agent right next to its code.</p>
+      <ul class="points">
+        <li><b>Import hosts</b> from your SSH config. Harbor never edits it.</li>
+        <li><b>Browse remote folders</b> with a quick picker when you add a project.</li>
+        <li><b>Drop files</b> onto a remote chat and Harbor copies them to the server for you.</li>
+        <li><b>Open in Cursor</b> locally or over Remote-SSH, with the same connection settings.</li>
+      </ul>
+    </div>
+    <figure class="window"><img src="assets/shots/remote.webp" width="2880" height="1800" loading="lazy" alt="A Codex learning-rate sweep and a Claude Code plotting chat, both running on a remote GPU server named gpu-box."></figure>
+  </section>
+
+  <section class="wrap also">
+    <h2>And also</h2>
+    <ul>
+      <li><b>Notes and to-dos</b> on any chat or project, in Markdown.</li>
+      <li><b>Search</b> chat names with <kbd>⌘</kbd><kbd>K</kbd> and scrollback with <kbd>⌘</kbd><kbd>F</kbd>.</li>
+      <li><b>Rename and pin</b> chats; names you set stick.</li>
+      <li><b>Launch commands</b> for every chat, ready to copy.</li>
+      <li><b>Agent updates</b> checked on every host, with one-click update.</li>
+      <li><b>Permission modes</b> per agent, from read-only to full access.</li>
+    </ul>
+  </section>
+
+  <section class="wrap install" id="install">
+    <div>
+      <p class="eyebrow">Install</p>
+      <h2>Get started in a few minutes.</h2>
+      <ol>
+        <li><b>Download Harbor</b> and move it to Applications. <span class="soon">Download link coming soon</span></li>
+        <li><b>Install tmux 3.2+</b> on your Mac and on each server: <code>brew install tmux</code></li>
+        <li><b>Install and sign in to Codex and/or Claude Code</b> wherever you want to run them.</li>
+        <li><b>Set up SSH keys</b> for your servers, then import them in Preferences → Hosts.</li>
+      </ol>
+    </div>
+    <aside class="reqs">
+      <h3>Requirements</h3>
+      <ul>
+        <li>macOS on Apple Silicon</li>
+        <li>tmux 3.2+, Python 3.8+ and bash on each host</li>
+        <li>Codex and/or Claude Code, installed and signed in</li>
+        <li>Key-based SSH for remote machines</li>
+      </ul>
+      <!-- PLACEHOLDER: replace href with the release download URL. -->
+      <a class="button" href="#install" data-placeholder>Download for macOS</a>
+    </aside>
+  </section>
+</main>
+
+<footer class="wrap footer">
+  <span><img src="assets/logo.png" alt="" width="20" height="20"> Harbor</span>
+  <span>MIT licensed · Screenshots show a demo workspace</span>
+</footer>
+
+<div class="toast" role="status" aria-live="polite" hidden></div>
+<script src="demo.js" defer></script>
+</body>
+</html>

@@ -147,6 +147,12 @@ Release tags use `v<package.json version>` and point to validated commits. Push 
 - Shell terminals stay out of the chat sidebar. Closed and disconnected agent chats show a read-only saved-message preview when a transcript is available, with a message count and the last four text messages. Tool records are excluded; preview messages are shortened to 1,200 characters.
 - Agent marks use monochrome OpenAI and Claude silhouettes from Simple Icons, colored by the app theme.
 
+## Landing page
+
+`site/` is the static landing page: `index.html`, `styles.css`, and `demo.js` (the interactive tab demo and the close-the-lid simulator, both simulated in the browser). Open `site/index.html` directly or serve the folder, for example `python3 -m http.server -d site`. Pushing changes under `site/` to `main` deploys it to GitHub Pages through `.github/workflows/pages.yml`.
+
+The screenshots in `site/assets/shots/` come from the real app running a made-up demo workspace: `npm run build && npm run site:shots` (needs `cwebp` and ImageMagick, `brew install webp imagemagick`). The script uses a temporary profile and its own tmux socket, scripts every terminal's output, and replaces usage data with demo numbers, so no real chats or costs appear. The download buttons are placeholders marked `data-placeholder` until a release URL exists.
+
 ## Usage and scroll state
 
 The subtle **24h cost** above Preferences shows overall usage across configured hosts. Click it for rolling **24-hour**, **7-day**, and **30-day** costs by host and model. **View detailed usage** opens Preferences → Usage, where you can group by host/model, model/host, or day/host/model. Overall views show costs only. They refresh every minute and on global refresh; Preferences also has a manual refresh.
