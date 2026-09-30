@@ -25,9 +25,15 @@ test('engine settles a watch-only wait from an older bridge without a spurious n
  (engine as any).bridge={metadata:async()=>({a:meta})};const poll=()=>(engine as any).refreshMetadata();
  await poll();let [session]=engine.snapshot().sessions;
  assert.equal(session.activity,'idle');assert.equal(session.activityDetail,'');assert.equal(session.completedAt,5);assert.deepEqual(events,[],'already on screen');
- meta={...meta,activity:'working',reason:'',updatedAt:6};await poll();
+ // The older bridge's monitor bumps updatedAt every couple of seconds while the watch keeps waiting.
+ for(const updatedAt of [5.5,6,6.5]){meta={...meta,updatedAt};await poll();}
+ [session]=engine.snapshot().sessions;assert.equal(session.completedAt,5);assert.deepEqual(events,[],'a settled wait does not finish again');
+ meta={...meta,activity:'working',reason:'',updatedAt:6.8};await poll();
  meta={...meta,activity:'background',reason:`1 background task running: ${watch('a')}`,updatedAt:7};await poll();
  [session]=engine.snapshot().sessions;assert.equal(session.completedAt,7);assert.deepEqual(events,[true],'a new watch-only stop is a finished turn');
- meta={...meta,activity:'background',reason:'1 background task running: Run the test suite',updatedAt:8};await poll();
+ for(const updatedAt of [7.5,8,8.5]){meta={...meta,updatedAt};await poll();}
+ [session]=engine.snapshot().sessions;assert.equal(session.completedAt,7);assert.deepEqual(events,[true],'announced once');
+ meta={...meta,attentionAt:8.6,updatedAt:8.6};await poll();assert.deepEqual(events,[true,false],'real attention still notifies');
+ meta={...meta,activity:'background',reason:'1 background task running: Run the test suite',updatedAt:9};await poll();
  assert.equal(engine.snapshot().sessions[0].activity,'background');await engine.dispose();
 });

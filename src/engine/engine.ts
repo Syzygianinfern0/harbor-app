@@ -229,13 +229,18 @@ export class HarborEngine extends EventEmitter {
           if(meta.resumable!==undefined) session.resumable=meta.resumable;
           if(meta.name && session.nameSource!=='manual') session.name=meta.name.slice(0,100);
           let {activity,reason,completedAt}=meta;
-          if(activity==='background'&&onlyArtifactWatches(reason)) {activity='idle';reason='';completedAt=Math.max(Number(completedAt||0),Number(meta.updatedAt||0));}
+          // Older bridges record a watch-only wait as background and bump updatedAt every poll, so the finish time is fixed once
+          // when the wait begins, and only a turn seen running announces it; a wait already on screen or settled is not a new finish.
+          let settled=false;
+          if(activity==='background'&&onlyArtifactWatches(reason)) {
+            settled=!['starting','working','attention'].includes(previous??'');
+            completedAt=previous==='idle'?Math.max(Number(completedAt||0),Number(session.completedAt||0))||meta.updatedAt:Math.max(Number(completedAt||0),Number(meta.updatedAt||0));
+            activity='idle';reason='';
+          }
           if(session.status !== 'closed' && activity && ['starting','working','attention','background','idle','closed','error','unknown'].includes(activity)) session.activity=activity;
           session.activityDetail=reason; session.activityAt=meta.updatedAt;
-          const attention=Number(meta.attentionAt||0)>Number(session.attentionAt||0), completed=Number(completedAt||0)>Number(session.completedAt||0);
-          // Reclassifying a wait already on screen is not a new finished turn.
-          const reclassified=previous==='background'&&previousAt===meta.updatedAt;
-          if(session.status==='running'&&previousAt&&!reclassified&&(attention||completed)) this.emit('attention',{session:structuredClone(session),completed:!attention&&completed});
+          const attention=Number(meta.attentionAt||0)>Number(session.attentionAt||0), completed=Number((settled?meta.completedAt:completedAt)||0)>Number(session.completedAt||0);
+          if(session.status==='running'&&previousAt&&(attention||completed)) this.emit('attention',{session:structuredClone(session),completed:!attention&&completed});
           session.attentionAt=meta.attentionAt;session.completedAt=completedAt;
         }
       } catch { /* Connection failures are represented by the terminal status, never fabricated as idle. */ }
