@@ -21,3 +21,15 @@ After a feature or app fix is tested and proven to work, automatically replace a
 4. Verify installed signature, version, and matching packaged/installed `app.asar` SHA256; relaunch the installed path. Confirm the new process, restored tabs/panes, reattached chats, and unchanged surviving tmux pane IDs/PIDs on reachable hosts. Investigate discrepancies; roll back the bundle if launch or reconnection fails, preserving current chat data. Do not claim success from packaging progress alone.
 
 Harbor currently uses ad-hoc signing (`mac.identity: "-"`); rebuilds may trigger macOS permission prompts. Preserve signing configuration and report any OS interaction required; never promise permission persistence or alter privacy settings silently.
+
+## Landing page (`site/`)
+
+Mechanics are in `README.md` → "Landing page". These are the owner's decisions; keep them unless asked.
+
+- **Pitch:** Harbor replaces the tmux routine (ssh, cd, `tmux new`, start an agent, repeat) for people who do all four at once: many projects, both Codex and Claude Code, local and SSH machines, and handing work off to step away. Everything else is extras. The hero leads with "Stop juggling tmux sessions." and a before/after whose terminal lines name those four needs.
+- **Less is more:** one short sentence per section, no bullet lists or feature essays. Cut before adding.
+- **Show, don't list:** every feature gets a real screenshot tightly cropped around it, legible at card size; never a phrase alone and never mockups. Features without a screenshot don't go on the page.
+- **Demo:** keep the tab demo simple: three groups, one window, three tasks (fold, split, focus). It must work on phones (Split button, stacked panes). Test odd sequences; review with fresh eyes if it grows.
+- **Placeholders:** download buttons stay `data-placeholder` ("coming soon") until the owner gives a release URL.
+- **Screenshots only via `npm run site:shots`:** it uses a temp profile, its own tmux socket, scripted terminals, and fake usage numbers. Never screenshot the installed Harbor or a real profile; a raw capture exposed real spend once.
+- **Publishing:** the site is public at https://spsharan.com/Agent-Manager/ although the repo is private; anything under `site/` that reaches `main` is published. Verify at desktop and phone widths (no errors, no horizontal scroll) before pushing, then confirm the Pages run and the live page.
