@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Harbor: persistent Codex and Claude Code chats for macOS</title>
-<meta name="description" content="Run Codex and Claude Code across every project, on your Mac and your servers. Chats keep going when you quit, disconnect or close the lid.">
+<title>Harbor: stop juggling tmux sessions</title>
+<meta name="description" content="One window for every Codex and Claude Code chat, across every project, on your Mac and your servers. Close the laptop, and they keep going.">
 <meta name="theme-color" content="#0d0f13">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Harbor: hand off the work. Close the laptop. Your agents keep going.">
-<meta property="og:description" content="Codex and Claude Code across every project, on your Mac and your servers.">
+<meta property="og:title" content="Harbor: stop juggling tmux sessions">
+<meta property="og:description" content="One window for every Codex and Claude Code chat, across every project, on your Mac and your servers.">
 <meta property="og:image" content="assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="assets/favicon.png">
@@ -31,19 +31,27 @@
 
 <main id="top">
   <section class="hero wrap">
-    <h1>Hand off the work.<br>Close the laptop.<br><span>Your agents keep going.</span></h1>
-    <p class="lede">Run Codex and Claude Code across every project, on your Mac and your servers. Chats keep going when you quit, disconnect or close the lid.</p>
+    <p class="eyebrow">Tired of juggling tmux sessions?</p>
+    <h1>Stop juggling<br><span>tmux sessions.</span></h1>
+    <p class="lede">One window for every Codex and Claude Code chat, across every project, on your Mac and your servers. Close the laptop, and they keep going.</p>
     <div class="cta">
       <!-- PLACEHOLDER: replace href with the release download URL. -->
       <a class="button" href="#install" data-placeholder><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M3 13h10"/></svg>Download for macOS</a>
       <a class="button ghost" href="#tabs">Try the demo</a>
     </div>
-    <ul class="needs" aria-label="Built for">
-      <li>Many projects</li>
-      <li>Codex + Claude</li>
-      <li>Local + SSH</li>
-      <li>Keeps working without you</li>
-    </ul>
+    <figure class="before" aria-label="The routine Harbor replaces">
+      <figcaption class="tag">Before</figcaption>
+      <ol class="term">
+        <li><code><span class="p">$</span> ssh gpu-box</code><em>your servers</em></li>
+        <li><code><span class="p">$</span> cd ~/vision-train</code><em>another project</em></li>
+        <li><code><span class="p">$</span> tmux new -s sweep</code><em>so it survives closing the lid</em></li>
+        <li><code><span class="p">$</span> claude</code><em>or codex, depending on the job</em></li>
+        <li class="gap"><code>  …repeat for every task…</code></li>
+        <li><code><span class="p">$</span> tmux ls</code></li>
+        <li class="out"><code>11 sessions. Which one needed you?</code></li>
+      </ol>
+    </figure>
+    <p class="tag after">After</p>
     <figure class="window hero-shot">
       <img src="assets/shots/hero.webp" width="2880" height="1800" alt="Harbor with four projects, two on remote servers, and a Codex chat split beside a Claude Code chat asking for approval.">
     </figure>
@@ -51,8 +59,8 @@
 
   <section class="row wrap" id="outlive">
     <div class="copy">
-      <h2>Walk away. Nothing stops.</h2>
-      <p>Every chat runs in tmux on its own machine. Harbor just attaches.</p>
+      <h2>Hand off the work. Close the laptop.</h2>
+      <p>Your agents keep going. Every chat runs in tmux on its own machine, and Harbor just attaches.</p>
     </div>
     <div class="sim" id="lid-sim">
       <div class="sim-controls" role="group" aria-label="Try it">

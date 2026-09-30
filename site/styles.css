@@ -40,11 +40,23 @@ code{font:.9em var(--mono);background:var(--panel-2);border:1px solid var(--bord
 .hero h1 span{color:var(--mint)}
 .lede{font-size:clamp(17px,1.9vw,20px);max-width:36em;margin-top:26px}
 .cta{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:32px}
-.needs{list-style:none;padding:0;margin:36px 0 0;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 10px}
-.needs li{padding:6px 14px;border:1px solid var(--border);border-radius:999px;background:var(--bg-2);font-size:14px;color:var(--text-2)}
-.needs li::before{content:"✓";color:var(--mint);margin-right:7px;font-size:13px}
+.eyebrow{font:600 13px/1.2 var(--mono);letter-spacing:.06em;color:var(--mint);margin-bottom:22px}
+/* Before: the tmux routine Harbor replaces, each line labeled with the need it serves. */
+.before{margin:64px 0 0;width:min(100%,720px);text-align:left;border:1px solid var(--border-2);border-radius:var(--radius);background:#0a0c10;padding:20px 24px 22px;position:relative}
+.tag{display:inline-block;font:600 11.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border-2);border-radius:999px;padding:6px 10px;background:var(--bg)}
+.before .tag{position:absolute;top:-13px;left:20px}
+.term{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:7px;font:15px/1.5 var(--mono)}
+.term li{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.term code{font:inherit;background:none;border:0;padding:0;color:var(--text);white-space:pre}
+.term .p{color:var(--faint);margin-right:10px}
+.term em{font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;font-style:normal;color:var(--mint);white-space:nowrap}
+.term em::before{content:"← ";color:var(--faint)}
+.term .gap code{color:var(--faint)}
+.term .out code{color:var(--amber)}
+.tag.after{margin-top:40px;color:var(--mint);border-color:#3f6e5a;background:#15261f}
+@media (max-width:640px){.term li{flex-direction:column;gap:0}.term em::before{content:""}.term{font-size:14px}}
 .window{margin:0;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border-2);background:var(--panel);box-shadow:0 30px 80px -24px #000c}
-.hero-shot{margin-top:60px;width:100%;box-shadow:0 40px 120px -30px #000,0 0 120px -40px #9be1c455}
+.hero-shot{margin-top:18px;width:100%;box-shadow:0 40px 120px -30px #000,0 0 120px -40px #9be1c455}
 
 /* sections */
 section h2{font-size:clamp(30px,3.8vw,46px)}
