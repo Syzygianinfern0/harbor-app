@@ -1,7 +1,7 @@
 // Captures the landing page screenshots from the built app with a made-up demo workspace.
 // Nothing here touches real chats: the profile is a temp dir, tmux uses its own socket, and every
 // terminal's output is scripted below. Run: `npm run build && npm run site:shots`.
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { test, expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { mkdtemp, writeFile, readdir, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -100,6 +100,20 @@ function screen(id: string, kind: Kind, cwd: string, cols: number, rows: number)
   return `\x1b[2J\x1b[H${top}${bottom}`;
 }
 
+const NOTE = `## Before release
+- [ ] Status on folded chips !p1
+  - [ ] Needs input beats turn finished
+- [ ] Screenshot for the release notes !p2
+- [x] Measure tabs before they shrink`;
+const checked = new Date().toISOString();
+const UPDATES = [
+  { hostId: 'local', hostLabel: 'This Mac', agent: 'codex', installed: '0.154.0', latest: '0.154.0', status: 'current', checkedAt: checked },
+  { hostId: 'local', hostLabel: 'This Mac', agent: 'claude', installed: '2.1.263', latest: '2.1.263', status: 'current', checkedAt: checked },
+  { hostId: 'build-01', hostLabel: 'build-01', agent: 'codex', installed: '0.151.2', latest: '0.154.0', status: 'available', checkedAt: checked },
+  { hostId: 'build-01', hostLabel: 'build-01', agent: 'claude', installed: '2.1.257', latest: '2.1.263', status: 'available', checkedAt: checked },
+  { hostId: 'gpu-box', hostLabel: 'gpu-box', agent: 'codex', installed: '0.154.0', latest: '0.154.0', status: 'current', checkedAt: checked },
+] as const;
+
 // ---- Demo workspace ----------------------------------------------------------------------
 async function launch() {
   const dir = await mkdtemp(path.join(tmpdir(), 'harbor-site-shots-'));
@@ -124,8 +138,10 @@ async function stage(app: ElectronApplication, page: Page) {
     const remote = project.host !== 'local';
     return { ...snapshot.sessions.find(s => s.id === id)!, name, launcher, cwd: project.cwd, host: remote ? project.host : 'local', hostId: project.host, hostLabel: remote ? project.host : 'This Mac', ...(remote ? { connection: SSH[project.host as keyof typeof SSH] } : {}),
       status: activity === 'closed' ? 'closed' : 'running', activity: activity as never, activityAt: now - i * 60000, unread, updatedAt: new Date(now - i * 60000).toISOString(), conversationId: `demo-${id}`,
-      ...(activity === 'background' ? { activityDetail: launcher === 'claude' ? 'npm run test:integration' : 'python sweep.py' } : {}) };
+      ...(activity === 'background' ? { activityDetail: launcher === 'claude' ? 'npm run test:integration' : 'python sweep.py' } : {}),
+      ...(id === 'b1' ? { pinned: true } : {}), ...(id === 'a1' ? { note: NOTE } : {}) };
   });
+  snapshot.agentUpdates = { updates: [...UPDATES], checking: false, updatingAll: false, results: {}, checkedAt: now };
   const screens = Object.fromEntries(CHATS.map(([id, projectId, , kind]) => [id, { kind, cwd: PROJECTS.find(p => p.id === projectId)!.cwd }]));
   await app.evaluate(({ BrowserWindow, ipcMain }, { snapshot, screens, script }) => {
     const draw = new Function('return ' + script)() as (id: string, kind: string, cwd: string, cols: number, rows: number) => string;
@@ -134,6 +150,7 @@ async function stage(app: ElectronApplication, page: Page) {
     contents.send = (channel: string, ...args: unknown[]) => send(channel, ...(channel === 'harbor:snapshot-changed' ? [snapshot] : args));
     const replace = (channel: string, handler: (...args: any[]) => unknown) => { ipcMain.removeHandler(channel); ipcMain.handle(channel, handler); };
     replace('harbor:snapshot', () => snapshot);
+    replace('harbor:checkUpdates', () => snapshot.agentUpdates!.updates);
     replace('harbor:checkReachability', () => Object.fromEntries(snapshot.projects.map(p => [JSON.stringify(p.connection), true])));
     const cost = (usd: number) => ({ usd, estimated: usd, recorded: 0, unpriced: 0, models: [{ model: 'demo', usd, estimated: usd, recorded: 0, unpriced: 0 }], days: [] });
     const tokens = (total: number) => ({ inputTokens: total * .7, outputTokens: total * .05, cacheReadTokens: total * .2, cacheWriteTokens: total * .05, totalTokens: total });
@@ -167,6 +184,22 @@ async function split(page: Page, source: string, target: string, side: string) {
   await transfer.dispose();
 }
 const settle = (page: Page) => page.waitForTimeout(700);
+// Feature cards share one aspect ratio: crop a 16:10 box around the targets, kept inside the window.
+// ratio 0 crops to the targets' own shape.
+// within keeps the crop inside one element, so no slivers of neighboring UI show at the edges.
+async function crop(page: Page, targets: Locator[], file: string, pad = 36, ratio = 1.6, within?: Locator) {
+  const boxes = (await Promise.all(targets.map(t => t.boundingBox()))).filter(b => !!b) as { x: number; y: number; width: number; height: number }[];
+  const bound = within ? (await within.boundingBox())! : null;
+  const view = bound ? { w: bound.width, h: bound.height } : await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+  if (bound) for (const b of boxes) { b.x -= bound.x; b.y -= bound.y; }
+  const x0 = Math.min(...boxes.map(b => b.x)) - pad, y0 = Math.min(...boxes.map(b => b.y)) - pad;
+  const x1 = Math.max(...boxes.map(b => b.x + b.width)) + pad, y1 = Math.max(...boxes.map(b => b.y + b.height)) + pad;
+  let width = ratio ? Math.max(x1 - x0, (y1 - y0) * ratio) : x1 - x0; width = Math.min(width, view.w, ratio ? view.h * ratio : view.w);
+  const height = ratio ? width / ratio : Math.min(y1 - y0, view.h);
+  const x = Math.max(0, Math.min((x0 + x1 - width) / 2, view.w - width)), y = Math.max(0, Math.min((y0 + y1 - height) / 2, view.h - height));
+  await page.screenshot({ path: `${OUT}/${file}.png`, clip: { x: x + (bound?.x ?? 0), y: y + (bound?.y ?? 0), width, height } });
+}
+const row = (page: Page, name: string) => page.locator('.sidebar .chat-row', { hasText: name });
 
 test('landing page screenshots', async () => {
   OUT = await mkdtemp(path.join(tmpdir(), 'harbor-site-png-'));
@@ -180,26 +213,69 @@ test('landing page screenshots', async () => {
     await expect(page.locator('.workspace-pane')).toHaveCount(2);
     await settle(page);
     await page.screenshot({ path: `${OUT}/hero.png` });
-    await page.locator('.workspace').screenshot({ path: `${OUT}/agents.png` });
 
     // Remote: a chat on the GPU server, beside the sidebar that lists hosts per project.
     await openChat(page, 'Learning-rate sweep');
     await split(page, 'c2', 'c1', 'right');
     await settle(page);
-    await page.screenshot({ path: `${OUT}/remote.png` });
+    // Focused on the sidebar's host badges, with the remote chat beside them.
+    await crop(page, [page.locator('.project-heading', { hasText: 'harbor-app' }), page.locator('.project-heading', { hasText: 'docs-site' }), row(page, 'Postgres 17 migration')], 'remote', 12, 0, page.locator('.sidebar'));
 
     // Projects: fold two groups; the chips carry the most urgent status.
     await page.getByRole('button', { name: /^tessera-api group/ }).click();
     await page.getByRole('button', { name: /^harbor-app group/ }).click();
     await settle(page);
-    await page.screenshot({ path: `${OUT}/groups.png` });
+
+    // Feature cards. Drop: a file dragged over a chat on the GPU server.
+    const surface = page.locator('[data-session-id="c2"] .terminal-surface');
+    await surface.evaluate(el => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'loss_curve.png', { type: 'image/png' })); el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })); });
+    await expect(page.locator('.file-drop-indicator')).toBeVisible(); await settle(page);
+    await crop(page, [page.locator('.file-drop-indicator'), page.locator('[data-session-id="c2"] .xterm-rows > div').nth(9)], 'drop', 40, 1.6, page.locator('[data-session-id="c2"]'));
+    await surface.evaluate(el => el.dispatchEvent(new DragEvent('dragleave', { bubbles: true, relatedTarget: document.body })));
+
+    // Search: ⌘F over a chat's scrollback.
+    await openChat(page, 'Flaky auth test');
+    await page.locator('[data-session-id="b2"] .xterm').click();
+    await page.keyboard.press('Meta+f');
+    const find = page.locator('[data-session-id="b2"] .terminal-find input'); await expect(find).toBeFocused();
+    await find.fill('test'); await page.keyboard.press('Enter');
+    await expect(page.locator('.terminal-find-count')).toBeVisible(); await settle(page);
+    await crop(page, [page.locator('[data-session-id="b2"] .terminal-find'), page.locator('[data-session-id="b2"] .xterm-rows > div').nth(8)], 'search', 36, 1.6, page.locator('[data-session-id="b2"]'));
+    await page.keyboard.press('Escape');
+
+    // Rename and pin: the chat menu, next to a pinned chat.
+    await row(page, 'Flaky auth test').click({ button: 'right' });
+    const menu = page.locator('.chat-context-menu'); await expect(menu).toBeVisible(); await settle(page);
+    await crop(page, [menu, row(page, 'Rate limiter')], 'pin', 12, 0);
+    await page.keyboard.press('Escape');
+
+    // Notes and to-dos, in the formatted view.
+    await row(page, 'Tab strip polish').hover(); await row(page, 'Tab strip polish').locator('.chat-note').click();
+    const editor = page.getByRole('dialog', { name: 'Note for Tab strip polish' });
+    await editor.getByRole('radio', { name: 'Formatted' }).click(); await settle(page);
+    await editor.screenshot({ path: `${OUT}/notes.png` });
+    await page.keyboard.press('Escape');
+
+    // Both agents: the New chat dialog with its permission mode.
+    await page.getByRole('button', { name: 'New chat in tessera-api', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'New chat' });
+    await dialog.getByRole('button', { name: /Claude Code/ }).click(); await settle(page);
+    await crop(page, [dialog.locator('.modal-heading'), dialog.locator('.launcher-options'), dialog.locator('label', { hasText: 'Permission mode' })], 'agents', 14, 0, dialog);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    // Agent updates across machines.
+    await page.getByRole('button', { name: /^Preferences/ }).click();
+    await page.getByRole('button', { name: 'Agent updates', exact: true }).click();
+    await expect(page.locator('.updates-table')).toBeVisible(); await settle(page);
+    await crop(page, [page.locator('.updates-heading'), page.locator('.updates-table tbody tr').nth(5)], 'updates', 20, 0);
+    await page.keyboard.press('Escape');
 
     // Step away: everything folded shows the overview of every chat and what it needs.
     await page.getByRole('button', { name: 'Tab groups', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Collapse all groups' }).click();
     await expect(page.locator('.groups-overview')).toBeVisible();
     await settle(page);
-    await page.screenshot({ path: `${OUT}/overview.png` });
+    await crop(page, [page.locator('.session-toolbar [data-group-key]').first(), page.locator('.group-card').first(), page.locator('.group-card').last()], 'overview', 30, 0, page.locator('.workspace'));
   } finally { await app.close(); }
   for (const file of await readdir(OUT)) execFileSync('cwebp', ['-quiet', '-q', '82', '-m', '6', path.join(OUT, file), '-o', path.join(SHOTS, file.replace(/\.png$/, '.webp'))]);
   execFileSync('magick', [path.join(OUT, 'hero.png'), '-resize', '1200x', '-gravity', 'north', '-crop', '1200x630+0+0', '+repage', '-strip', path.join(SHOTS, '../og.png')]);
