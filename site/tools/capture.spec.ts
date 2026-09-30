@@ -24,15 +24,15 @@ const PROJECTS = [
 // [id, project, name, agent, activity, unread]
 const CHATS: [string, string, string, Kind, string, boolean][] = [
   ['a1', 'app', 'Tab strip polish', 'claude', 'working', false],
-  ['a2', 'app', 'Release notes 0.5', 'codex', 'idle', true],
+  ['a2', 'app', 'Release notes 0.5', 'codex', 'completed', true],
   ['a3', 'app', 'Fix SSH reattach', 'codex', 'closed', false],
   ['b1', 'api', 'Rate limiter', 'codex', 'working', false],
   ['b2', 'api', 'Flaky auth test', 'claude', 'attention', true],
   ['b3', 'api', 'Postgres 17 migration', 'claude', 'background', false],
   ['c1', 'ml', 'Learning-rate sweep', 'codex', 'background', false],
-  ['c2', 'ml', 'Plot ablations', 'claude', 'idle', true],
+  ['c2', 'ml', 'Plot ablations', 'claude', 'completed', true],
   ['c3', 'ml', 'Eval harness', 'codex', 'working', false],
-  ['d1', 'docs', 'Rewrite quickstart', 'claude', 'idle', false],
+  ['d1', 'docs', 'Rewrite quickstart', 'claude', 'completed', false],
 ];
 
 // ---- Scripted terminal output -------------------------------------------------------------
@@ -101,10 +101,15 @@ function screen(id: string, kind: Kind, cwd: string, cols: number, rows: number)
 }
 
 const NOTE = `## Before release
+Ship *after* the tab polish lands.
 - [ ] Status on folded chips !p1
   - [ ] Needs input beats turn finished
-- [ ] Screenshot for the release notes !p2
-- [x] Measure tabs before they shrink`;
+- [x] Measure tabs before they shrink
+### Check
+\`\`\`
+npm test -- tabGroups
+\`\`\`
+- Keep **one** line per group`;
 const checked = new Date().toISOString();
 const UPDATES = [
   { hostId: 'local', hostLabel: 'This Mac', agent: 'codex', installed: '0.154.0', latest: '0.154.0', status: 'current', checkedAt: checked },
@@ -137,7 +142,7 @@ async function stage(app: ElectronApplication, page: Page) {
     const project = PROJECTS.find(p => p.id === projectId)!;
     const remote = project.host !== 'local';
     return { ...snapshot.sessions.find(s => s.id === id)!, name, launcher, cwd: project.cwd, host: remote ? project.host : 'local', hostId: project.host, hostLabel: remote ? project.host : 'This Mac', ...(remote ? { connection: SSH[project.host as keyof typeof SSH] } : {}),
-      status: activity === 'closed' ? 'closed' : 'running', activity: activity as never, activityAt: now - i * 60000, unread, updatedAt: new Date(now - i * 60000).toISOString(), conversationId: `demo-${id}`,
+      status: activity === 'closed' ? 'closed' : 'running', activity: activity as never, activityAt: now - i * 60000, unread, updatedAt: new Date(now - i * 60000).toISOString(), conversationId: `00000000-0000-4000-8000-${(0xde000 + i).toString(16).padStart(12, '0')}`,
       ...(activity === 'background' ? { activityDetail: launcher === 'claude' ? 'npm run test:integration' : 'python sweep.py' } : {}),
       ...(id === 'b1' ? { pinned: true } : {}), ...(id === 'a1' ? { note: NOTE } : {}) };
   });
