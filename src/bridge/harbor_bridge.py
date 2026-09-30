@@ -609,9 +609,13 @@ def codex_activity(status):
     if kind == 'idle': return 'idle', ''
     return 'unknown', 'Codex runtime status is unavailable'
 
+def artifact_watch(task):
+    # Claude flags artifact live-update watchers ambient, not activity: they wait indefinitely for comments or republishes.
+    return str(task.get('description') or '').startswith('live updates for artifact ')
+
 def running_background(event):
     tasks = event.get('background_tasks')
-    return [t for t in tasks if isinstance(t, dict) and t.get('status', 'running') == 'running'] if isinstance(tasks, list) else []
+    return [t for t in tasks if isinstance(t, dict) and t.get('status', 'running') == 'running' and not artifact_watch(t)] if isinstance(tasks, list) else []
 
 def background_reason(tasks, resumes=True):
     label = lambda t: str(t.get('description') or t.get('command') or t.get('agent_type') or t.get('type') or 'task').strip().splitlines()[0][:80]

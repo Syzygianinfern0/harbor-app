@@ -14,3 +14,11 @@ export function chatActivity(session: Session): ChatStatus {
   if (session.activity === 'idle' && session.completedAt) return 'completed';
   return session.activity || 'unknown';
 }
+
+/** True when a bridge reason says the chat waits only on artifact live-update watchers. Claude flags those ambient, not activity, so
+ * the turn is finished; bridges older than the watcher filter still recorded them as background work. */
+export function onlyArtifactWatches(reason?: string) {
+  const match=/^(\d+) background tasks? running: (.*)$/s.exec(reason||''); if(!match) return false;
+  const names=match[2].split('; ');
+  return names.length===Number(match[1]) && names.every(name=>name.startsWith('live updates for artifact '));
+}

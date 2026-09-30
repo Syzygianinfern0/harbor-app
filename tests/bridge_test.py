@@ -54,6 +54,11 @@ class BridgeTests(unittest.TestCase):
    done=send({'hook_event_name':'Stop','background_tasks':[{**task,'status':'completed'}]})
    self.assertEqual(done['activity'],'idle');self.assertGreater(done['completedAt'],0)
    self.assertEqual(send({'hook_event_name':'Stop','background_tasks':[]})['activity'],'idle')
+   watch={'id':'w1','type':'monitor','status':'running','description':'live updates for artifact https://claude.ai/artifact/abc (auto-reply on)'}
+   send({'hook_event_name':'UserPromptSubmit'})
+   watching=send({'hook_event_name':'Stop','background_tasks':[watch]})
+   self.assertEqual(watching['activity'],'idle');self.assertEqual(watching['reason'],'');self.assertGreater(watching['completedAt'],done['completedAt'])
+   self.assertEqual(send({'hook_event_name':'Stop','background_tasks':[watch,task]})['reason'],'1 background task running: Run the test suite')
  def test_background_reason_and_codex_wording(self):
   self.assertEqual(bridge.background_reason([{'command':'sleep 40; echo done\nmore'}],resumes=False),'Turn finished; 1 background terminal still running: sleep 40; echo done')
   self.assertTrue(bridge.background_reason([{'type':'shell'}]*5).endswith('; +2 more'))

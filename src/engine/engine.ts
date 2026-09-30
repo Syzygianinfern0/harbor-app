@@ -8,6 +8,7 @@ import { discoverHosts } from './hosts';
 import { checkAgentUpdates, updateMachines, installAgentUpdate } from './updates';
 import { validateMode } from '../shared/agentModes';
 import { forkBlocker, forkName } from '../shared/fork';
+import { onlyArtifactWatches } from '../shared/chatStatus';
 import { UpdateManager } from './updateManager';
 import { AgentBridge } from './bridge';
 import { PricingStore } from './pricing';
@@ -227,11 +228,15 @@ export class HarborEngine extends EventEmitter {
           if(meta.hasMessages===true || (meta.hasMessages===false&&session.hasMessages!==true))session.hasMessages=meta.hasMessages;
           if(meta.resumable!==undefined) session.resumable=meta.resumable;
           if(meta.name && session.nameSource!=='manual') session.name=meta.name.slice(0,100);
-          if(session.status !== 'closed' && meta.activity && ['starting','working','attention','background','idle','closed','error','unknown'].includes(meta.activity)) session.activity=meta.activity;
-          session.activityDetail=meta.reason; session.activityAt=meta.updatedAt;
-          const attention=Number(meta.attentionAt||0)>Number(session.attentionAt||0), completed=Number(meta.completedAt||0)>Number(session.completedAt||0);
-          if(session.status==='running'&&previousAt&&(attention||completed)) this.emit('attention',{session:structuredClone(session),completed:!attention&&completed});
-          session.attentionAt=meta.attentionAt;session.completedAt=meta.completedAt;
+          let {activity,reason,completedAt}=meta;
+          if(activity==='background'&&onlyArtifactWatches(reason)) {activity='idle';reason='';completedAt=Math.max(Number(completedAt||0),Number(meta.updatedAt||0));}
+          if(session.status !== 'closed' && activity && ['starting','working','attention','background','idle','closed','error','unknown'].includes(activity)) session.activity=activity;
+          session.activityDetail=reason; session.activityAt=meta.updatedAt;
+          const attention=Number(meta.attentionAt||0)>Number(session.attentionAt||0), completed=Number(completedAt||0)>Number(session.completedAt||0);
+          // Reclassifying a wait already on screen is not a new finished turn.
+          const reclassified=previous==='background'&&previousAt===meta.updatedAt;
+          if(session.status==='running'&&previousAt&&!reclassified&&(attention||completed)) this.emit('attention',{session:structuredClone(session),completed:!attention&&completed});
+          session.attentionAt=meta.attentionAt;session.completedAt=completedAt;
         }
       } catch { /* Connection failures are represented by the terminal status, never fabricated as idle. */ }
     }));
