@@ -124,7 +124,7 @@ section h2{font-size:clamp(30px,3.8vw,46px)}
 .install li b{color:var(--text)}
 .install .cta{margin-top:0}.reqs.small{font-size:13px;margin:18px 0 0;max-width:520px}
 .install li.cmd{padding:8px 8px 8px 12px;max-width:100%}.install li.cmd code{white-space:normal;overflow-wrap:anywhere;text-align:left}
-.copy{font:600 12px var(--mono);color:var(--mint);border:1px solid var(--border-2);background:var(--panel);border-radius:7px;padding:6px 10px;cursor:pointer}.copy:hover{background:var(--panel-2)}
+.copy-btn{font:600 12px var(--mono);color:var(--mint);border:1px solid var(--border-2);background:var(--panel);border-radius:7px;padding:6px 10px;cursor:pointer}.copy-btn:hover{background:var(--panel-2)}
 .footer a{color:inherit}.footer a:hover{color:var(--text)}
 .reqs{margin:22px 0 28px;font-size:14.5px;color:var(--muted)}
 
