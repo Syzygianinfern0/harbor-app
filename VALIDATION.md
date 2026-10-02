@@ -62,7 +62,8 @@ Changes to `src/desktop/appUpdater*.ts`, `scripts/update-manifest.mjs`, packagin
 | `HARBOR_TEST_APP` | Run the UI specs against a packaged app binary instead of the dev build. |
 | `HARBOR_TEST_AGENTS` | `1` enables real Codex/Claude tests. |
 | `HARBOR_TEST_SSH` | SSH alias for remote tests. |
-| `HARBOR_UPDATE_FEED` | Update manifest URL for a release build (testing); signatures are still required. |
+| `HARBOR_UPDATE_FEED` | Stable-channel update manifest URL for a release build (testing); signatures are still required. |
+| `HARBOR_UPDATE_RELEASES` | Releases-list URL the beta channel reads instead of the GitHub API (testing). |
 | `HARBOR_UPDATE_PUBLIC_KEY` | Verify update manifests with this PEM public key instead of the release key (testing). |
 
 Hand-written `sessions.json` fixtures must pass the engine's index check; the rules are in `AGENTS.md`.

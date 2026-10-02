@@ -119,6 +119,8 @@ How usage is counted (deduplication, forks, subagents) is described in [architec
 
 Release builds check GitHub for a new version about 20 seconds after launch, every four hours, and when your Mac wakes. A new version downloads in the background; Harbor checks its signature, checksum and code signature before offering it. Then **Restart to update** appears above Preferences (and in Preferences → Updates). Click it to restart into the new version now, or just keep working: it installs the next time you quit Harbor. **Harbor → Check for Updates…** checks right away.
 
+**Update channel** (Preferences → Updates) is **Stable** by default: you get releases once they are marked ready for everyone. **Beta** gets each release as soon as it is published, so you try it before everyone else. Switching from Beta back to Stable never downgrades Harbor; you stay on your version until Stable catches up, and an update already downloaded still installs.
+
 Installing quits Harbor, swaps the app, and (after a restart) reopens it. Quitting only detaches from tmux, so every chat keeps running and reattaches. The previous version is kept in `~/Library/Application Support/Harbor/previous-version/` in case you need to roll back; the install log is `update-install.log` next to it. Updates are skipped while macOS is shutting down or logging out.
 
 Harbor updates itself only where it can replace its own app: not from the disk image or a read-only folder. Copies built from source (`npm run package`) never update themselves.

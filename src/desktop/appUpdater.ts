@@ -7,8 +7,8 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { AppUpdateState } from '../shared/types';
-import { BUNDLE_ID, compareVersions, parseManifest, UPDATE_FEED, updateBlocker, type UpdateManifest } from './appUpdateCore';
+import type { AppUpdateState, UpdateChannel } from '../shared/types';
+import { betaFeed, BUNDLE_ID, compareVersions, RELEASES_API, parseManifest, UPDATE_FEED, updateBlocker, type UpdateManifest } from './appUpdateCore';
 
 const run = promisify(execFile);
 const CHECK_EVERY = 4 * 60 * 60 * 1000;
@@ -40,12 +40,16 @@ export class AppUpdater extends EventEmitter {
   private timer?: NodeJS.Timeout;
   private installOnQuit = true;
 
-  constructor(private readonly options: { version: string; bundlePath: string; userData: string; enabled: boolean; feed?: string; publicKey?: string }) {
+  constructor(private readonly options: { version: string; bundlePath: string; userData: string; enabled: boolean; feed?: string; releases?: string; publicKey?: string; channel: () => UpdateChannel; fetch?: typeof fetch }) {
     super();
     this.dir = path.join(options.userData, 'updates');
     const reason = !options.enabled ? 'This copy of Harbor was built from source, so it does not update itself. Release builds from GitHub do.' : updateBlocker(options.bundlePath);
     this.state = reason ? { current: options.version, status: 'disabled', reason } : { current: options.version, status: 'idle' };
   }
+
+  // Electron passes net.fetch: Node's fetch can hit an internal assertion (undici `assert(!this.paused)`)
+  // when the server closes the connection while a large download is paused for backpressure.
+  private get fetch() { return this.options.fetch ?? fetch; }
 
   get snapshot() { return this.state; }
   private set(patch: Partial<AppUpdateState>) { this.state = { ...this.state, ...patch }; this.emit('state', this.state); }
@@ -70,7 +74,7 @@ export class AppUpdater extends EventEmitter {
     this.set({ status: 'checking', error: undefined });
     try {
       await this.ensureWritable();
-      const response = await fetch(this.options.feed ?? UPDATE_FEED, { signal: AbortSignal.timeout(15_000), headers: { 'Cache-Control': 'no-cache' } });
+      const response = await this.fetch(await this.feed(), { signal: AbortSignal.timeout(15_000), headers: { 'Cache-Control': 'no-cache' } });
       if (!response.ok) throw new Error(response.status === 404 ? 'No Harbor release has been published yet.' : `The update check failed (HTTP ${response.status}).`);
       const manifest = parseManifest(await response.json(), this.options.publicKey);
       const checkedAt = Date.now();
@@ -84,6 +88,13 @@ export class AppUpdater extends EventEmitter {
     }
   }
 
+  private async feed() {
+    if (this.options.channel() !== 'beta') return this.options.feed ?? UPDATE_FEED;
+    const response = await this.fetch(this.options.releases ?? RELEASES_API, { signal: AbortSignal.timeout(15_000), headers: { Accept: 'application/vnd.github+json', 'Cache-Control': 'no-cache' } });
+    if (!response.ok) throw new Error(`The beta update check failed (HTTP ${response.status}).`);
+    return betaFeed(await response.json());
+  }
+
   private async ensureWritable() {
     try { await access(path.dirname(this.options.bundlePath), constants.W_OK); }
     catch { throw new Error(`Harbor can't replace itself in ${path.dirname(this.options.bundlePath)}. Download the update from GitHub instead.`); }
@@ -94,7 +105,7 @@ export class AppUpdater extends EventEmitter {
     await mkdir(this.dir, { recursive: true });
     const zip = path.join(this.dir, manifest.file);
     this.set({ status: 'downloading', progress: 0 });
-    const response = await fetch(manifest.url, { signal: AbortSignal.timeout(30 * 60_000) });
+    const response = await this.fetch(manifest.url, { signal: AbortSignal.timeout(30 * 60_000) });
     if (!response.ok || !response.body) throw new Error(`The update download failed (HTTP ${response.status}).`);
     const hash = createHash('sha256');
     let received = 0, reported = 0;
