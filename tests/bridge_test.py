@@ -264,4 +264,19 @@ class CostTests(unittest.TestCase):
    self.assertEqual(bridge.chat_usage('codex',cwd,thread)['subagents'],0)
    codex=bridge.host_usage()['agents'][0];self.assertEqual(codex['sessions'],1);self.assertEqual(codex['tokens']['totalTokens'],200)
 
+ def test_copied_claude_request_counts_its_fullest_copy(self):
+  with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'CODEX_HOME':d+'/codex','CLAUDE_CONFIG_DIR':d+'/claude'}), patch.object(bridge,'ROOT',pathlib.Path(d)/'cache'):
+   chat='ffffffff-0000-4000-8000-000000000000';project=pathlib.Path(d)/'claude/projects/-p';(project/chat/'subagents').mkdir(parents=True)
+   def row(output):return {'timestamp':'2026-09-26T04:28:35Z','type':'assistant','sessionId':chat,'requestId':'r','message':{'id':'m','model':'model-a','usage':{'input_tokens':10,'output_tokens':output}}}
+   # Subagent folders sort before the chat file, and their copies hold an early chunk.
+   self.write(project/(chat+'.jsonl'),[row(6051)]);self.write(project/chat/'subagents/agent-a.jsonl',[row(4)]);self.write(project/chat/'subagents/agent-b.jsonl',[row(6051)])
+   with patch.object(bridge.time,'time',return_value=1790400000):
+    for _ in range(2):
+     claude=bridge.host_usage(self.catalog())['agents'][1]
+     self.assertEqual(claude['tokens']['outputTokens'],6051);self.assertEqual(claude['tokens']['totalTokens'],6061)
+     self.assertEqual(claude['periods']['day']['tokens']['outputTokens'],6051);self.assertAlmostEqual(claude['periods']['day']['cost']['usd'],10*2e-6+6051*10e-6)
+   merged=bridge.merge_usage([bridge.usage_record(project/chat/'subagents/agent-a.jsonl','claude'),bridge.usage_record(project/(chat+'.jsonl'),'claude')])
+   self.assertEqual(merged['tokens']['outputTokens'],6051);self.assertEqual(merged['events'][0]['tokens']['outputTokens'],6051)
+   self.assertAlmostEqual(bridge.cost_summary(merged['events'],self.catalog())['usd'],10*2e-6+6051*10e-6)
+
 if __name__=='__main__':unittest.main()

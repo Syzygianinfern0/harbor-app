@@ -374,8 +374,10 @@ def cached_usage(file, agent, cache):
 
 def merge_usage(datas, seen=None):
     """Combine one conversation's transcripts (Claude subagents, Codex spawned
-    threads). A Claude request copied into several files counts once."""
-    seen = set() if seen is None else seen
+    threads). A Claude request copied into several files counts once, at its
+    fullest copy: a subagent's copy of its parent's request may hold only an
+    early streaming chunk."""
+    seen = {} if seen is None else seen
     tokens = empty_tokens(); events = []; recorded = False; partial = False
     for data in datas:
         partial = partial or data.get('partial', False)
@@ -385,9 +387,17 @@ def merge_usage(datas, seen=None):
         for event in data.get('events', []):
             key = tuple(event['key']) if event.get('key') else None
             if key in seen:
-                for field in tokens: tokens[field] -= event['tokens'][field]
+                kept, owner = seen[key]
+                for field in tokens:
+                    grow = max(0, event['tokens'][field] - kept['tokens'][field])
+                    kept['tokens'][field] += grow; owner[field] += grow
+                    tokens[field] -= event['tokens'][field]
+                for field in ('cacheWrite1h', 'recordedCost'):
+                    if field in event: kept[field] = max(kept.get(field, 0), event[field])
                 continue
-            if key: seen.add(key)
+            # Copy: kept events may grow, and the originals live in the usage cache.
+            event = {**event, 'tokens': dict(event['tokens'])}
+            if key: seen[key] = (event, tokens)
             events.append(event)
     return {'tokens':tokens if recorded else None, 'events':events, 'partial':partial}
 
@@ -520,7 +530,7 @@ def host_usage(catalog=None):
                     pages = groups.setdefault(identity, {})
                     if file.name not in pages or entry['fingerprint'][1] > pages[file.name]['fingerprint'][1]: pages[file.name] = entry
             except OSError: errors.append('Some transcript files could not be read.')
-        seen = set(); conversations = [merge_usage([entry['data'] for entry in (group.values() if isinstance(group, dict) else group)], seen) for group in groups.values()]
+        seen = {}; conversations = [merge_usage([entry['data'] for entry in (group.values() if isinstance(group, dict) else group)], seen) for group in groups.values()]
         periods = {key:{'tokens':empty_tokens(), 'sessions':0} for key in ('day','week','month')}
         recorded = 0; partial = bool(errors); all_events = []
         for data in conversations:
