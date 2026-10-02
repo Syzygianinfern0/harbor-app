@@ -481,3 +481,7 @@ button.note-check:hover{color:#8d98a6}
 .group-card-title .unread-dot{margin-left:-2px}
 .groups-overview .unread-text{color:var(--unread)}
 .chat-context-menu button[aria-disabled=true],.actions-menu button[aria-disabled=true]{opacity:.55}
+/* Harbor's own update: a quiet mint prompt above Preferences once a download is ready, and its section in Preferences → Updates. */
+.sidebar-update{display:flex;align-items:center;gap:7px;width:100%;min-height:27px;padding:5px 9px;border-radius:6px;font-size:11px;font-weight:550;color:var(--mint);background:#a9e4cc14;text-align:left}.sidebar-update:hover{background:#a9e4cc24;color:#c0f4df}
+.sidebar-update-collapsed{width:auto;justify-content:center;padding:8px;margin:0 auto 4px;background:transparent}
+.harbor-update{padding-bottom:22px;margin-bottom:22px;border-bottom:1px solid #333d49}.harbor-update .preferences-note{margin-top:12px}

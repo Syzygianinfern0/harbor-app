@@ -47,6 +47,7 @@ export interface DirectoryListing { directory: string; parent: string | null; ho
 /** What the renderer is showing: the focused pane's chat and every chat in a visible pane. */
 export interface ChatView { focused: string | null; visible: string[] }
 export type TerminalEvent = { id: string; type: 'data' | 'disconnected'; data: string };
+export interface AppUpdateState { current: string; status: 'disabled' | 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'installing' | 'error'; latest?: string; notes?: string; progress?: number; checkedAt?: number; error?: string; reason?: string }
 export interface HarborApi {
   snapshot(): Promise<Snapshot>;
   savePreferences(preferences: Preferences): Promise<void>;
@@ -92,6 +93,10 @@ export interface HarborApi {
   onSnapshot(callback: (snapshot: Snapshot) => void): () => void;
   onTerminal(callback: (event: TerminalEvent) => void): () => void;
   onNewSession(callback: () => void): () => void;
+  appUpdate(): Promise<AppUpdateState>;
+  checkAppUpdate(): Promise<AppUpdateState>;
+  installAppUpdate(): Promise<boolean>;
+  onAppUpdate(callback: (state: AppUpdateState) => void): () => void;
   onRefresh(callback: () => void): () => void;
   onPreferences(callback: () => void): () => void;
 }

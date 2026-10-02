@@ -28,6 +28,14 @@ Session/project state is stored atomically in `~/Library/Application Support/Har
 
 Tab groups, folding, colors and layout switches are kept in the app's local storage (`harbor.tabGroups`).
 
+## Self-update
+
+`src/desktop/appUpdater.ts` (logic) and `appUpdateCore.ts` (pure checks, unit-tested in `tests/appUpdate.test.ts`). The Release workflow builds with `HARBOR_RELEASE_BUILD=1`, which turns the updater on; every other build has it off.
+
+- **Feed:** `harbor-update.json` on the latest GitHub release: version, zip name, URL, size, SHA-256, release notes link, and an ed25519 signature over `harbor-update\n<version>\n<file>\n<sha256>\n<size>\n`. CI signs it with the `HARBOR_UPDATE_SIGNING_KEY` secret (`scripts/update-manifest.mjs`); the matching public key is compiled into the app.
+- **Download:** only a newer, correctly signed manifest is acted on. The zip streams into `<userData>/updates/`, must match the size and SHA-256, is unpacked with `ditto`, and the app must pass `codesign --verify --deep --strict` with Harbor's bundle ID and the manifest's version. Files Harbor downloads itself carry no quarantine flag, so Gatekeeper doesn't block the update.
+- **Install:** a detached bash script waits for Harbor's process to exit, moves the current bundle to `<userData>/previous-version/`, moves the new one into place (restoring the old one if that fails), and relaunches when the user asked to restart. Harbor never kills tmux or agents to update. `HARBOR_UPDATE_FEED` and `HARBOR_UPDATE_PUBLIC_KEY` point a release build at a test feed and key; signatures are still required.
+
 ## Usage accounting
 
 Harbor reads saved Codex and Claude JSONL on each host through its Python bridge (no Node or ccusage installation required there). It deduplicates Codex snapshots, leading parent snapshots in forked chats, and Claude streaming chunks, and counts a Claude request copied into several transcripts (forks, background copies) once by message and request ID. Overall costs include saved chats outside Harbor and subagent logs. The chat strip covers its own transcript plus its subagents: Claude subagent and Workflow agent logs (`<session>/subagents/**/agent-*.jsonl`, or legacy `agent-*.jsonl` files with the chat's session ID) and Codex threads spawned from the chat, each priced at its own model's rates; it notes how many were included. Copies on separate hosts count on each host. Windows use usage-event timestamps; day groups use UTC.

@@ -25,7 +25,9 @@ code{font:.9em var(--mono);background:var(--panel-2);border:1px solid var(--bord
 .brand img{border-radius:7px}.dot{color:var(--mint)}
 .nav nav{display:flex;gap:24px;margin-left:auto;font-size:14.5px}
 .nav nav a{text-decoration:none;color:var(--muted)}.nav nav a:hover{color:var(--text)}
-@media (max-width:640px){.nav nav{display:none}.nav .button{margin-left:auto}}
+@media (max-width:640px){.nav nav{display:none}.nav .gh{margin-left:auto}}
+.gh{display:inline-flex;color:var(--muted)}.gh:hover{color:var(--text)}.gh svg{width:20px;height:20px;fill:currentColor}
+.button.ghost svg{fill:currentColor;stroke:none}
 
 /* buttons */
 .button{display:inline-flex;align-items:center;gap:9px;padding:12px 20px;border-radius:10px;background:var(--mint);color:var(--mint-ink);font-weight:600;font-size:15px;text-decoration:none;border:1px solid transparent;transition:background .15s,transform .15s}
@@ -120,7 +122,10 @@ section h2{font-size:clamp(30px,3.8vw,46px)}
 .install li{counter-increment:step;display:flex;align-items:center;gap:10px;padding:12px 18px 12px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg-2);color:var(--text-2);font-size:15.5px}
 .install li::before{content:counter(step);width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--panel-2);border:1px solid var(--border-2);font:600 13px var(--mono);color:var(--mint)}
 .install li b{color:var(--text)}
-.soon{font:600 11px/1 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--amber);border:1px solid #6b5a31;border-radius:5px;padding:4px 6px}
+.install .cta{margin-top:0}.reqs.small{font-size:13px;margin:18px 0 0;max-width:520px}
+.install li.cmd{padding:8px 8px 8px 12px;max-width:100%}.install li.cmd code{white-space:normal;overflow-wrap:anywhere;text-align:left}
+.copy{font:600 12px var(--mono);color:var(--mint);border:1px solid var(--border-2);background:var(--panel);border-radius:7px;padding:6px 10px;cursor:pointer}.copy:hover{background:var(--panel-2)}
+.footer a{color:inherit}.footer a:hover{color:var(--text)}
 .reqs{margin:22px 0 28px;font-size:14.5px;color:var(--muted)}
 
 .footer{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:28px 0 44px;border-top:1px solid var(--border);color:var(--faint);font-size:14px}

@@ -49,6 +49,10 @@ codesign --verify --deep --strict release/mac-arm64/Harbor.app
 HARBOR_TEST_APP="$PWD/release/mac-arm64/Harbor.app/Contents/MacOS/Harbor" npm run test:e2e
 ```
 
+## Self-update
+
+Changes to `src/desktop/appUpdater*.ts`, `scripts/update-manifest.mjs`, packaging, or `site/install.sh` need a real update, not just unit tests. Build two release-channel zips (`HARBOR_RELEASE_BUILD=1 npm run build`, then `npx electron-builder --mac zip --arm64 -c.extraMetadata.version=<old> -c.directories.output=<dir>` for an older and a newer version), sign a manifest for the newer one with `scripts/update-manifest.mjs http://127.0.0.1:<port>` using a throwaway ed25519 key, serve it locally, and run the older app from a scratch folder with `HARBOR_UPDATE_FEED`, `HARBOR_UPDATE_PUBLIC_KEY` (the throwaway key's PEM), `HARBOR_DATA_DIR` and `HARBOR_TMUX_SOCKET` set. Check both **Restart to update** (swaps and relaunches) and install-on-quit (swaps without relaunching), the version of the bundle on disk, `update-install.log`, and the rollback copy.
+
 ## Test environment variables
 
 | Variable | Effect |
@@ -58,5 +62,7 @@ HARBOR_TEST_APP="$PWD/release/mac-arm64/Harbor.app/Contents/MacOS/Harbor" npm ru
 | `HARBOR_TEST_APP` | Run the UI specs against a packaged app binary instead of the dev build. |
 | `HARBOR_TEST_AGENTS` | `1` enables real Codex/Claude tests. |
 | `HARBOR_TEST_SSH` | SSH alias for remote tests. |
+| `HARBOR_UPDATE_FEED` | Update manifest URL for a release build (testing); signatures are still required. |
+| `HARBOR_UPDATE_PUBLIC_KEY` | Verify update manifests with this PEM public key instead of the release key (testing). |
 
 Hand-written `sessions.json` fixtures must pass the engine's index check; the rules are in `AGENTS.md`.

@@ -270,7 +270,7 @@ test('landing page screenshots', async () => {
 
     // Agent updates across machines.
     await page.getByRole('button', { name: /^Preferences/ }).click();
-    await page.getByRole('button', { name: 'Agent updates', exact: true }).click();
+    await page.getByRole('button', { name: 'Updates', exact: true }).click();
     await expect(page.locator('.updates-table')).toBeVisible(); await settle(page);
     await crop(page, [page.locator('.updates-heading'), page.locator('.updates-table tbody tr').nth(5)], 'updates', 20, 0);
     await page.keyboard.press('Escape');
