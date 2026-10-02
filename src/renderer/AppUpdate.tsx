@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpCircle, Check, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
-import type { AppUpdateState } from '../shared/types';
+import type { AppUpdateState, UpdateChannel } from '../shared/types';
 
 export function useAppUpdate() {
   const [state, setState] = useState<AppUpdateState>();
@@ -22,7 +22,7 @@ export function SidebarUpdateButton({ state, collapsed }: { state?: AppUpdateSta
   </button>;
 }
 
-export function HarborUpdatePanel() {
+export function HarborUpdatePanel({ channel, onChannel }: { channel: UpdateChannel; onChannel: (channel: UpdateChannel) => void }) {
   const state = useAppUpdate();
   const [checking, setChecking] = useState(false);
   if (!state) return null;
@@ -44,6 +44,7 @@ export function HarborUpdatePanel() {
           : state.status !== 'disabled' && <button className="secondary-button" disabled={busy} onClick={() => void check()}>{busy ? <LoaderCircle className="spin" size={14}/> : state.status === 'current' ? <Check size={14}/> : <RefreshCw size={14}/>}Check for Harbor updates</button>}
       </div>
     </div>
+    {state.status !== 'disabled' && <div className="update-channel"><label>Update channel<select aria-label="Update channel" value={channel} onChange={event => onChannel(event.target.value as UpdateChannel)}><option value="stable">Stable</option><option value="beta">Beta</option></select><small>{channel === 'beta' ? 'Get each release as soon as it is published, before it reaches everyone. Switching back to Stable keeps your version until Stable catches up.' : 'Get releases once they are marked ready for everyone.'}</small></label></div>}
     {state.status !== 'disabled' && <p className="preferences-note">Updates come from GitHub releases and are signature-checked before they install. Restarting reopens Harbor; your chats keep running in tmux and reattach.{state.checkedAt ? ` Last checked ${new Date(state.checkedAt).toLocaleString()}.` : ''}</p>}
   </div>;
 }

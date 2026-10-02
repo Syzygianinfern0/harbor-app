@@ -4,8 +4,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { tmpdir } from 'node:os';
+import { validatePreferences, defaultPreferences } from '../src/engine/preferences';
 import path from 'node:path';
-import { compareVersions, parseManifest, signedMessage, updateBlocker, UPDATE_PUBLIC_KEY } from '../src/desktop/appUpdateCore';
+import { betaFeed, compareVersions, parseManifest, signedMessage, updateBlocker, UPDATE_PUBLIC_KEY } from '../src/desktop/appUpdateCore';
 
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 const pub = publicKey.export({ type: 'spki', format: 'pem' }).toString();
@@ -33,6 +34,24 @@ test('malformed manifests are rejected before any download', () => {
   assert.throws(() => parseManifest(signed({ ...base, url: 'file:///etc/passwd' }), pub), /download address/);
   assert.throws(() => parseManifest(signed({ ...base, url: 'http://example.com/x.zip' }), pub), /download address/);
   assert.equal(parseManifest(signed({ ...base, url: 'http://127.0.0.1:8080/Harbor-1.2.3-arm64.zip' }), pub).size, 1234);
+});
+
+test('the beta channel follows the newest published release, prerelease or not', () => {
+  const release = (tag: string, extra: object = {}) => ({ tag_name: tag, draft: false, prerelease: false, assets: [{ name: 'harbor-update.json', browser_download_url: `https://github.com/Syzygianinfern0/harbor-app/releases/download/${tag}/harbor-update.json` }], ...extra });
+  const url = (tag: string) => `https://github.com/Syzygianinfern0/harbor-app/releases/download/${tag}/harbor-update.json`;
+  assert.equal(betaFeed([release('v0.9.0'), release('v0.10.0', { prerelease: true }), release('v0.9.5')]), url('v0.10.0'));
+  assert.equal(betaFeed([release('v0.6.0', { draft: true }), release('v0.5.0')]), url('v0.5.0'), 'drafts are never offered');
+  assert.equal(betaFeed([release('v0.6.0', { assets: [] }), release('v0.5.0')]), url('v0.5.0'), 'a release still uploading its manifest is skipped');
+  assert.equal(betaFeed([release('nightly'), release('v0.5.0')]), url('v0.5.0'));
+  assert.throws(() => betaFeed([]), /No Harbor release/);
+  assert.throws(() => betaFeed({ message: 'API rate limit exceeded' }), /No Harbor release/);
+});
+
+test('the update channel defaults to stable and only accepts stable or beta', () => {
+  const { updates, ...older } = defaultPreferences();
+  assert.equal(validatePreferences(older as any).updates.channel, 'stable', 'preferences saved before channels existed');
+  assert.equal(validatePreferences({ ...defaultPreferences(), updates: { channel: 'beta' } }).updates.channel, 'beta');
+  assert.throws(() => validatePreferences({ ...defaultPreferences(), updates: { channel: 'nightly' as any } }), /update preferences/);
 });
 
 test('apps on a disk image or under App Translocation cannot update in place', () => {

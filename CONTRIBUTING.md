@@ -48,6 +48,12 @@ For your own preferences (how much autonomy the agent gets, whether it may merge
 
 ## Releases
 
-Maintainers release by bumping `version` in `package.json` (and `package-lock.json`) in a PR, then pushing an annotated tag `v<version>` on the merged commit. The Release workflow builds the Apple Silicon app on GitHub Actions and publishes a GitHub Release with `Harbor-arm64.dmg`, the versioned `.zip`, SHA-256 checksums, and `harbor-update.json`, the signed manifest that installed copies update from (see [docs/architecture.md](docs/architecture.md#self-update)). Every release reaches users automatically, so only tag commits you would install yourself. Never move or delete a published tag.
+Maintainers release by bumping `version` in `package.json` (and `package-lock.json`) in a PR, then pushing an annotated tag `v<version>` on the merged commit. The Release workflow builds the Apple Silicon app on GitHub Actions and publishes a GitHub prerelease with `Harbor-arm64.dmg`, the versioned `.zip`, SHA-256 checksums, and `harbor-update.json`, the signed manifest that installed copies update from (see [docs/architecture.md](docs/architecture.md#self-update)). A new release first reaches only installs on the **Beta** update channel (Preferences → Updates); collaborators should use Beta. Once it has held up in daily use, promote it to everyone on Stable, which is also what new installs and the download links get:
+
+```sh
+gh release edit v<version> --prerelease=false --latest
+```
+
+Beta installs update as soon as the release is published, so only tag commits you would install yourself. Only repository admins can create `v*` tags, and nobody can move or delete one once it is published.
 
 The manifest is signed with the `HARBOR_UPDATE_SIGNING_KEY` repository secret. Its public half is compiled into Harbor, so losing the private key means shipping a new key in a release that users must install by hand.

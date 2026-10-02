@@ -10,7 +10,8 @@ export const defaultPreferences = (): Preferences => ({
   notifications: { enabled: false, sound: true, whenFocused: false, onComplete: true },
   sidebar: { expandOnHover: true },
   hosts: [{ id: 'local', label: 'This Mac', source: 'local', enabled: true, defaultDirectory: '~' }],
-  terminal: { fontSize: 13, fontFamily: '"MesloLGS NF", "JetBrainsMono Nerd Font", Menlo, Monaco, monospace', cursorBlink: true }
+  terminal: { fontSize: 13, fontFamily: '"MesloLGS NF", "JetBrainsMono Nerd Font", Menlo, Monaco, monospace', cursorBlink: true },
+  updates: { channel: 'stable' }
 });
 function text(value: unknown, max: number) { return typeof value === 'string' && value.length <= max && !/[\x00-\x1f]/.test(value); }
 export function validatePreferences(value: Preferences): Preferences {
@@ -39,7 +40,9 @@ export function validatePreferences(value: Preferences): Preferences {
   if (['enabled','sound','whenFocused','onComplete'].some(key => typeof notifications[key as keyof typeof notifications] !== 'boolean')) throw new Error('Invalid notification preferences.');
   const agents=value.agents??defaultPreferences().agents;
   validateMode('codex',agents.codex);validateMode('claude',agents.claude);
-  return { agents:{codex:agents.codex,claude:agents.claude}, notifications: { ...notifications }, sidebar: { expandOnHover: sidebar.expandOnHover }, hosts, terminal: { fontSize, fontFamily, cursorBlink } };
+  const updates = value.updates ?? defaultPreferences().updates;
+  if (!['stable', 'beta'].includes(updates.channel)) throw new Error('Invalid update preferences.');
+  return { agents:{codex:agents.codex,claude:agents.claude}, notifications: { ...notifications }, sidebar: { expandOnHover: sidebar.expandOnHover }, hosts, terminal: { fontSize, fontFamily, cursorBlink }, updates: { channel: updates.channel } };
 }
 export class PreferencesStore {
   value = defaultPreferences();

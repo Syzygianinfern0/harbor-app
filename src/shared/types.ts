@@ -21,7 +21,9 @@ export interface Host { id: string; label: string; source: 'local' | 'ssh-config
 export interface SshConnection { target: string; hostname?: string; user?: string; port?: number; identityFile?: string }
 export type Connection = string | SshConnection;
 export interface SavedHost extends Host { enabled: boolean; connection?: SshConnection; defaultDirectory: string }
-export interface Preferences { agents: {codex:PermissionMode;claude:PermissionMode}; notifications: { enabled: boolean; sound: boolean; whenFocused: boolean; onComplete: boolean }; sidebar: { expandOnHover: boolean }; hosts: SavedHost[]; terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean } }
+export interface Preferences { agents: {codex:PermissionMode;claude:PermissionMode}; notifications: { enabled: boolean; sound: boolean; whenFocused: boolean; onComplete: boolean }; sidebar: { expandOnHover: boolean }; hosts: SavedHost[]; terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean }; updates: { channel: UpdateChannel } }
+/** Stable gets releases marked latest; beta also gets prereleases. */
+export type UpdateChannel = 'stable' | 'beta';
 export interface Session {
   id: string; tmuxName: string; paneId: string; name: string; host: string;
   cwd: string; launcher: Launcher; command: string; group: string; tags: string[];

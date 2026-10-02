@@ -6,7 +6,9 @@ export const UPDATE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEA/T3cPzRLISJsLmNOHkOZ8pWgYLrUfIafBNPG6qS9YM0=
 -----END PUBLIC KEY-----
 `;
+// Stable follows the release marked latest; beta reads the release list, which also includes prereleases.
 export const UPDATE_FEED = 'https://github.com/Syzygianinfern0/harbor-app/releases/latest/download/harbor-update.json';
+export const RELEASES_API = 'https://api.github.com/repos/Syzygianinfern0/harbor-app/releases?per_page=20';
 export const BUNDLE_ID = 'dev.harbor.agent-manager';
 
 export interface UpdateManifest { version: string; file: string; url: string; sha256: string; size: number; notes?: string; signature: string }
@@ -16,6 +18,19 @@ export function compareVersions(a: string, b: string) {
   const left = a.split('.').map(Number), right = b.split('.').map(Number);
   for (let i = 0; i < 3; i++) if (left[i] !== right[i]) return left[i] > right[i] ? 1 : -1;
   return 0;
+}
+
+/** The manifest URL of the newest published release, prerelease or not. Its signature is still checked after download. */
+export function betaFeed(releases: unknown) {
+  let best: { version: string; url: string } | undefined;
+  for (const release of Array.isArray(releases) ? releases : []) {
+    const version = /^v(\d+\.\d+\.\d+)$/.exec(release?.tag_name)?.[1];
+    const url = Array.isArray(release?.assets) ? release.assets.find((asset: any) => asset?.name === 'harbor-update.json')?.browser_download_url : undefined;
+    if (!version || release.draft || typeof url !== 'string' || !isAllowedUrl(url)) continue;
+    if (!best || compareVersions(version, best.version) > 0) best = { version, url };
+  }
+  if (!best) throw new Error('No Harbor release has been published yet.');
+  return best.url;
 }
 
 /** The exact bytes the release signature covers. */

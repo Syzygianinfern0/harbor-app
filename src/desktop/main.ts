@@ -1,9 +1,10 @@
-import { app, clipboard, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, shell } from 'electron';
+import { app, clipboard, BrowserWindow, dialog, ipcMain, Menu, net, Notification, powerMonitor, shell } from 'electron';
 import path from 'node:path';
 import { openProjectInCursor } from './cursor';
 import { AppUpdater } from './appUpdater';
 import { HarborEngine } from '../engine/engine';
 import { Transport } from '../engine/transport';
+import type { Preferences } from '../shared/types';
 import { dockBadge, NO_VIEW, shouldMarkUnread, unreadCount, validView, viewedChat } from '../shared/unread';
 
 app.setName('Harbor');
@@ -31,7 +32,7 @@ else {
     // HARBOR_TMUX_SOCKET isolates test profiles from the real `-L harbor` server.
     engine = new HarborEngine(app.getPath('userData'), new Transport(process.env.HARBOR_TMUX_SOCKET || 'harbor'));
     await engine.init();
-    updater = new AppUpdater({ version: app.getVersion(), bundlePath: path.resolve(process.execPath, '../../..'), userData: app.getPath('userData'), enabled: app.isPackaged && process.env.HARBOR_RELEASE_BUILD === '1', feed: process.env.HARBOR_UPDATE_FEED, publicKey: process.env.HARBOR_UPDATE_PUBLIC_KEY?.replace(/\\n/g, '\n') });
+    updater = new AppUpdater({ version: app.getVersion(), bundlePath: path.resolve(process.execPath, '../../..'), userData: app.getPath('userData'), enabled: app.isPackaged && process.env.HARBOR_RELEASE_BUILD === '1', feed: process.env.HARBOR_UPDATE_FEED, releases: process.env.HARBOR_UPDATE_RELEASES, channel: () => engine.snapshot().preferences.updates.channel, fetch: (input, init) => net.fetch(input as string, init), publicKey: process.env.HARBOR_UPDATE_PUBLIC_KEY?.replace(/\\n/g, '\n') });
     updater.on('state', state => window?.webContents.send('harbor:app-update', state));
     function handle(channel: string, fn: (...args: any[]) => unknown) {
       ipcMain.handle(`harbor:${channel}`, (event, ...args) => {
@@ -40,7 +41,11 @@ else {
       });
     }
     handle('snapshot', () => engine.snapshot());
-    handle('savePreferences', preferences => engine.savePreferences(preferences));
+    handle('savePreferences', async (preferences: Preferences) => {
+      const channel = engine.snapshot().preferences.updates.channel;
+      await engine.savePreferences(preferences);
+      if (engine.snapshot().preferences.updates.channel !== channel) void updater?.check().catch(() => undefined);
+    });
     handle('sshCandidates', () => engine.sshCandidates());
     handle('resolveSsh', alias => engine.resolveSsh(alias));
     handle('addProject', input => engine.addProject(input));
