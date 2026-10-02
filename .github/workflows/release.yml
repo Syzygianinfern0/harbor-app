@@ -1,0 +1,45 @@
+name: Release
+
+# Pushing a tag v<package.json version> builds the Apple Silicon app and publishes a GitHub Release.
+# Running it by hand builds the same files as a workflow artifact without releasing anything.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: brew install tmux
+      - run: npm ci
+      - name: Check the tag matches package.json
+        if: github.ref_type == 'tag'
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm test
+      - run: npm run package:release
+      - name: Verify the signature and write checksums
+        run: |
+          codesign --verify --deep --strict release/mac-arm64/Harbor.app
+          cd release && shasum -a 256 Harbor-*.dmg Harbor-*.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harbor-macos-arm64
+          path: |
+            release/Harbor-*.dmg
+            release/Harbor-*.zip
+            release/SHA256SUMS.txt
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/Harbor-*.dmg release/Harbor-*.zip release/SHA256SUMS.txt --title "Harbor ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag

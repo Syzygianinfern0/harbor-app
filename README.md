@@ -2,7 +2,11 @@
 
 A macOS home for projects and persistent Codex, Claude Code, and terminal chats, on your Mac and over SSH.
 
-Open `~/Applications/Harbor.app` or `release/mac-arm64/Harbor.app`.
+## Install
+
+Harbor runs on macOS with Apple Silicon. Download the latest `.dmg` from [Releases](https://github.com/Syzygianinfern0/harbor-app/releases/latest) and drag Harbor into Applications. Builds are not notarized by Apple, so the first launch is blocked: open **System Settings → Privacy & Security** and click **Open Anyway** next to the Harbor message (needed once per download). Each host also needs tmux and Python 3; see [Requirements](#requirements).
+
+To build from source instead, see [CONTRIBUTING.md](CONTRIBUTING.md); `npm run package` produces `release/mac-arm64/Harbor.app`.
 
 ## Projects and chats
 
@@ -101,45 +105,29 @@ The host adapter is a Python standard-library script, deployed under `~/.local/s
 
 - macOS on Apple Silicon for the included build (locally built and ad-hoc signed; not notarized).
 - tmux 3.2+, Python 3.8+, bash, and a POSIX login shell on each host.
-- Installed/authenticated Codex and/or Claude Code. Tested with Codex 0.154.0 and Claude Code 2.1.263 locally / 2.1.257 on devbox. Codex’s remote-TUI/app-server interface is required for managed chats.
+- Installed/authenticated Codex and/or Claude Code. Tested with Codex 0.154.0 and Claude Code 2.1.263 locally / 2.1.257 on a Linux SSH host. Codex’s remote-TUI/app-server interface is required for managed chats.
 - Noninteractive system SSH authentication for remote machines. Configure initial host trust, keys, ProxyJump, and SSH agent outside Harbor.
 
 History adapters are version-sensitive. An unreadable history source is reported on its project without modifying the source files. Custom `CODEX_HOME` / `CLAUDE_CONFIG_DIR` are respected when present in the host adapter’s environment.
 
 ## Development
 
-Node.js 22.12+ and npm:
+Contributors: start with [CONTRIBUTING.md](CONTRIBUTING.md) (setup, sandboxed dev runs, pull requests) and [VALIDATION.md](VALIDATION.md) (which checks to run). Coding agents follow [AGENTS.md](AGENTS.md).
 
 ```sh
 npm ci
-npm run dev
+npm run dev:sandbox   # dev app with its own profile and tmux socket; `npm run dev` uses your real ones
 npm run build
-npm start
 npm test
-npm run test:e2e
-npm run package
+npm run test:e2e      # after a build
+npm run package       # release/mac-arm64/Harbor.app
 ```
 
-Engine/main/preload changes require restarting the dev app. Build before UI tests. Tests use isolated indexes and their own tmux sessions; real CLI and SSH checks are opt-in:
+Session/project state is stored atomically in `~/Library/Application Support/Harbor/sessions.json` (schema 2); preferences use `preferences.json`. `HARBOR_DATA_DIR` and `HARBOR_TMUX_SOCKET` point Harbor at another profile and tmux socket. Earlier indexes migrate without changing running tmux identities. No telemetry is added.
 
-```sh
-HARBOR_TEST_AGENTS=1 HARBOR_TEST_SSH=devbox npm test
-HARBOR_TEST_AGENTS=1 HARBOR_TEST_SSH=devbox npm run test:e2e
-```
+Harbor is MIT licensed ([LICENSE](LICENSE)). Changes land on `main` through reviewed pull requests; releases are tagged `v<package.json version>` (see CONTRIBUTING.md → Releases).
 
-Live agent tests submit a short echo-only prompt in dedicated test directories. Remote test directories are created under `~/harbor-smoke-test-20260916/`. `HARBOR_TMUX_SOCKET=<name>` points the app at a private tmux server instead of `-L harbor`; `clipboard.spec.ts` uses one per run (and a removed `~/harbor-copytest-20260924/` directory remotely). See [VALIDATION.md](VALIDATION.md).
-
-Session/project state is stored atomically in `~/Library/Application Support/Harbor/sessions.json` (schema 2); preferences use `preferences.json`. Earlier indexes migrate without changing running tmux identities. No telemetry is added.
-
-### Version control
-
-The private backup repository is [Syzygianinfern0/Agent-Manager](https://github.com/Syzygianinfern0/Agent-Manager), with `main` as the default branch. Source, tests, assets, documentation, build configuration, and `package-lock.json` belong in Git. Dependencies, build output, test screenshots, and `work/` are excluded. The `work/` directory contains local investigation artifacts and installation backups, including copied app profiles; it is not needed to build the application and should not be added wholesale.
-
-For each completed change, review `git status --short` and `git diff`, run the relevant checks, stage the intended files explicitly, and commit them. Push completed commits with `git push origin main`; local commits alone are not a remote backup. Check `git status --short --branch` afterward for untracked files, pending edits, or unpushed commits.
-
-Release tags use `v<package.json version>` and point to validated commits. Push new annotated tags explicitly with `git push origin <tag>`. Do not move an existing release tag or rewrite published history. Versions 0.1.0–0.3.0 identify the existing historical commits; 0.4.0 is the consolidated September 22 checkpoint of the previously uncommitted work, not a reconstruction of intermediate daily versions.
-
-### Workspace controls
+## Workspace controls
 
 - Use the refresh icon at the top right (or ⌘R) to discover saved chats across projects and refresh session and host status.
 - Shift+Enter inserts a newline in Codex and Claude. Ctrl+Enter reaches them as a distinct key (`ESC [13;5u`, as in kitty-protocol terminals) instead of a plain Enter: Claude submits, and Codex ignores it unless bound, e.g. `[tui.keymap.composer] submit = ["enter", "ctrl-enter"]` in `~/.codex/config.toml`. Shell chats still receive a plain carriage return; ⌘N followed by Enter starts a chat with the selected defaults. Middle-click a tab to close it, using the same running-session confirmation as its close button.

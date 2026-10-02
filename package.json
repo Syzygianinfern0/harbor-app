@@ -1,19 +1,29 @@
 {
-  "name": "harbor-agent-manager",
+  "name": "harbor-app",
   "version": "0.4.0",
   "private": true,
   "description": "A calm home for persistent local and SSH agent sessions",
-  "author": "Harbor",
+  "author": "S P Sharan",
+  "homepage": "https://spsharan.com/harbor-app/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Syzygianinfern0/harbor-app.git"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
   "license": "MIT",
   "type": "module",
   "main": "dist/desktop/main.cjs",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:sandbox": "node scripts/dev.mjs --sandbox",
     "build": "tsc --noEmit && node scripts/build.mjs",
     "start": "electron .",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "package": "npm run build && electron-builder --mac dir",
+    "package:release": "npm run build && electron-builder --mac dmg zip --arm64 --publish never",
     "site:shots": "playwright test --config site/tools/playwright.config.ts"
   },
   "dependencies": {
@@ -53,7 +63,8 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "identity": "-",
-      "icon": "assets/Harbor.icns"
+      "icon": "assets/Harbor.icns",
+      "artifactName": "Harbor-${version}-${arch}.${ext}"
     }
   }
 }

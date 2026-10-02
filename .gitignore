@@ -10,3 +10,8 @@ __pycache__/
 
 # Local investigation artifacts, installation backups, and copied app profiles.
 /work/
+
+# Personal agent instructions and the dev sandbox profile.
+AGENTS.local.md
+CLAUDE.local.md
+/.sandbox/
