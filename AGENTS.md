@@ -12,10 +12,11 @@ Own each task end to end: investigate, implement, validate, document, commit on 
 
 ## Development
 
-- Use Node.js 22.12+ and npm (`npm ci` when dependencies change). Follow `README.md` and `VALIDATION.md`.
+- Use Node.js 22.12+ and npm (`npm ci` when dependencies change). Follow `CONTRIBUTING.md` and `VALIDATION.md`; `docs/architecture.md` explains the engine, host adapter and storage.
 - For application changes, run `npm run build`, `npm test`, and the relevant `npm run test:e2e` specs (build first). Visually inspect UI changes. Documentation-only changes need document checks, not an app rebuild.
 - Never touch real chats. Run the app with `npm run dev:sandbox` (temporary profile, private tmux socket), or set `HARBOR_DATA_DIR` and `HARBOR_TMUX_SOCKET` yourself. Plain `npm run dev` uses your real profile and `tmux -L harbor`. Real CLI/SSH checks are opt-in (`HARBOR_TEST_AGENTS=1`, `HARBOR_TEST_SSH=<your alias>`); say when you skipped them.
 - Hand-written `sessions.json` fixtures (for `HARBOR_DATA_DIR` profiles) must pass the engine's index check (`Invalid session index.` in `src/engine/engine.ts`): `version` 1 or 2; each session's `tmuxName` matches `^harbor-[a-f0-9-]+$` (hex only: `harbor-bbbb0`, not `harbor-look0`/`harbor-group0`/`harbor-zzzz1`), `paneId` matches `^%\d+$`, `name`/`cwd`/`group` are strings, `tags` is an array, and `launcher` is `shell`/`codex`/`claude`/`custom`. An invalid index pops a modal "Harbor could not start" dialog on screen and never opens a window, so automation just times out waiting for one. Copy the fixture in `tests/tab-groups.spec.ts`. Shell chats are not listed in the sidebar, so open fixtures through `codex`/`claude` rows.
+- When behavior changes, update `docs/user-guide.md` (features, shortcuts, preferences) or `docs/architecture.md` (internals). Keep `README.md` a short front page: only add to it for a headline feature.
 - Keep the repository public-safe: no credentials, real hostnames, usernames, home paths, usage numbers, or conversation IDs in code, tests, docs, screenshots, or commit messages. Use `devbox`, `alice`, `example.invalid` and similar placeholders.
 
 ## Version control
@@ -38,7 +39,7 @@ Harbor uses ad-hoc signing (`mac.identity: "-"`); rebuilds may trigger macOS per
 
 ## Landing page (`site/`)
 
-Mechanics are in `README.md` → "Landing page". These are the owner's decisions; keep them unless the owner asks.
+Mechanics are in `docs/landing-page.md`. These are the owner's decisions; keep them unless the owner asks.
 
 - **Pitch:** Harbor replaces the tmux routine (ssh, cd, `tmux new`, start an agent, repeat) for people who do all four at once: many projects, both Codex and Claude Code, local and SSH machines, and handing work off to step away. Everything else is extras. The hero leads with "Stop juggling tmux sessions." and a before/after whose terminal lines name those four needs.
 - **Less is more:** one short sentence per section, no bullet lists or feature essays. Cut before adding.
