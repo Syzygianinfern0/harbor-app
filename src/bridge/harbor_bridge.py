@@ -405,6 +405,18 @@ def claude_transcript(file):
     # under <project>/<uuid>/subagents/ (legacy: beside the chat). Skip workflow journals.
     return file.name.startswith('agent-') or bool(UUID.match(file.stem))
 
+def codex_pages(file, identity):
+    """Codex paginates long threads: later pages are rollout-<time>-<id>_<page>.jsonl
+    with a history_base, sharing the thread id and holding only their own usage.
+    The same page may sit in sessions and archived_sessions; keep the newest copy."""
+    pages = {file.name: file}
+    if UUID.match(identity or ''):
+        for root in [home_for('codex')/'sessions', home_for('codex')/'archived_sessions']:
+            if not root.exists(): continue
+            for page in [*root.rglob('rollout-*-'+identity+'.jsonl'), *root.rglob('rollout-*-'+identity+'_*.jsonl')]:
+                if page.name not in pages or page.stat().st_mtime_ns > pages[page.name].stat().st_mtime_ns: pages[page.name] = page
+    return [page for name, page in sorted(pages.items()) if page.resolve() != pathlib.Path(file).resolve()]
+
 def related_transcripts(agent, file, identity):
     """Transcripts whose usage belongs to this chat: Claude subagent/Workflow agent
     logs, and Codex threads spawned from it (recursively)."""
@@ -420,7 +432,7 @@ def related_transcripts(agent, file, identity):
             for child, rollout in db.execute('select e.child_thread_id, t.rollout_path from thread_spawn_edges e left join threads t on t.id=e.child_thread_id where e.parent_thread_id=?', (queue.pop(),)):
                 if child in seen: continue
                 seen.add(child); queue.append(child)
-                if rollout and pathlib.Path(rollout).is_file(): files.append(pathlib.Path(rollout))
+                if rollout and pathlib.Path(rollout).is_file(): files.extend([pathlib.Path(rollout), *codex_pages(pathlib.Path(rollout), child)])
     return files
 
 def usage_periods(data, now):
@@ -500,12 +512,15 @@ def host_usage(catalog=None):
             try:
                 entry = cached_usage(file, agent, old_cache); cache[str(file.resolve())] = entry
                 data = entry['data']; identity = data.get('conversationId') or str(file)
-                # Claude subagents share the parent sessionId, so they join its chat; the same
-                # Codex rollout may exist in sessions and archived_sessions, so keep the newest.
+                # Claude subagents share the parent sessionId, so they join its chat. Codex
+                # pages of one paginated thread share its id and all count; the same page
+                # may exist in sessions and archived_sessions, so keep the newest copy.
                 if agent == 'claude': groups.setdefault(identity, []).append(entry)
-                elif identity not in groups or entry['fingerprint'][1] > groups[identity][0]['fingerprint'][1]: groups[identity] = [entry]
+                else:
+                    pages = groups.setdefault(identity, {})
+                    if file.name not in pages or entry['fingerprint'][1] > pages[file.name]['fingerprint'][1]: pages[file.name] = entry
             except OSError: errors.append('Some transcript files could not be read.')
-        seen = set(); conversations = [merge_usage([entry['data'] for entry in group], seen) for group in groups.values()]
+        seen = set(); conversations = [merge_usage([entry['data'] for entry in (group.values() if isinstance(group, dict) else group)], seen) for group in groups.values()]
         periods = {key:{'tokens':empty_tokens(), 'sessions':0} for key in ('day','week','month')}
         recorded = 0; partial = bool(errors); all_events = []
         for data in conversations:
@@ -535,6 +550,11 @@ def chat_usage(agent, cwd, identity, catalog=None):
     try:
         old = read(cache_file, {}); cache = {}; entry = cached_usage(file, agent, old); cache[str(file.resolve())] = entry
         datas = [entry['data']]; partial = False
+        try: pages = codex_pages(file, identity) if agent == 'codex' else []
+        except OSError: pages = []; partial = True
+        for page in pages:
+            try: cache[str(page.resolve())] = cached_usage(page, agent, old); datas.append(cache[str(page.resolve())]['data'])
+            except OSError: partial = True
         try: related = related_transcripts(agent, file, identity)
         except (OSError, sqlite3.Error): related = []; partial = True
         for extra in related:
@@ -544,7 +564,7 @@ def chat_usage(agent, cwd, identity, catalog=None):
         except OSError: pass
         merged = merge_usage(datas)
         return {**{key:value for key,value in entry['data'].items() if key != 'events'}, 'tokens':merged['tokens'], 'partial':merged['partial'] or partial,
-                'subagents':sum(1 for data in datas[1:] if data.get('tokens') is not None),
+                'subagents':sum(1 for data in datas[1+len(pages):] if data.get('tokens') is not None),
                 'cost':cost_summary(merged['events'], catalog or {}) if merged['tokens'] is not None else None, 'pricingUpdatedAt':(catalog or {}).get('fetchedAt')}
     except OSError: return {'error':'Saved transcript is unavailable on this host.'}
 

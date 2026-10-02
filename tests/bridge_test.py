@@ -246,4 +246,22 @@ class CostTests(unittest.TestCase):
    self.assertEqual(bridge.chat_usage('codex',cwd,ids[3])['tokens']['totalTokens'],1000)
    self.assertEqual(bridge.host_usage()['agents'][0]['tokens']['totalTokens'],1148)
 
+ def test_codex_paginated_thread_counts_every_page_once(self):
+  with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'CODEX_HOME':d+'/codex','CLAUDE_CONFIG_DIR':d+'/claude'}), patch.object(bridge,'ROOT',pathlib.Path(d)/'cache'):
+   cwd=os.path.realpath(d);thread='dddddddd-0000-4000-8000-000000000000'
+   sessions=pathlib.Path(d)/'codex/sessions/2026/09/29';archived=pathlib.Path(d)/'codex/archived_sessions';sessions.mkdir(parents=True);archived.mkdir(parents=True)
+   def usage(stamp,total,last):return {'timestamp':stamp,'type':'event_msg','payload':{'type':'token_count','info':{'total_token_usage':{'input_tokens':total,'total_tokens':total},'last_token_usage':{'input_tokens':last,'total_tokens':last}}}}
+   meta=lambda base:{'type':'session_meta','timestamp':'2026-09-30T02:00:00Z','payload':{'id':thread,'timestamp':'2026-09-30T02:00:00Z','source':'vscode',**({'history_base':{'thread_id':thread}} if base else {})}}
+   first=sessions/('rollout-2026-09-29T21-08-03-'+thread+'.jsonl');second=sessions/('rollout-2026-09-29T21-25-02-'+thread+'_eeeeeeee-0000-4000-8000-000000000000.jsonl')
+   # The second page resumes from a point before the first page ended; both pages were billed.
+   self.write(first,[meta(False),usage('2026-09-30T02:01:00Z',100,100),usage('2026-09-30T02:02:00Z',130,30)])
+   self.write(second,[meta(True),usage('2026-09-30T02:03:00Z',120,20),usage('2026-09-30T02:04:00Z',170,50)])
+   (archived/first.name).write_text(first.read_text())
+   with sqlite3.connect(pathlib.Path(d)/'codex/state_5.sqlite') as db:
+    db.execute('create table threads(id,cwd,title,created_at,updated_at,source,rollout_path,has_user_event)')
+    db.execute('insert into threads values(?,?,?,?,?,?,?,1)',(thread,cwd,'t',1,1,'vscode',str(second)))
+   self.assertEqual(bridge.chat_usage('codex',cwd,thread)['tokens']['totalTokens'],200)
+   self.assertEqual(bridge.chat_usage('codex',cwd,thread)['subagents'],0)
+   codex=bridge.host_usage()['agents'][0];self.assertEqual(codex['sessions'],1);self.assertEqual(codex['tokens']['totalTokens'],200)
+
 if __name__=='__main__':unittest.main()
