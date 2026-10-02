@@ -22,7 +22,9 @@ main() {
     die "Harbor is running. Quit it first (your chats keep running in tmux), then run this again."
   fi
 
-  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  tmp="$(mktemp -d)"
+  # Expand now: $tmp is local to main and gone by the time the EXIT trap runs.
+  trap "rm -rf '$tmp'" EXIT
   say "Finding the latest Harbor release"
   curl -fsSL "https://github.com/$repo/releases/latest/download/harbor-update.json" -o "$tmp/manifest.json" || die "could not reach GitHub releases."
   field() { /usr/bin/plutil -extract "$1" raw -o - "$tmp/manifest.json"; }
