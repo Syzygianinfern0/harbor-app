@@ -118,14 +118,15 @@ section h2{font-size:clamp(30px,3.8vw,46px)}
 
 /* install */
 .install{padding:120px 0;text-align:center;display:flex;flex-direction:column;align-items:center}
-.install ol{list-style:none;padding:0;margin:32px 0 0;counter-reset:step;display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
-.install li{counter-increment:step;display:flex;align-items:center;gap:10px;padding:12px 18px 12px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg-2);color:var(--text-2);font-size:15.5px}
-.install li::before{content:counter(step);width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--panel-2);border:1px solid var(--border-2);font:600 13px var(--mono);color:var(--mint)}
+.install ol{list-style:none;padding:0;margin:32px 0 0;counter-reset:step;display:grid;gap:12px;width:min(100%,660px)}
+.install li{counter-increment:step;display:flex;align-items:center;gap:10px;padding:12px 18px 12px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg-2);color:var(--text-2);font-size:15.5px;text-align:left}
+.install li code{white-space:nowrap}@media (max-width:360px){.install li code{white-space:normal}}
+.install li::before{content:counter(step);flex:none;width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--panel-2);border:1px solid var(--border-2);font:600 13px var(--mono);color:var(--mint)}
 .install li b{color:var(--text)}
 .install .cta{margin-top:0}.reqs.small{font-size:13px;margin:18px 0 0;max-width:520px}
-.install li.cmd{padding:8px 8px 8px 12px;max-width:100%}.install li.cmd code{white-space:normal;overflow-wrap:anywhere;text-align:left}
+.install li.cmd{padding:8px 8px 8px 12px}.install li.cmd code{white-space:normal;overflow-wrap:anywhere}.install li.cmd .copy-btn{margin-left:auto;flex:none}
 .copy-btn{font:600 12px var(--mono);color:var(--mint);border:1px solid var(--border-2);background:var(--panel);border-radius:7px;padding:6px 10px;cursor:pointer}.copy-btn:hover{background:var(--panel-2)}
-.footer a{color:inherit}.footer a:hover{color:var(--text)}
+.footer a{color:inherit;text-decoration:none}.footer a:hover{color:var(--text)}
 .reqs{margin:22px 0 28px;font-size:14.5px;color:var(--muted)}
 
 .footer{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:28px 0 44px;border-top:1px solid var(--border);color:var(--faint);font-size:14px}
