@@ -8,7 +8,7 @@ Everything Harbor does, by area. New here? Start with the [README](../README.md)
 - [Workspace controls](#workspace-controls)
 - [Preferences](#preferences)
 - [Usage and costs](#usage-and-costs)
-- [Agent updates](#agent-updates)
+- [Updates](#updates)
 
 ## Projects and chats
 
@@ -99,7 +99,7 @@ Groups, folding, colors and the switches persist across restarts alongside tab o
 
 **Unread chats:** when a chat needs input or approval, hits an agent error, or finishes a turn (if **Notify when an agent finishes working** is on) while you aren't looking at it, it's marked unread with a small blue dot and a bolder title. You're looking at a chat when it's in a visible pane of Harbor's window and that window has focus. The dot shows on the chat's sidebar row, its tab (icon-only tabs too) and its groups-overview card. Rollup dots appear on folded tab-group chips, groups-overview cards, folded sidebar projects (and a project heading whose unread chat is past **Show more** or filtered out) and collapsed-rail projects. The macOS Dock badge shows how many chats are unread. The marker is Harbor's in-app notification, so it works even with desktop notifications turned off. The mark clears when the chat becomes the focused pane of the focused window, for example when you click it or its desktop notification. If you open it while Harbor is in the background, it clears once you switch back. It's saved with the chat in `sessions.json` (`unread: true`), so it survives a restart. Older indexes without the field load unchanged. Archived chats aren't counted.
 
-**Agent updates:** check installed Codex and Claude versions on enabled hosts and project machines against their official npm release channels. Results are grouped by host and distinguish current, update available, missing, and unavailable. **Update** uses the active installation’s npm, Homebrew, or Claude native updater, then checks the active version again and displays verification and command output. Unknown installation layouts are reported rather than replaced. Checks alone never install updates. Existing chats retain their running agent processes. Pinned/preview release channels may differ.
+**Updates:** the top of this tab is Harbor itself (see [Updates](#updates)); below it, check installed Codex and Claude versions on enabled hosts and project machines against their official npm release channels. Results are grouped by host and distinguish current, update available, missing, and unavailable. **Update** uses the active installation’s npm, Homebrew, or Claude native updater, then checks the active version again and displays verification and command output. Unknown installation layouts are reported rather than replaced. Checks alone never install updates. Existing chats retain their running agent processes. Pinned/preview release channels may differ.
 
 ## Usage and costs
 
@@ -113,7 +113,18 @@ Open tabs retain their terminal instance, connection, scrollback and preview scr
 
 How usage is counted (deduplication, forks, subagents) is described in [architecture.md](architecture.md#usage-accounting).
 
-## Agent updates
+## Updates
+
+### Harbor
+
+Release builds check GitHub for a new version about 20 seconds after launch, every four hours, and when your Mac wakes. A new version downloads in the background; Harbor checks its signature, checksum and code signature before offering it. Then **Restart to update** appears above Preferences (and in Preferences → Updates). Click it to restart into the new version now, or just keep working: it installs the next time you quit Harbor. **Harbor → Check for Updates…** checks right away.
+
+Installing quits Harbor, swaps the app, and (after a restart) reopens it. Quitting only detaches from tmux, so every chat keeps running and reattaches. The previous version is kept in `~/Library/Application Support/Harbor/previous-version/` in case you need to roll back; the install log is `update-install.log` next to it. Updates are skipped while macOS is shutting down or logging out.
+
+Harbor updates itself only where it can replace its own app: not from the disk image or a read-only folder. Copies built from source (`npm run package`) never update themselves.
+
+### Agents
+
 
 Harbor checks Codex and Claude Code on startup, wake, and focus when its cached results are older than 24 hours. Unreachable machines are retried after an hour; **Check for updates** always requests a fresh check. Results survive app restarts. In Preferences → Agent updates, **Update all** checks again, then updates every installed agent with an available release across the listed machines. Failures are shown per agent while the remaining updates continue, even if Preferences is closed. Checks never install updates automatically.
 

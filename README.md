@@ -12,6 +12,7 @@
 <p align="center">
   <a href="https://github.com/Syzygianinfern0/harbor-app/actions/workflows/ci.yml"><img src="https://github.com/Syzygianinfern0/harbor-app/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple" alt="macOS on Apple Silicon">
+  <a href="https://github.com/Syzygianinfern0/harbor-app/releases/latest"><img src="https://img.shields.io/github/v/release/Syzygianinfern0/harbor-app?label=download" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
@@ -59,9 +60,17 @@ Harbor replaces that routine. Every chat runs in tmux on its own machine and Har
 
 ## Install
 
-1. Download the latest `.dmg` from [Releases](https://github.com/Syzygianinfern0/harbor-app/releases/latest) and drag Harbor into Applications.
-2. Open Harbor. Builds are not notarized by Apple, so macOS blocks the first launch: go to **System Settings → Privacy & Security**, click **Open Anyway** next to the Harbor message, and confirm. You only need to do this once per download.
-3. Click **Add project**, pick a machine and a folder, then press <kbd>⌘</kbd> <kbd>N</kbd> to start a chat.
+Run this in Terminal:
+
+```sh
+curl -fsSL https://spsharan.com/harbor-app/install.sh | bash
+```
+
+It downloads the latest release, checks it, puts Harbor in your Applications folder and opens it. Then click **Add project**, pick a machine and a folder, and press <kbd>⌘</kbd> <kbd>N</kbd> to start a chat.
+
+Prefer a download? Get the `.dmg` from [Releases](https://github.com/Syzygianinfern0/harbor-app/releases/latest). Harbor is not notarized by Apple, so the first launch of a downloaded copy is blocked: open **System Settings → Privacy & Security** and click **Open Anyway**. The install command doesn't need that step.
+
+Harbor keeps itself up to date: it downloads new releases in the background and installs them when you click **Restart to update** or next quit it. Your chats keep running in tmux throughout.
 
 To use remote machines, add them under **Preferences → Hosts** (import from your SSH config or enter them by hand).
 
@@ -74,7 +83,7 @@ To use remote machines, add them under **Preferences → Hosts** (import from yo
 
 ## Privacy
 
-Harbor has no account, server, or telemetry. Your projects, chat names and notes are stored on your Mac in `~/Library/Application Support/Harbor/`. Conversations stay with Codex and Claude Code on their own machines; Harbor reads their local history and status through a small Python script it installs under `~/.local/share/harbor/` on each host. The only network requests Harbor makes itself are SSH connections you configure, agent version checks, and a daily download of public model prices for cost estimates.
+Harbor has no account, server, or telemetry. Your projects, chat names and notes are stored on your Mac in `~/Library/Application Support/Harbor/`. Conversations stay with Codex and Claude Code on their own machines; Harbor reads their local history and status through a small Python script it installs under `~/.local/share/harbor/` on each host. The only network requests Harbor makes itself are SSH connections you configure, Harbor and agent version checks, release downloads from GitHub, and a daily download of public model prices for cost estimates.
 
 ## Documentation
 

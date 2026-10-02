@@ -27,6 +27,10 @@ jobs:
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
       - run: npm test
       - run: npm run package:release
+      - name: Sign the update manifest
+        env:
+          HARBOR_UPDATE_SIGNING_KEY: ${{ secrets.HARBOR_UPDATE_SIGNING_KEY }}
+        run: node scripts/update-manifest.mjs
       - name: Verify the signature and write checksums
         run: |
           codesign --verify --deep --strict release/mac-arm64/Harbor.app
@@ -38,8 +42,9 @@ jobs:
             release/Harbor-*.dmg
             release/Harbor-*.zip
             release/SHA256SUMS.txt
+            release/harbor-update.json
       - name: Publish the release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/Harbor-*.dmg release/Harbor-*.zip release/SHA256SUMS.txt --title "Harbor ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag
+        run: gh release create "$GITHUB_REF_NAME" release/Harbor-*.dmg release/Harbor-*.zip release/SHA256SUMS.txt release/harbor-update.json --title "Harbor ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag

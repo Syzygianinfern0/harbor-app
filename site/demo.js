@@ -1,16 +1,16 @@
-// Landing page interactivity: the placeholder download buttons, the "close the lid" simulator and the tab demo.
+// Landing page interactivity: copying the install command, the "close the lid" simulator and the tab demo.
 // Everything here is simulated in the browser; nothing talks to a real Harbor.
 (() => {
 'use strict';
 const $ = (sel, root = document) => root.querySelector(sel);
 
-// ---- Placeholder download links -----------------------------------------------------------
+// ---- Toasts and the install command ---------------------------------------------------------
 const toast = $('.toast');
 let toastTimer;
 function say(text) { toast.textContent = text; toast.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true; }, 2600); }
-document.querySelectorAll('[data-placeholder]').forEach(a => a.addEventListener('click', event => {
-  event.preventDefault(); say('The download link is coming soon.');
-  if (!a.closest('.install')) document.getElementById('install').scrollIntoView();
+document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => {
+  const text = $(button.dataset.copy).textContent;
+  navigator.clipboard.writeText(text).then(() => say('Copied. Paste it into Terminal.'), () => say('Select the command and copy it.'));
 }));
 
 // ---- Close-the-lid simulator ---------------------------------------------------------------

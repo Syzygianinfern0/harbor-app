@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { HarborApi, Snapshot, TerminalEvent } from '../shared/types';
+import type { AppUpdateState, HarborApi, Snapshot, TerminalEvent } from '../shared/types';
 function subscribe<T>(channel: string, callback: (value: T) => void) {
   const listener = (_event: Electron.IpcRendererEvent, value: T) => callback(value);
   ipcRenderer.on(channel, listener); return () => ipcRenderer.removeListener(channel, listener);
@@ -50,6 +50,10 @@ const api: HarborApi = {
   openExternal: url => ipcRenderer.invoke('harbor:openExternal', url),
   onSnapshot: callback => subscribe<Snapshot>('harbor:snapshot-changed', callback),
   onTerminal: callback => subscribe<TerminalEvent>('harbor:terminal', callback),
-  onNewSession: callback => subscribe('harbor:new-session', callback)
+  onNewSession: callback => subscribe('harbor:new-session', callback),
+  appUpdate: () => ipcRenderer.invoke('harbor:appUpdate'),
+  checkAppUpdate: () => ipcRenderer.invoke('harbor:checkAppUpdate'),
+  installAppUpdate: () => ipcRenderer.invoke('harbor:installAppUpdate'),
+  onAppUpdate: callback => subscribe<AppUpdateState>('harbor:app-update', callback)
 };
 contextBridge.exposeInMainWorld('harbor', api);

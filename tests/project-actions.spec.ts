@@ -62,7 +62,7 @@ test('update settings show cached automatic results and bulk progress survives c
         state.results={'This Mac:codex':{message:'Verified: 1.1.0 is up to date.'},'Research server:claude':{message:'Update failed: SSH unavailable'}};publish();
       });
     });
-    const open=async()=>{await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Agent updates',exact:true}).click();};
+    const open=async()=>{await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Updates',exact:true}).click();};
     await open();await expect(page.locator('.update-host')).toHaveCount(2);
     await page.getByRole('button',{name:'Update all (2)',exact:true}).click();
     await expect(page.getByText(/Updating agents across your machines/)).toBeVisible();

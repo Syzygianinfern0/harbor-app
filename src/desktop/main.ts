@@ -1,6 +1,7 @@
 import { app, clipboard, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, shell } from 'electron';
 import path from 'node:path';
 import { openProjectInCursor } from './cursor';
+import { AppUpdater } from './appUpdater';
 import { HarborEngine } from '../engine/engine';
 import { Transport } from '../engine/transport';
 import { dockBadge, NO_VIEW, shouldMarkUnread, unreadCount, validView, viewedChat } from '../shared/unread';
@@ -15,6 +16,7 @@ else {
   const activeNotifications=new Set<Notification>();
   let confirmingClose=false;
   let chatView=NO_VIEW;
+  let updater: AppUpdater | undefined;
   const createWindow = () => {
     window = new BrowserWindow({ width: 1440, height: 920, minWidth: 950, minHeight: 640, title: 'Harbor', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 20, y: 21 }, backgroundColor: '#101217', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -29,6 +31,8 @@ else {
     // HARBOR_TMUX_SOCKET isolates test profiles from the real `-L harbor` server.
     engine = new HarborEngine(app.getPath('userData'), new Transport(process.env.HARBOR_TMUX_SOCKET || 'harbor'));
     await engine.init();
+    updater = new AppUpdater({ version: app.getVersion(), bundlePath: path.resolve(process.execPath, '../../..'), userData: app.getPath('userData'), enabled: app.isPackaged && process.env.HARBOR_RELEASE_BUILD === '1', feed: process.env.HARBOR_UPDATE_FEED, publicKey: process.env.HARBOR_UPDATE_PUBLIC_KEY?.replace(/\\n/g, '\n') });
+    updater.on('state', state => window?.webContents.send('harbor:app-update', state));
     function handle(channel: string, fn: (...args: any[]) => unknown) {
       ipcMain.handle(`harbor:${channel}`, (event, ...args) => {
         if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Untrusted IPC sender.');
@@ -54,6 +58,18 @@ else {
     handle('openProjectInCursor', async id => openProjectInCursor(await engine.projectForEditor(id)));
     handle('updateAgent', (hostId,agent) => engine.updateAgent(hostId,agent));
     handle('checkReachability', () => engine.checkReachability());
+    handle('appUpdate', () => updater!.snapshot);
+    handle('checkAppUpdate', () => updater!.check().catch(() => updater!.snapshot));
+    handle('installAppUpdate', () => restartToUpdate());
+    const restartToUpdate = async () => { if (!await updater!.launchInstaller(true)) return false; app.quit(); return true; };
+    const checkForUpdatesFromMenu = async () => {
+      const state = await updater!.check().catch(() => updater!.snapshot);
+      const message = state.status === 'ready' ? `Harbor ${state.latest} is ready to install.` : state.status === 'current' ? 'Harbor is up to date.' : state.status === 'disabled' ? 'Updates are off for this copy of Harbor.' : 'Harbor could not check for updates.';
+      const detail = state.status === 'ready' ? 'Restarting reopens Harbor right away. Your chats keep running in tmux and reattach.' : state.status === 'current' ? `You have the latest version, ${state.current}.` : state.reason || state.error || '';
+      const buttons = state.status === 'ready' ? ['Restart Now', 'Later'] : ['OK'];
+      const choice = window ? await dialog.showMessageBox(window, { type: 'info', message, detail, buttons, defaultId: 0, cancelId: buttons.length - 1 }) : await dialog.showMessageBox({ type: 'info', message, detail, buttons });
+      if (state.status === 'ready' && choice.response === 0) await restartToUpdate();
+    };
     handle('openNotificationSettings', () => shell.openExternal('x-apple.systempreferences:com.apple.Notifications-Settings.extension'));
     handle('testNotification', (sound?:boolean) => new Promise<string>(resolve => {
       if (!Notification.isSupported()) {resolve('Desktop notifications are unavailable on this system.');return;}
@@ -118,7 +134,7 @@ else {
     if(process.env.HARBOR_TEST_HOOKS==='1')(globalThis as any).harborTest={engine};
     engine.on('terminal', event => window?.webContents.send('harbor:terminal', event));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: 'Harbor', submenu: [{ role: 'about' }, { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+      { label: 'Harbor', submenu: [{ role: 'about' }, { label: 'Check for Updates…', click: () => void checkForUpdatesFromMenu() }, { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
       { label: 'Session', submenu: [{label:'Close Chat',accelerator:'CmdOrCtrl+W',click:()=>window?.webContents.send('harbor:close-session')}, { label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => window?.webContents.send('harbor:new-session') }, {label:'New Tab',accelerator:'CmdOrCtrl+T',click:()=>window?.webContents.send('harbor:new-session')}, {label:'Next Tab',accelerator:'Ctrl+Tab',click:()=>window?.webContents.send('harbor:tab-shortcut','next')}, {label:'Previous Tab',accelerator:'Ctrl+Shift+Tab',click:()=>window?.webContents.send('harbor:tab-shortcut','previous')}, ...Array.from({length:9},(_,i)=>({label:i===8?'Select Last Tab':`Select Tab ${i+1}`,accelerator:`CmdOrCtrl+${i+1}`,click:()=>window?.webContents.send('harbor:tab-shortcut',i+1)})), { label: 'Refresh Chats and Status', accelerator: 'CmdOrCtrl+R', click: () => window?.webContents.send('harbor:refresh-all') }] },
       { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'togglefullscreen' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const }] : [])] }, { role: 'windowMenu' }
     ]));
@@ -128,7 +144,11 @@ else {
     app.once('before-quit', () => clearInterval(updateTimer));
     createWindow();
     checkWhenDue();
-    powerMonitor.on('resume', () => { checkWhenDue(); void engine.refresh(); window?.webContents.send('harbor:wake'); });
+    updater.start();
+    app.once('before-quit', () => updater?.stop());
+    // Never swap the app while macOS is logging out or shutting down.
+    powerMonitor.on('shutdown', () => updater?.skipInstallOnQuit());
+    powerMonitor.on('resume', () => { checkWhenDue(); void updater?.check().catch(() => undefined); void engine.refresh(); window?.webContents.send('harbor:wake'); });
     app.on('activate', () => { if (!window) createWindow(); });
   }).catch(error => { dialog.showErrorBox('Harbor could not start', String(error)); app.exit(1); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
@@ -136,6 +156,7 @@ else {
     if (quitting || !engine) return;
     event.preventDefault(); quitting = true;
     // Leave the cancelled before-quit callback before asking Electron to quit again.
-    engine.dispose().finally(() => setImmediate(() => app.quit()));
+    // A downloaded update installs once Harbor has exited; tmux keeps every chat running meanwhile.
+    engine.dispose().then(() => updater?.launchInstaller(false)).catch(error => console.error('Harbor update:', error)).finally(() => setImmediate(() => app.quit()));
   });
 }
