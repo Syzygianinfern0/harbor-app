@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { HarborEngine, validateCreate } from '../src/engine/engine';
 import { ControlParser, decodeOutput } from '../src/engine/control';
 import { discoverHosts } from '../src/engine/hosts';
-import { Transport, quote, validateHost } from '../src/engine/transport';
+import { CommandError, Transport, quote, validateHost } from '../src/engine/transport';
 
 test('control parser preserves binary and split UTF-8, recognizes guarded command responses', () => {
   assert.deepEqual(decodeOutput(Buffer.from('a\\015\\012\\134\\000')), Buffer.from([97, 13, 10, 92, 0]));
@@ -108,4 +108,36 @@ test('unreachable host never triggers a mutation or kills its sessions', async (
   const engine = new HarborEngine(dataDir, transport); await engine.init(false); await engine.refresh(); await engine.refresh(); await engine.dispose();
   assert.equal(engine.snapshot().sessions[0].status, 'unreachable');
   assert.ok(calls.every(command => !command.includes('kill-') && !command.includes('new-session')));
+});
+test('an unreachable host does not delay other hosts and is polled with backoff', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'harbor-slow-host-')); const transport = new Transport('harbor-slow-host');
+  const remoteCalls: string[] = []; const localCalls: string[] = [];
+  let timeOut = () => {};
+  transport.run = async (host, script) => {
+    if (host === 'local') { localCalls.push(script); return script.includes('list-panes') ? 'HARBOR_STATUS=harbor-aaaa0|%1|0|bash|\n' : ''; }
+    remoteCalls.push(script);
+    // Like ssh against a host off the VPN: nothing comes back until the connect timeout.
+    await new Promise<void>(resolve => { timeOut = resolve; });
+    transport.hostFailed(host); throw new CommandError('Connection timed out.', null, true);
+  };
+  const base = { group: 'Tests', tags: [], pinned: false, archived: false, cwd: '~', launcher: 'shell' };
+  await writeFile(path.join(dataDir, 'sessions.json'), JSON.stringify({ version: 2, sessions: [
+    { ...base, id: 'local', tmuxName: 'harbor-aaaa0', paneId: '%1', name: 'Local', host: 'local' },
+    { ...base, id: 'remote', tmuxName: 'harbor-bbbb0', paneId: '%1', name: 'Remote', host: 'devbox', connection: { target: 'devbox' } },
+  ] }));
+  const engine = new HarborEngine(dataDir, transport); await engine.init(false);
+  const stuck = engine.refresh();
+  await eventually(() => engine.snapshot().sessions.find(s => s.id === 'local')!.status === 'running', 'Local status must not wait for the remote host', 2000);
+  await engine.terminate('local');
+  assert.equal(engine.snapshot().sessions.find(s => s.id === 'local')!.status, 'closed', 'Closing a local chat must not wait for the remote host');
+  timeOut(); await stuck;
+  assert.equal(engine.snapshot().sessions.find(s => s.id === 'remote')!.status, 'unreachable');
+  const attempts = remoteCalls.length;
+  await engine.refresh();
+  assert.equal(remoteCalls.length, attempts, 'Background polls skip a host that is backing off');
+  transport.hostReached({ target: 'devbox' });
+  transport.run = async () => 'HARBOR_STATUS=harbor-bbbb0|%1|0|bash|\n';
+  await engine.refresh();
+  assert.equal(engine.snapshot().sessions.find(s => s.id === 'remote')!.status, 'running', 'A reachable host is polled again');
+  await engine.dispose();
 });
