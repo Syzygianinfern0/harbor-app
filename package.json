@@ -1,6 +1,6 @@
 {
   "name": "harbor-app",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "description": "A calm home for persistent local and SSH agent sessions",
   "author": "S P Sharan",
