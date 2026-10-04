@@ -101,7 +101,7 @@ else {
     handle('copyText', (text: string) => { if (typeof text !== 'string' || text.length > 128000) throw new Error('Invalid clipboard text.'); clipboard.writeText(text); });
     handle('resize', (id, cols, rows) => engine.resize(id, cols, rows));
     handle('diagnose', host => engine.diagnose(host));
-    handle('refresh', () => engine.refresh());
+    handle('refresh', () => engine.refresh(true));
     handle('terminate', async id => {
       if(confirmingClose)return false;
       const session=engine.snapshot().sessions.find(s=>s.id===id);
@@ -153,7 +153,7 @@ else {
     app.once('before-quit', () => updater?.stop());
     // Never swap the app while macOS is logging out or shutting down.
     powerMonitor.on('shutdown', () => updater?.skipInstallOnQuit());
-    powerMonitor.on('resume', () => { checkWhenDue(); void updater?.check().catch(() => undefined); void engine.refresh(); window?.webContents.send('harbor:wake'); });
+    powerMonitor.on('resume', () => { checkWhenDue(); void updater?.check().catch(() => undefined); void engine.refresh(true); window?.webContents.send('harbor:wake'); });
     app.on('activate', () => { if (!window) createWindow(); });
   }).catch(error => { dialog.showErrorBox('Harbor could not start', String(error)); app.exit(1); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

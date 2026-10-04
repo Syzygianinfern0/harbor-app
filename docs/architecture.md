@@ -20,6 +20,8 @@ Sidebar and tab icons distinguish **Starting**, **Working**, **Needs input or ap
 
 The host adapter is a Python standard-library script, deployed under `~/.local/share/harbor/`. It preserves agent configuration, credentials, and history. Codex sockets live in a private per-user temporary directory. Stopping a managed tmux session also stops its dedicated Codex app server.
 
+The engine polls tmux status and agent metadata every 2.5 seconds, separately for each host, so a slow host never delays status, notifications or closing on the others. When a host stops answering (for example, you are off the VPN), polling backs off from it: first 5 seconds, doubling up to 30 seconds. Its chats show as unreachable. Any successful command or terminal attach to the host resets the backoff. So does **Refresh Chats and Status** or waking the Mac, which also poll the host right away.
+
 History adapters are version-sensitive. An unreadable history source is reported on its project without modifying the source files. Custom `CODEX_HOME` / `CLAUDE_CONFIG_DIR` are respected when present in the host adapter’s environment.
 
 ## State and storage

@@ -71,6 +71,16 @@ export class Transport {
   }
   connectionFailed(host: Connection) { if (host !== 'local') this.bypassUntil.set(JSON.stringify(host), Date.now() + 60000); }
   private multiplex(host: Connection) { return (this.bypassUntil.get(JSON.stringify(host)) ?? 0) < Date.now(); }
+  // An unreachable host costs a full SSH connect timeout per attempt, so background polling backs off from it
+  // (5 s doubling to 30 s) instead of retrying every cycle. Any successful command or attach clears the backoff.
+  private unreachable = new Map<string, { failures: number; until: number }>();
+  hostFailed(host: Connection) {
+    if (host === 'local') return;
+    const failures = (this.unreachable.get(JSON.stringify(host))?.failures ?? 0) + 1;
+    this.unreachable.set(JSON.stringify(host), { failures, until: Date.now() + Math.min(30000, 5000 * 2 ** (failures - 1)) });
+  }
+  hostReached(host: Connection) { this.unreachable.delete(JSON.stringify(host)); }
+  backingOff(host: Connection) { return (this.unreachable.get(JSON.stringify(host))?.until ?? 0) > Date.now(); }
   sshArgs(host: Connection, multiplex = true) {
     const connection = validateConnection(host);
     return ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
@@ -89,13 +99,17 @@ export class Transport {
   async run(host: Connection, script: string, options: { retry?: boolean; timeout?: number } = {}) {
     await this.init();
     // Reads may retry without multiplexing. Mutations MUST NOT be replayed after an ambiguous timeout.
-    try { return await collect(this.spawnScript(host, this.multiplex(host)), script, options.timeout); }
+    const multiplex = this.multiplex(host);
+    try { const output = await collect(this.spawnScript(host, multiplex), script, options.timeout); this.hostReached(host); return output; }
     catch (error) {
-      if (host !== 'local' && error instanceof CommandError && (error.timedOut || error.code === 255)) {
-        this.connectionFailed(host);
-        if (options.retry) return collect(this.spawnScript(host, false), script, options.timeout);
+      if (host === 'local' || !(error instanceof CommandError) || !(error.timedOut || error.code === 255)) throw error;
+      this.connectionFailed(host);
+      // The retry only helps when a stale ControlMaster was in the way; repeating a direct connection just doubles the wait.
+      if (options.retry && multiplex) {
+        try { const output = await collect(this.spawnScript(host, false), script, options.timeout); this.hostReached(host); return output; }
+        catch (retryError) { if (retryError instanceof CommandError && (retryError.timedOut || retryError.code === 255)) this.hostFailed(host); throw retryError; }
       }
-      throw error;
+      this.hostFailed(host); throw error;
     }
   }
   setup() {

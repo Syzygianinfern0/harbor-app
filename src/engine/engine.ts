@@ -57,7 +57,7 @@ export class HarborEngine extends EventEmitter {
   private connectionEpochs = new Map<string, number>();
   private writes = Promise.resolve();
   private polling?: ReturnType<typeof setInterval>;
-  private refreshing = false;
+  private hostRefreshes = new Map<string, Promise<void>>();
   private disposed = false;
   private launches = new Set<Promise<Session>>();
   constructor(readonly dataDir: string, readonly transport = new Transport()) { super(); this.preferencesStore = new PreferencesStore(dataDir); this.bridge = new AgentBridge(transport); this.pricing = new PricingStore(dataDir); this.updates = new UpdateManager(dataDir, () => JSON.stringify(updateMachines(this.preferencesStore.value.hosts, this.projects)), () => checkAgentUpdates(this.transport, this.preferencesStore.value.hosts, this.projects), (host, agent) => this.performAgentUpdate(host, agent), () => this.changed()); }
@@ -193,7 +193,7 @@ export class HarborEngine extends EventEmitter {
     const project = this.projects.find(p=>p.id===projectId); if (!project) throw new Error('Project not found.');
     this.importing.add(projectId);
     try {
-      await this.refreshMetadata();
+      await this.refreshMetadata(JSON.stringify(project.connection));
       for (const session of this.sessions.filter(s=>s.projectId===projectId && !s.conversationId && !s.generation && s.status!=='closed' && (s.launcher==='codex'||s.launcher==='claude'))) {
         try {
           const pid=Number((await this.transport.run(project.connection,this.transport.setup()+this.transport.tmux(['display-message','-p','-t',`=${session.tmuxName}:`,'#{pane_pid}']))).trim());
@@ -214,10 +214,11 @@ export class HarborEngine extends EventEmitter {
     } catch(error) { project.historyError=(error as Error).message; this.changed(); }
     finally { this.importing.delete(projectId); }
   }
-  private async refreshMetadata() {
+  // Hosts in connection backoff are skipped: waiting on their SSH timeout would delay every other host's status.
+  private async refreshMetadata(only?: string) {
     const relevant=this.sessions.filter(s=>s.generation && (s.launcher==='codex'||s.launcher==='claude') );
     const connections=new Map(relevant.map(s=>[JSON.stringify(this.connection(s)),this.connection(s)]));
-    await Promise.all([...connections].map(async([key,connection])=>{
+    await Promise.all([...connections].filter(([key,connection])=>(only===undefined||key===only)&&!this.transport.backingOff(connection)).map(async([key,connection])=>{
       const sessions=relevant.filter(s=>JSON.stringify(this.connection(s))===key);
       try {
         const metadata=await this.bridge.metadata(connection,sessions.map(s=>s.id));
@@ -352,16 +353,26 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     if (unread) session.unread = true; else delete session.unread;
     await this.persist(); this.changed();
   }
-  async refresh() {
-    if (this.refreshing || this.disposed) return;
-    this.refreshing = true;
-    try {
-      const connections = new Map(this.sessions.filter(s => s.status !== 'closed').map(session => [JSON.stringify(this.connection(session)), this.connection(session)]));
-      await Promise.all([...connections].map(async ([key, host]) => {
+  // Each host refreshes on its own: a host that is timing out must not hold back status, notifications or
+  // closing on the others. `force` (manual refresh, wake from sleep) also polls hosts that are backing off.
+  async refresh(force = false) {
+    if (this.disposed) return;
+    const watched = this.sessions.filter(s => s.status !== 'closed' || (s.generation && (s.launcher === 'codex' || s.launcher === 'claude')));
+    const connections = new Map(watched.map(session => [JSON.stringify(this.connection(session)), this.connection(session)]));
+    await Promise.all([...connections].map(([key, host]) => this.refreshHost(key, host, force)));
+  }
+  private refreshHost(key: string, host: Connection, force: boolean) {
+    const running = this.hostRefreshes.get(key);
+    if (running) return running;
+    if (!force && this.transport.backingOff(host)) return Promise.resolve();
+    const task = (async () => {
+      const open = () => this.sessions.filter(s => s.status !== 'closed' && JSON.stringify(this.connection(s)) === key);
+      let reachable = true;
+      if (open().length) {
         try {
           const result = await this.transport.run(host, this.transport.setup() + `command -v tmux >/dev/null || { echo 'tmux is missing' >&2; exit 127; }\n` + `${this.transport.tmux(['list-panes', '-a', '-F', 'HARBOR_STATUS=#{session_name}|#{pane_id}|#{pane_dead}|#{pane_current_command}|#{pane_dead_status}'])} 2>&1\n`, { retry: true, timeout: 12000 });
           const panes = result.split('\n').filter(line => line.startsWith('HARBOR_STATUS=')).map(line => line.slice(14).split('|'));
-          for (const session of this.sessions.filter(s => s.status !== 'closed' && JSON.stringify(this.connection(s)) === key)) {
+          for (const session of open()) {
             const pane = panes.find(p => p[0] === session.tmuxName && p[1] === session.paneId);
             session.status = !pane || pane[2] === '1' ? 'closed' : 'running';
             if (session.status === 'closed') { session.activity = 'closed'; this.detach(session.id); }
@@ -370,12 +381,16 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
         } catch (error) {
           const message = (error as Error).message;
           const missing = /no server running|error connecting to .*No such file|no sessions/.test(message);
-          for (const session of this.sessions.filter(s => s.status !== 'closed' && JSON.stringify(this.connection(s)) === key)) { session.status = missing ? 'closed' : 'unreachable'; session.detail = missing ? 'The tmux server is no longer running on this host.' : message; }
+          reachable = missing;
+          for (const session of open()) { session.status = missing ? 'closed' : 'unreachable'; session.detail = missing ? 'The tmux server is no longer running on this host.' : message; }
         }
-      }));
-      await this.refreshMetadata();
+      }
+      if (reachable) await this.refreshMetadata(key);
+      if (this.disposed) return;
       await this.persist(); this.changed();
-    } finally { this.refreshing = false; }
+    })().finally(() => { if (this.hostRefreshes.get(key) === task) this.hostRefreshes.delete(key); });
+    this.hostRefreshes.set(key, task);
+    return task;
   }
   async attach(id: string, cols: number, rows: number) {
     const epoch = (this.connectionEpochs.get(id) ?? 0) + 1;
@@ -400,6 +415,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
     client.on('data', (bytes: Buffer) => this.emit('terminal', { id, type: 'data', data: bytes.toString('base64') }));
     client.on('disconnected', data => { if (this.clients.get(id) === client) { this.transport.connectionFailed(this.connection(session)); this.clients.delete(id); this.emit('terminal', { id, type: 'disconnected', data }); } });
     try { await client.prime(cols, rows); } catch (error) { this.transport.connectionFailed(this.connection(session)); client.detach(); throw error; }
+    this.transport.hostReached(this.connection(session));
   }
   private detachClient(id: string) { const client = this.clients.get(id); this.clients.delete(id); client?.detach(); }
   detach(id: string) { this.connectionEpochs.set(id, (this.connectionEpochs.get(id) ?? 0) + 1); this.detachClient(id); }
@@ -461,7 +477,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
   }
   private async closeInternal(session: Session) {
     if (session.status === 'closed') return;
-    await this.refreshMetadata();
+    await this.refreshMetadata(JSON.stringify(this.connection(session)));
     await this.transport.run(this.connection(session), this.transport.setup() + `if ${this.transport.tmux(['has-session','-t',`=${session.tmuxName}`])} 2>/dev/null; then ${this.transport.tmux(['kill-session','-t',`=${session.tmuxName}`])}; fi`);
     this.detach(session.id); session.status = 'closed'; session.activity = 'closed'; session.archived = false; session.detail = 'Closed. Conversation history is preserved.';
     await this.persist(); this.changed();
