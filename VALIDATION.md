@@ -10,7 +10,7 @@ npm test             # unit/integration tests, including the Python bridge (test
 git diff --check
 ```
 
-`npm test` starts real tmux sessions on private sockets and removes them afterwards; it needs tmux and python3 but no agents or network. CI runs the same build and tests on macOS for every pull request.
+`npm test` starts real tmux sessions on private sockets and removes them afterwards; it needs tmux and python3 but no agents or network. CI runs the same build and tests on macOS for every pull request, and the UI specs (`npm run test:e2e`) for pull requests that touch the app or the specs.
 
 Documentation-only changes need a read-through and `git diff --check`, not a rebuild.
 
@@ -27,6 +27,10 @@ npx playwright test tests/tab-groups.spec.ts  # one spec
 Each spec launches Harbor with a temporary `HARBOR_DATA_DIR` profile. Also look at the result yourself in `npm run dev:sandbox` and attach screenshots to the PR. Screenshots must not show real chats, hostnames, paths, or usage numbers.
 
 Known issue: the `control letters…` Command-W case in `workspace.spec.ts` fails on some machines (`terminate` not received). Note it if you see it; don't let it hide new failures.
+
+## Trying a pull request by hand
+
+Every pull request that touches the app gets a **Harbor Preview** build from the Preview workflow. Anyone can install it with `scripts/try-pr.sh <PR number>` and test the change the way a user would; see [CONTRIBUTING.md](CONTRIBUTING.md#trying-a-pull-request). List the steps a tester should follow in the PR description. To build the same thing locally, run `npm run package:preview` (output in `release/mac-arm64/Harbor Preview.app`).
 
 ## Real agents and SSH (opt-in)
 

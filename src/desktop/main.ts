@@ -7,7 +7,11 @@ import { Transport } from '../engine/transport';
 import type { Preferences } from '../shared/types';
 import { dockBadge, NO_VIEW, shouldMarkUnread, unreadCount, validView, viewedChat } from '../shared/unread';
 
-app.setName('Harbor');
+// Pull request previews get their own name, so their own profile, single-instance lock and tmux socket: they run beside
+// an installed Harbor without seeing its chats.
+const preview = process.env.HARBOR_PREVIEW_BUILD === '1';
+const appName = preview ? 'Harbor Preview' : 'Harbor';
+app.setName(appName);
 if (process.env.HARBOR_DATA_DIR) app.setPath('userData', process.env.HARBOR_DATA_DIR);
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -19,7 +23,7 @@ else {
   let chatView=NO_VIEW;
   let updater: AppUpdater | undefined;
   const createWindow = () => {
-    window = new BrowserWindow({ width: 1440, height: 920, minWidth: 950, minHeight: 640, title: 'Harbor', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 20, y: 21 }, backgroundColor: '#101217', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } });
+    window = new BrowserWindow({ width: 1440, height: 920, minWidth: 950, minHeight: 640, title: appName, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 20, y: 21 }, backgroundColor: '#101217', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -30,9 +34,9 @@ else {
   app.on('second-instance', () => { if (window) { window.show(); window.focus(); } });
   app.whenReady().then(async () => {
     // HARBOR_TMUX_SOCKET isolates test profiles from the real `-L harbor` server.
-    engine = new HarborEngine(app.getPath('userData'), new Transport(process.env.HARBOR_TMUX_SOCKET || 'harbor'));
+    engine = new HarborEngine(app.getPath('userData'), new Transport(process.env.HARBOR_TMUX_SOCKET || (preview ? 'harbor-preview' : 'harbor')));
     await engine.init();
-    updater = new AppUpdater({ version: app.getVersion(), bundlePath: path.resolve(process.execPath, '../../..'), userData: app.getPath('userData'), enabled: app.isPackaged && process.env.HARBOR_RELEASE_BUILD === '1', feed: process.env.HARBOR_UPDATE_FEED, releases: process.env.HARBOR_UPDATE_RELEASES, channel: () => engine.snapshot().preferences.updates.channel, fetch: (input, init) => net.fetch(input as string, init), publicKey: process.env.HARBOR_UPDATE_PUBLIC_KEY?.replace(/\\n/g, '\n') });
+    updater = new AppUpdater({ version: app.getVersion(), bundlePath: path.resolve(process.execPath, '../../..'), userData: app.getPath('userData'), enabled: app.isPackaged && process.env.HARBOR_RELEASE_BUILD === '1' && !preview, disabledReason: preview ? 'Harbor Preview is a pull request build, so it does not update itself. Run scripts/try-pr.sh again for a newer build.' : undefined, feed: process.env.HARBOR_UPDATE_FEED, releases: process.env.HARBOR_UPDATE_RELEASES, channel: () => engine.snapshot().preferences.updates.channel, fetch: (input, init) => net.fetch(input as string, init), publicKey: process.env.HARBOR_UPDATE_PUBLIC_KEY?.replace(/\\n/g, '\n') });
     updater.on('state', state => window?.webContents.send('harbor:app-update', state));
     function handle(channel: string, fn: (...args: any[]) => unknown) {
       ipcMain.handle(`harbor:${channel}`, (event, ...args) => {
@@ -139,7 +143,7 @@ else {
     if(process.env.HARBOR_TEST_HOOKS==='1')(globalThis as any).harborTest={engine};
     engine.on('terminal', event => window?.webContents.send('harbor:terminal', event));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: 'Harbor', submenu: [{ role: 'about' }, { label: 'Check for Updates…', click: () => void checkForUpdatesFromMenu() }, { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+      { label: appName, submenu: [{ role: 'about' }, { label: 'Check for Updates…', click: () => void checkForUpdatesFromMenu() }, { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
       { label: 'Session', submenu: [{label:'Close Chat',accelerator:'CmdOrCtrl+W',click:()=>window?.webContents.send('harbor:close-session')}, { label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => window?.webContents.send('harbor:new-session') }, {label:'New Tab',accelerator:'CmdOrCtrl+T',click:()=>window?.webContents.send('harbor:new-session')}, {label:'Next Tab',accelerator:'Ctrl+Tab',click:()=>window?.webContents.send('harbor:tab-shortcut','next')}, {label:'Previous Tab',accelerator:'Ctrl+Shift+Tab',click:()=>window?.webContents.send('harbor:tab-shortcut','previous')}, ...Array.from({length:9},(_,i)=>({label:i===8?'Select Last Tab':`Select Tab ${i+1}`,accelerator:`CmdOrCtrl+${i+1}`,click:()=>window?.webContents.send('harbor:tab-shortcut',i+1)})), { label: 'Refresh Chats and Status', accelerator: 'CmdOrCtrl+R', click: () => window?.webContents.send('harbor:refresh-all') }] },
       { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'togglefullscreen' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const }] : [])] }, { role: 'windowMenu' }
     ]));
