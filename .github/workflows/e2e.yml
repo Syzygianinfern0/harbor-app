@@ -33,7 +33,11 @@ jobs:
           displayplacer list | tail -1
       - run: npm ci
       - run: npm run build
-      - run: npm run test:e2e
+      # Shell chats run $SHELL. Use zsh, as on a Mac by default: the runner's bash 3.2 lacks bracketed paste, which the
+      # terminal specs check. An empty .zshrc keeps zsh from showing its first-run setup menu.
+      - run: touch ~/.zshrc && npm run test:e2e
+        env:
+          SHELL: /bin/zsh
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
