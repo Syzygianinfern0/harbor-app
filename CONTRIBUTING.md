@@ -24,6 +24,20 @@ npm run dev:sandbox
 
 Keep the repo public-safe: no credentials, real hostnames, usernames, home paths, usage numbers, or conversation contents in code, tests, docs, screenshots, or commit messages. Use placeholders such as `devbox`, `alice`, and `example.invalid`.
 
+## Trying a pull request
+
+Each pull request that touches the app is built as **Harbor Preview**, so you can try someone else's change, and they can try yours, without building it. On an Apple Silicon Mac with the [GitHub CLI](https://cli.github.com) logged in (`gh auth login`), from a Harbor checkout:
+
+```sh
+scripts/try-pr.sh 42
+```
+
+It downloads the newest preview build of PR #42, checks its signature, installs it as `~/Applications/Harbor Preview.app` (replacing any earlier preview) and opens it. The build summary on the PR's Preview check shows the same command and the commit it was built from; push again and the next run rebuilds it. Builds are kept for 14 days.
+
+Harbor Preview is a separate app that runs beside your Harbor. It has its own profile (`~/Library/Application Support/Harbor Preview`) and tmux socket (`tmux -L harbor-preview`, on SSH hosts too), so it never sees or touches your chats, and it never updates itself. It starts with an empty profile, and its chats and projects carry over from one preview to the next. To start over, quit it and delete that folder. To test against existing data, copy a throwaway profile there, never your real one.
+
+macOS may ask for permissions (such as notifications) again for each preview, because each build has a new ad-hoc signature. A preview runs the pull request's code on your Mac, so read the diff first when it comes from someone you don't know.
+
 ## Working with coding agents
 
 Most of Harbor is written with Codex and Claude Code, and you're welcome to do the same. Agents read [AGENTS.md](AGENTS.md), which holds the shared rules: branch and PR workflow, test expectations, fixture rules, and landing page decisions.

@@ -24,6 +24,7 @@
     "test:e2e": "playwright test",
     "package": "npm run build && electron-builder --mac dir",
     "package:release": "HARBOR_RELEASE_BUILD=1 npm run build && electron-builder --mac dmg zip --arm64 --publish never",
+    "package:preview": "HARBOR_PREVIEW_BUILD=1 npm run build && electron-builder --mac zip --arm64 --publish never -c.appId=dev.harbor.agent-manager.preview '-c.productName=Harbor Preview' '-c.mac.artifactName=Harbor-Preview-${version}-${arch}.${ext}'",
     "site:shots": "playwright test --config site/tools/playwright.config.ts"
   },
   "dependencies": {

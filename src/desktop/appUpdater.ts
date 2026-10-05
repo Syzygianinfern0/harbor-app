@@ -40,10 +40,10 @@ export class AppUpdater extends EventEmitter {
   private timer?: NodeJS.Timeout;
   private installOnQuit = true;
 
-  constructor(private readonly options: { version: string; bundlePath: string; userData: string; enabled: boolean; feed?: string; releases?: string; publicKey?: string; channel: () => UpdateChannel; fetch?: typeof fetch }) {
+  constructor(private readonly options: { version: string; bundlePath: string; userData: string; enabled: boolean; disabledReason?: string; feed?: string; releases?: string; publicKey?: string; channel: () => UpdateChannel; fetch?: typeof fetch }) {
     super();
     this.dir = path.join(options.userData, 'updates');
-    const reason = !options.enabled ? 'This copy of Harbor was built from source, so it does not update itself. Release builds from GitHub do.' : updateBlocker(options.bundlePath);
+    const reason = !options.enabled ? options.disabledReason ?? 'This copy of Harbor was built from source, so it does not update itself. Release builds from GitHub do.' : updateBlocker(options.bundlePath);
     this.state = reason ? { current: options.version, status: 'disabled', reason } : { current: options.version, status: 'idle' };
   }
 
