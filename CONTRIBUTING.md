@@ -20,7 +20,7 @@ npm run dev:sandbox
 
 1. Branch from `main` (`git switch -c <topic>`). `main` is protected; changes land through pull requests.
 2. Make the change and run the checks in [VALIDATION.md](VALIDATION.md): at least `npm run build` and `npm test`, plus the relevant `npm run test:e2e` specs for UI changes.
-3. Push and open a PR (`gh pr create`). The template asks what changed and how you verified it. CI runs the build and unit tests on macOS; a maintainer reviews and squash-merges.
+3. Push and open a PR (`gh pr create`). The template asks what changed and how you verified it. CI runs the build and unit tests on macOS. Depending on the PR's risk level, a maintainer tries it and approves before it is squash-merged; the levels are in [AGENTS.md](AGENTS.md#merging).
 
 Keep the repo public-safe: no credentials, real hostnames, usernames, home paths, usage numbers, or conversation contents in code, tests, docs, screenshots, or commit messages. Use placeholders such as `devbox`, `alice`, and `example.invalid`.
 

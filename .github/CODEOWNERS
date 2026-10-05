@@ -1,1 +1,16 @@
+# Whose review a pull request needs (branch protection requires one code owner approval). The levels are under
+# "Merging" in AGENTS.md. The last matching pattern wins: add maintainers to the first line as they join, and keep
+# the High risk paths below owner-only.
 * @Syzygianinfern0
+
+# High risk: owner only.
+/.github/ @Syzygianinfern0
+/package.json @Syzygianinfern0
+/package-lock.json @Syzygianinfern0
+/scripts/update-manifest.mjs @Syzygianinfern0
+/src/desktop/appUpdater.ts @Syzygianinfern0
+/src/desktop/appUpdateCore.ts @Syzygianinfern0
+/src/engine/preferences.ts @Syzygianinfern0
+/src/engine/transport.ts @Syzygianinfern0
+/src/engine/control.ts @Syzygianinfern0
+/site/install.sh @Syzygianinfern0

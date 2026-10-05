@@ -23,8 +23,24 @@ Own each task end to end: investigate, implement, validate, document, commit on 
 
 - `main` is protected: work on a branch (`<topic>` or `<name>/<topic>`), never push to `main` directly. One focused change per pull request.
 - Review `git status` and the diff, run `git diff --check`, stage intended files explicitly, and write commit messages in the imperative ("Add …", "Fix …"). Preserve unrelated work; exclude generated output, profiles, credentials, and `work/`.
-- Push the branch and open a PR with `gh pr create`, filling in `.github/pull_request_template.md` (what changed, how it was verified, screenshots for UI). CI (build + unit tests) must pass. Do not merge unless your personal instructions allow it; then squash-merge after CI passes.
+- Push the branch and open a PR with `gh pr create`, filling in `.github/pull_request_template.md` (risk level, what changed, how it was verified, how to try it, screenshots for UI). CI (build + unit tests) must pass. Merge only as **Merging** below allows; then squash-merge.
 - Never rewrite published history or move release tags. Releases are tagged `v<package.json version>` by the maintainer (see `CONTRIBUTING.md` → Releases).
+
+### Merging
+
+Every PR states one risk level. It decides what has to happen before the PR merges:
+
+| Level | Covers | Before merging |
+| --- | --- | --- |
+| Low | Docs (not `site/`), tests, comments, internal refactors with no change in behavior | CI passes. |
+| App | Anything a user can see or feel in the app, and `site/` (it publishes publicly) | CI passes, and a person has tried it and approved: the Harbor Preview build (`scripts/try-pr.sh <PR>`, see `CONTRIBUTING.md`) for the app, or the PR's desktop and phone screenshots for `site/`. |
+| High risk | The updater and Release workflow, any workflow or `CODEOWNERS` change, dependencies, `site/install.sh`, saved data formats (`sessions.json`, `preferences.json`), tmux attach/detach and anything else that could lose chats | As App, approved by the owner. After release it stays on Beta for a while before it is promoted. |
+
+When unsure, pick the higher level. For App and High risk PRs, list in the PR the steps a tester should follow and what they should see.
+
+- **Approval** is a GitHub review approval. `CODEOWNERS` decides whose approval counts and keeps High risk paths owner-only; branch protection enforces it.
+- **Agents** never merge an App or High risk PR without an explicit go-ahead from a person, in chat or on the PR. Low PRs may be merged after CI only if your personal instructions allow it.
+- **Your own PRs:** GitHub doesn't let you approve a PR you opened, including ones your agent opened under your account. Admins may then merge with `--admin`, but only after recording the approval as a PR comment (for example "Tried the preview: tab folding works. Approved."), so the history shows who checked what. Everyone else asks another maintainer to review.
 
 ## Installing a build on your own Mac (opt-in)
 
