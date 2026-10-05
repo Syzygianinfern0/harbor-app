@@ -23,7 +23,15 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: brew install tmux
+      - run: brew install tmux displayplacer
+      # The runner's screen is 1024×768, smaller than Harbor's 1440×920 window, which squeezes the layout the specs
+      # measure. Make it larger.
+      - name: Enlarge the screen
+        run: |
+          displayplacer list
+          id=$(displayplacer list | awk '/^Persistent screen id:/ {print $4; exit}')
+          displayplacer "id:$id res:1920x1080 scaling:off" || true
+          system_profiler SPDisplaysDataType | grep -i resolution
       - run: npm ci
       - run: npm run build
       - run: npm run test:e2e

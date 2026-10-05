@@ -27,6 +27,9 @@ jobs:
       - run: npm ci
       - name: Package Harbor Preview
         env:
+          # electron-builder skips signing on pull requests to protect real certificates. Previews are only ad-hoc
+          # signed (mac.identity "-") and this job has no secrets, so signing is safe and lets macOS run the app.
+          CSC_FOR_PULL_REQUEST: 'true'
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: npm run package:preview -- "-c.extraMetadata.version=$(node -p 'require("./package.json").version')-pr$PR-${SHA:0:7}"
