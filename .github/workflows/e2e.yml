@@ -1,0 +1,46 @@
+name: UI tests
+
+# Runs the Electron UI specs (`npm run test:e2e`) on pull requests that touch the app or the specs.
+on:
+  pull_request:
+    paths: ['src/**', 'tests/**', 'assets/**', 'scripts/build.mjs', 'package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'playwright.config.ts', '.nvmrc', '.github/workflows/e2e.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: brew install tmux displayplacer
+      # The runner's screen is 1024×768, smaller than Harbor's 1440×920 window, which squeezes the layout the specs
+      # measure. Make it larger.
+      - name: Enlarge the screen
+        run: |
+          id=$(displayplacer list | grep -o 'id:[0-9A-F-]*' | tail -1)
+          displayplacer "$id res:1920x1080 hz:60 color_depth:7 enabled:true scaling:off origin:(0,0) degree:0"
+          displayplacer list | tail -1
+      - run: npm ci
+      - run: npm run build
+      # Shell chats run $SHELL. Use zsh, as on a Mac by default: the runner's bash 3.2 lacks bracketed paste, which the
+      # terminal specs check. An empty .zshrc keeps zsh from showing its first-run setup menu.
+      - run: touch ~/.zshrc && npm run test:e2e
+        env:
+          SHELL: /bin/zsh
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: ui-test-results
+          path: test-results/
+          retention-days: 7

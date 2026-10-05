@@ -26,7 +26,7 @@ History adapters are version-sensitive. An unreadable history source is reported
 
 ## State and storage
 
-Session/project state is stored atomically in `~/Library/Application Support/Harbor/sessions.json` (schema 2); preferences use `preferences.json`. Earlier indexes migrate without changing running tmux identities. No telemetry is added. Chats run on the `tmux -L harbor` socket on each host; `HARBOR_DATA_DIR` and `HARBOR_TMUX_SOCKET` point Harbor at another profile and socket (used by tests and `npm run dev:sandbox`).
+Session/project state is stored atomically in `~/Library/Application Support/Harbor/sessions.json` (schema 2); preferences use `preferences.json`. Earlier indexes migrate without changing running tmux identities. No telemetry is added. Chats run on the `tmux -L harbor` socket on each host; `HARBOR_DATA_DIR` and `HARBOR_TMUX_SOCKET` point Harbor at another profile and socket (used by tests and `npm run dev:sandbox`). Pull request preview builds (`HARBOR_PREVIEW_BUILD=1`, `npm run package:preview`) run as **Harbor Preview**: a separate bundle ID and app name, so their own profile (`~/Library/Application Support/Harbor Preview`) and single-instance lock, the `harbor-preview` tmux socket by default, and the updater off.
 
 Tab groups, folding, colors and layout switches are kept in the app's local storage (`harbor.tabGroups`).
 

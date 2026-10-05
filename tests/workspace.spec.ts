@@ -290,7 +290,12 @@ test('native file drops pass disk paths through preload and command arrows send 
   await expect(page.locator('.sidebar .chat-row')).toHaveCount(5);
   await app.evaluate(({ipcMain})=>{for(const channel of ['attach','input','detach','resize','dropFiles'])ipcMain.removeHandler('harbor:'+channel);ipcMain.handle('harbor:attach',()=>{});ipcMain.handle('harbor:detach',()=>{});ipcMain.handle('harbor:resize',()=>{});ipcMain.handle('harbor:input',(_event,id,text)=>{((globalThis as any).inputs??=[]).push({id,text});});ipcMain.handle('harbor:dropFiles',(_event,id,paths)=>{(globalThis as any).drop={id,paths};});});
   const snapshot=await page.evaluate(()=>window.harbor.snapshot());
-  await app.evaluate(({BrowserWindow},snapshot)=>{snapshot.sessions[0].status='running';BrowserWindow.getAllWindows()[0].webContents.send('harbor:snapshot-changed',snapshot);},snapshot);
+  // Keep the chat running: the engine's status poll would otherwise report it closed again before the click on a slow machine.
+  await app.evaluate(({BrowserWindow,ipcMain},snapshot)=>{
+   snapshot.sessions[0].status='running';ipcMain.removeHandler('harbor:snapshot');ipcMain.handle('harbor:snapshot',()=>snapshot);
+   const contents=BrowserWindow.getAllWindows()[0].webContents;const send=contents.send.bind(contents);
+   contents.send=(channel:string,...args:unknown[])=>send(channel,...(channel==='harbor:snapshot-changed'?[snapshot]:args));contents.send('harbor:snapshot-changed',snapshot);
+  },snapshot);
   await page.locator('.sidebar .chat-row').first().click();await expect(page.locator('.connection-label')).toHaveText('Connected');
   await page.keyboard.press('Meta+ArrowLeft');await page.keyboard.press('Meta+ArrowRight');
   expect(await app.evaluate(()=>(globalThis as any).inputs)).toEqual([{id:'chat-0',text:'\x01'},{id:'chat-0',text:'\x05'}]);

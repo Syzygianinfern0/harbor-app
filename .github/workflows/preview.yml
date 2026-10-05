@@ -1,0 +1,57 @@
+name: Preview
+
+# Builds every app pull request as "Harbor Preview", a separate app with its own profile and tmux socket and no
+# self-update, so anyone can try the change beside their own Harbor: `scripts/try-pr.sh <PR number>`.
+# It needs no secrets, so pull requests from forks build the same way.
+on:
+  pull_request:
+    paths: ['src/**', 'assets/**', 'scripts/build.mjs', 'package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', '.nvmrc', '.github/workflows/preview.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Package Harbor Preview
+        env:
+          # electron-builder skips signing on pull requests to protect real certificates. Previews are only ad-hoc
+          # signed (mac.identity "-") and this job has no secrets, so signing is safe and lets macOS run the app.
+          CSC_FOR_PULL_REQUEST: 'true'
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run package:preview -- "-c.extraMetadata.version=$(node -p 'require("./package.json").version')-pr$PR-${SHA:0:7}"
+      - run: codesign --verify --deep --strict "release/mac-arm64/Harbor Preview.app"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: harbor-preview-pr${{ github.event.pull_request.number }}
+          path: release/Harbor-Preview-*.zip
+          retention-days: 14
+      - name: Explain how to try it
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          {
+            echo "### Try this pull request"
+            echo
+            echo "Built from \`${SHA:0:7}\`. On an Apple Silicon Mac with \`gh\` logged in, from a Harbor checkout:"
+            echo
+            echo '```sh'
+            echo "scripts/try-pr.sh $PR"
+            echo '```'
+            echo
+            echo "It installs **Harbor Preview** beside your Harbor, with its own profile and tmux socket, so your chats are untouched."
+          } >> "$GITHUB_STEP_SUMMARY"
