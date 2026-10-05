@@ -28,10 +28,9 @@ jobs:
       # measure. Make it larger.
       - name: Enlarge the screen
         run: |
-          displayplacer list
-          id=$(displayplacer list | awk '/^Persistent screen id:/ {print $4; exit}')
-          displayplacer "id:$id res:1920x1080 scaling:off" || true
-          system_profiler SPDisplaysDataType | grep -i resolution
+          id=$(displayplacer list | grep -o 'id:[0-9A-F-]*' | tail -1)
+          displayplacer "$id res:1920x1080 hz:60 color_depth:7 enabled:true scaling:off origin:(0,0) degree:0"
+          displayplacer list | tail -1
       - run: npm ci
       - run: npm run build
       - run: npm run test:e2e
