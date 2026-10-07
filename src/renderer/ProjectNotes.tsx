@@ -26,7 +26,7 @@ function NoteCard({item,kind,label,title,actions,onError}:{item:Noted;kind:NoteK
   return <article className={`project-note-card ${kind}`} aria-label={label}>
     <header>{title}<span className="spacer"/>{actions}{!editing&&shown&&<button type="button" className="icon-button" aria-label={`Edit ${label.toLowerCase()}`} title="Edit note" onClick={()=>{flush.current();setEditing(true);}}><Pencil size={13}/></button>}</header>
     {editing?<NoteEditor item={{...item,note:shown||undefined}} kind={kind} inline onClose={()=>setEditing(false)}/>
-      :shown?<><div ref={body} className={`project-note-body ${expanded?'':'folded'} ${clipped?'clipped':''}`} onDoubleClick={event=>{if(!(event.target as Element).closest('button,.note-item-row'))setEditing(true);}}><NoteMarkdown text={shown} onChange={change}/></div>
+      :shown?<><div ref={body} className={`project-note-body ${expanded?'':'folded'} ${clipped?'clipped':''}`} onDoubleClick={event=>{if(!(event.target as Element).closest('button,.note-item-row'))setEditing(true);}}><NoteMarkdown text={shown} onChange={change} id={`${kind}:${item.id}`}/></div>
         {(clipped||expanded)&&<button type="button" className="text-button project-note-more" aria-expanded={expanded} onClick={()=>setExpanded(v=>!v)}>{expanded?'Show less':'Show the whole note'}</button>}</>
       :<button type="button" className="text-button project-note-add" onClick={()=>setEditing(true)}><Plus size={13}/>Add a note for this project</button>}
   </article>;

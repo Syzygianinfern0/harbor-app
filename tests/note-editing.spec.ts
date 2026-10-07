@@ -61,14 +61,32 @@ test('the Formatted view is an editable checklist: add, edit, split, delete, reo
     expect(await order()).toEqual(['Draft notes','Test upgrade','local','[Write changelog]','Tag release','Then and publish','Ping devbox','Bump version']);
     await page.keyboard.press('Escape');
 
-    // The × on a row deletes it; ticking sinks it below the open items.
+    // The × on a row deletes it; ticking moves it into the Completed section below the open items.
     const row=(name:string)=>view.locator('.note-item-row',{has:page.locator('.note-item-text',{hasText:new RegExp(`^${name}$`)})});
     await row('Ping devbox').hover();await page.screenshot({path:'test-results/screenshots/81-note-item-hover.png'});
     await row('Ping devbox').getByRole('button',{name:'Delete Ping devbox'}).click();
     await view.getByRole('checkbox',{name:'Draft notes'}).click();
     expect(await order()).toEqual(['Test upgrade','local','Write changelog','Tag release','Then and publish','Bump version','Draft notes']);
+
+    // Tab nests an item under the one above it; Shift-Tab lifts one out of its parent.
+    await view.locator('.note-item-text',{hasText:'Then and publish'}).click();await page.keyboard.press('Tab');
+    await expect(input).toBeFocused();await expect(input).toHaveValue('Then and publish');
+    await expect(view.locator('li.note-item',{hasText:'Tag release'}).locator('li.note-item')).toHaveText('Then and publish');
+    await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');await page.keyboard.press('Escape');
+    await view.locator('.note-item-text',{hasText:'local'}).click();await page.keyboard.press('Shift+Tab');await expect(input).toHaveValue('local');await page.keyboard.press('Escape');
+
+    // The Completed section folds, and stays folded for this note.
+    const completed=view.getByRole('button',{name:'Completed (2)'});
+    await expect(completed).toHaveAttribute('aria-expanded','true');await completed.click();
+    await expect(completed).toHaveAttribute('aria-expanded','false');
+    expect(await order()).toEqual(['Test upgrade','local','Write changelog','Tag release','Then and publish']);
+    await page.screenshot({path:'test-results/screenshots/83-note-completed-folded.png'});
     await page.keyboard.press('Meta+Enter');await expect(editor).toHaveCount(0);
-    await expect.poll(()=>saved('aaaa')).toBe(['# Release','Ship **v2** with `npm run package`.','- [ ] Test upgrade','  - [ ] local','- [ ] Write changelog','- [ ] Tag release !p1','- [ ] Then and publish','- [x] Bump version','- [x] Draft notes','','Notes stay below.'].join('\n'));
+    await expect.poll(()=>saved('aaaa')).toBe(['# Release','Ship **v2** with `npm run package`.','- [ ] Test upgrade','- [ ] local','- [ ] Write changelog','- [ ] Tag release !p1','  - [ ] Then and publish','- [x] Bump version','- [x] Draft notes','','Notes stay below.'].join('\n'));
+    await sidebar.getByRole('button',{name:'Todo chat Closed',exact:true}).locator('.chat-note').click();
+    await expect(view.getByRole('button',{name:'Completed (2)'})).toHaveAttribute('aria-expanded','false');
+    await view.getByRole('button',{name:'Completed (2)'}).click();await expect(view.getByRole('checkbox',{name:'Bump version'})).toBeVisible();
+    await page.keyboard.press('Escape');await expect(editor).toHaveCount(0);
 
     // An empty note offers "Add a to-do" in the Formatted view.
     await sidebar.getByRole('button',{name:'Plain chat Closed',exact:true}).hover();
@@ -76,8 +94,18 @@ test('the Formatted view is an editable checklist: add, edit, split, delete, reo
     const plain=page.getByRole('dialog',{name:'Note for Plain chat'});
     await expect(plain.getByRole('radio',{name:'Formatted'})).toHaveAttribute('aria-checked','true'); // remembered
     await plain.getByRole('button',{name:'Add a to-do'}).click();await page.keyboard.type('First thing');
+    // An item just added and left empty is never saved, whether the note is saved with ⌘↩ or by clicking away.
+    await page.keyboard.press('Enter');await expect(plain.getByRole('textbox',{name:'Item text'})).toHaveValue('');
     await page.keyboard.press('Meta+Enter');await expect(plain).toHaveCount(0);
     await expect.poll(()=>saved('cccc')).toBe('- [ ] First thing');
+    await sidebar.getByRole('button',{name:'Plain chat Closed',exact:true}).locator('.chat-note').click();
+    await plain.getByRole('button',{name:'Add item'}).click();await expect(plain.getByRole('textbox',{name:'Item text'})).toBeFocused();
+    await page.locator('.project-overview h1').click();await expect(plain).toHaveCount(0);
+    await page.waitForTimeout(300);expect(await saved('cccc')).toBe('- [ ] First thing');
+    await sidebar.getByRole('button',{name:'Plain chat Closed',exact:true}).locator('.chat-note').click();
+    await plain.getByRole('button',{name:'Add item'}).click();await page.keyboard.type('Second thing');
+    await page.locator('.project-overview h1').click();await expect(plain).toHaveCount(0);
+    await expect.poll(()=>saved('cccc')).toBe('- [ ] First thing\n- [ ] Second thing');
 
     // On the project page the checklist saves as you go.
     await sidebar.getByRole('button',{name:'Notes project',exact:true}).click();

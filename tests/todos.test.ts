@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addTask, deleteTask, editTask, insertTask, itemLines, moveTask, nudgeTask, renumber, setPriority, toggleTask } from '../src/shared/todos';
+import { addTask, deleteTask, editTask, indentTask, insertTask, itemLines, outdentTask, moveTask, nudgeTask, renumber, setPriority, toggleTask } from '../src/shared/todos';
 
 const note=(...lines:string[])=>lines.join('\n');
 
@@ -118,4 +118,18 @@ test('nudging moves an item one place among its siblings with its subtree',()=>{
   assert.equal(nudgeTask(text,0,-1),undefined);assert.equal(nudgeTask(text,3,1),undefined);assert.equal(nudgeTask(text,1,1),undefined);
   assert.deepEqual(nudgeTask(note('1. x','2. y'),1,-1),{text:note('1. y','2. x'),line:0});
   assert.deepEqual(itemLines(note('# h','- a','  text','  - b','','c','1. d')),[1,3,6]);
+});
+
+test('Tab nests an item under the one above; Shift-Tab lifts it out after its parent',()=>{
+  const text=note('- [ ] a','- [ ] b','  - [ ] b1','- [ ] c','  more','  - [ ] c1');
+  assert.deepEqual(indentTask(text,1),{text:note('- [ ] a','  - [ ] b','    - [ ] b1','- [ ] c','  more','  - [ ] c1'),line:1});
+  assert.deepEqual(indentTask(text,3),{text:note('- [ ] a','- [ ] b','  - [ ] b1','  - [ ] c','    more','    - [ ] c1'),line:3});
+  assert.equal(indentTask(text,0),undefined);assert.equal(indentTask(text,2),undefined);
+  assert.deepEqual(indentTask(note('1. one','2. two','3. three'),1),{text:note('1. one','   1. two','2. three'),line:1});
+  assert.deepEqual(indentTask(note('- a','  * a1','- b'),2),{text:note('- a','  * a1','  * b'),line:2});
+  assert.deepEqual(outdentTask(text,2),{text:note('- [ ] a','- [ ] b','- [ ] b1','- [ ] c','  more','  - [ ] c1'),line:2});
+  assert.deepEqual(outdentTask(note('- p','  - x','  - y','- q'),1),{text:note('- p','  - y','- x','- q'),line:2});
+  assert.equal(outdentTask(text,0),undefined);
+  // Round trip.
+  assert.equal(outdentTask(indentTask(text,1)!.text,1)!.text,text);
 });

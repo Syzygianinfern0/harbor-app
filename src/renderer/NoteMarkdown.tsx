@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type RefObject } from 'react';
-import { Check, Flag, GripVertical, Plus, X } from 'lucide-react';
+import { Check, ChevronRight, Flag, GripVertical, Plus, X } from 'lucide-react';
 import { groupLists, inlineText, parseBlocks, parseInline, scanLines, type Block, type Inline, type List, type ListNode, type Priority } from '../shared/markdown';
 import { dropSide } from '../shared/dropCue';
-import { addTask, deleteTask, editTask, insertTask, itemLines, moveTask, nudgeTask, setPriority, toggleTask, type Placed } from '../shared/todos';
+import { addTask, deleteTask, editTask, indentTask, insertTask, moveTask, nudgeTask, outdentTask, setPriority, toggleTask, type Placed } from '../shared/todos';
 import { useDropCue } from './useDropCue';
 
 // Notes render from a parsed tree into React text nodes only; there is no HTML path, so nothing in a note can inject markup.
@@ -23,6 +23,9 @@ type Caret=number|'end';
 interface Ctx {
   get:()=>string;change?:(text:string)=>void;drag:ReturnType<typeof useItemDrag>;
   editing?:{line:number;caret:Caret};edit:(line:number,caret?:Caret)=>void;stopEditing:(line:number)=>void;focusItem:(line:number)=>void;
+  /** The item shown above (-1) or below (1) a line, skipping a collapsed Completed section. */
+  neighbor:(line:number,direction:-1|1)=>number|undefined;
+  completedOpen:boolean;setCompletedOpen:(open:boolean)=>void;
 }
 function useItemDrag(text:string,onChange?:(text:string)=>void) {
   const {source,setSource,cue,show,leave}=useDropCue<number,{line:number;after:boolean}>();
@@ -58,7 +61,8 @@ function PriorityMenu({priority,onPick}:{priority:Priority;onPick:(p:Priority)=>
 }
 
 /** The item's own text, edited in place like a Keep list item: Enter adds the next item (splitting at the cursor),
- *  Backspace on an empty item deletes it, ↑/↓ at either end move between items, ⌥↑/⌥↓ move the item, Esc finishes. */
+ *  Backspace on an empty item deletes it, ↑/↓ at either end move between items, ⌥↑/⌥↓ move the item, Tab/⇧Tab nest
+ *  and un-nest it, Esc finishes. */
 function ItemEditor({item,ctx}:{item:ListNode;ctx:Ctx&{change:(text:string)=>void}}) {
   const field=useRef<HTMLTextAreaElement>(null);const [draft,setDraft]=useState(item.content);const {line}=item;
   // Set once a key hands the cursor elsewhere, so the blur that follows does not act on a line that has moved.
@@ -78,12 +82,17 @@ function ItemEditor({item,ctx}:{item:ListNode;ctx:Ctx&{change:(text:string)=>voi
       go(insertTask(editTask(ctx.get(),line,draft.slice(0,start).trimEnd()),line,draft.slice(end).trimStart()),0);return;
     }
     if(event.key==='Backspace'&&plain&&!draft&&!item.children.length){
-      handled();const prev=itemLines(ctx.get()).filter(l=>l<line).at(-1);
+      handled();const prev=ctx.neighbor(line,-1);
       ctx.change(deleteTask(ctx.get(),line));if(prev===undefined)ctx.stopEditing(line);else ctx.edit(prev,'end');return;
     }
     if((event.key==='ArrowUp'||event.key==='ArrowDown')&&event.altKey&&!event.metaKey&&!event.ctrlKey){event.preventDefault();event.stopPropagation();const placed=nudgeTask(ctx.get(),line,event.key==='ArrowUp'?-1:1);if(placed){handedOff.current=true;go(placed,start);}return;}
-    if(event.key==='ArrowUp'&&plain&&start===0&&end===0){const prev=itemLines(ctx.get()).filter(l=>l<line).at(-1);if(prev!==undefined){handled();ctx.edit(prev,'end');}return;}
-    if(event.key==='ArrowDown'&&plain&&start===draft.length&&end===draft.length){const next=itemLines(ctx.get()).find(l=>l>line);if(next!==undefined){handled();ctx.edit(next,0);}return;}
+    if(event.key==='Tab'&&!event.metaKey&&!event.ctrlKey&&!event.altKey){
+      // Tab stays in the list: nest under the item above, or (⇧) lift out of the parent; at either limit nothing moves.
+      event.preventDefault();event.stopPropagation();const placed=(event.shiftKey?outdentTask:indentTask)(ctx.get(),line);
+      if(placed){handedOff.current=true;go(placed,start);}return;
+    }
+    if(event.key==='ArrowUp'&&plain&&start===0&&end===0){const prev=ctx.neighbor(line,-1);if(prev!==undefined){handled();ctx.edit(prev,'end');}return;}
+    if(event.key==='ArrowDown'&&plain&&start===draft.length&&end===draft.length){const next=ctx.neighbor(line,1);if(next!==undefined){handled();ctx.edit(next,0);}return;}
   };
   return <textarea ref={field} className="note-item-input" rows={1} value={draft} aria-label="Item text" spellCheck
     onChange={event=>{const value=event.target.value.replace(/\r\n?|\n/g,' ');setDraft(value);ctx.change(editTask(ctx.get(),line,value));fit();}}
@@ -135,8 +144,26 @@ function BlockView({block,ctx}:{block:Block;ctx:Ctx}) {
   if(block.t==='heading'){const H=`h${block.level+2}` as 'h3'|'h4'|'h5';return <H className={`note-h${block.level}`}><Text text={block.text}/></H>;}
   if(block.t==='para')return <p>{block.lines.map((line,i)=><Fragment key={i}>{i>0&&'\n'}<Text text={line}/></Fragment>)}</p>;
   if(block.t==='code')return <pre><code>{block.v}</code></pre>;
-  // A checklist ends with an "Add item" row, like Keep.
-  return <><ListView list={block} ctx={ctx}/>{ctx.change&&block.items.some(i=>i.task)&&<AddItem ctx={ctx} line={block.items[0].line}/>}</>;
+  if(!ctx.change||!block.items.some(i=>i.task))return <ListView list={block} ctx={ctx}/>;
+  // Like Keep: open items, an "Add item" row, then ticked items under a Completed toggle.
+  const open=block.items.filter(i=>!i.checked),done=block.items.filter(i=>i.checked);
+  return <>
+    {open.length>0&&<ListView list={{...block,items:open,start:open[0].num}} ctx={ctx}/>}
+    <AddItem ctx={ctx} line={block.items[0].line}/>
+    {done.length>0&&<div className="note-completed">
+      <button type="button" className="note-completed-toggle" aria-expanded={ctx.completedOpen} onClick={()=>ctx.setCompletedOpen(!ctx.completedOpen)}><ChevronRight size={12}/>Completed ({done.length})</button>
+      {ctx.completedOpen&&<ListView list={{...block,items:done,start:done[0].num}} ctx={ctx}/>}
+    </div>}
+  </>;
+}
+
+// Which notes have their Completed section folded: a per-viewer convenience, never part of the note.
+const FOLDED_KEY='harbor.noteCompletedFolded';
+const readFolded=():string[]=>{try{const v=JSON.parse(localStorage.getItem(FOLDED_KEY)??'[]');return Array.isArray(v)?v.filter(x=>typeof x==='string'):[];}catch{return [];}};
+function useCompletedOpen(id?:string):[boolean,(open:boolean)=>void] {
+  const [open,setOpen]=useState(()=>!id||!readFolded().includes(id));
+  useEffect(()=>setOpen(!id||!readFolded().includes(id)),[id]);
+  return [open,(next:boolean)=>{setOpen(next);if(!id)return;try{const rest=readFolded().filter(x=>x!==id);localStorage.setItem(FOLDED_KEY,JSON.stringify(next?rest:[...rest,id].slice(-500)));}catch{/* per-viewer convenience only */}}];
 }
 
 /** Moves focus to an item's text once the note has re-rendered with it. */
@@ -147,8 +174,10 @@ function useFocusItem(root:RefObject<HTMLDivElement|null>,text:string) {
 }
 
 /** A note rendered from Markdown. With `onChange` it is a working checklist: tick, add, edit in place, delete, drag or
- *  ⌥↑/⌥↓ to reorder, and set priorities; each edit hands back the new Markdown text, leaving other lines untouched. */
-export function NoteMarkdown({text,onChange,className=''}:{text:string;onChange?:(text:string)=>void;className?:string}) {
+ *  ⌥↑/⌥↓ to reorder, Tab/⇧Tab to nest, and set priorities; each edit hands back the new Markdown text, leaving other
+ *  lines untouched. `id` names the note for remembering whether its Completed section is folded. */
+export function NoteMarkdown({text,onChange,className='',id}:{text:string;onChange?:(text:string)=>void;className?:string;id?:string}) {
+  const [completedOpen,setCompletedOpen]=useCompletedOpen(id);
   const latest=useRef(text);latest.current=text;
   const root=useRef<HTMLDivElement>(null);const [editing,setEditing]=useState<{line:number;caret:Caret}>();const focusItem=useFocusItem(root,text);
   const drag=useItemDrag(text,onChange);
@@ -156,9 +185,16 @@ export function NoteMarkdown({text,onChange,className=''}:{text:string;onChange?
   const ctx:Ctx={get:()=>latest.current,change,drag,editing,
     edit:(line,caret='end')=>setEditing({line,caret}),
     stopEditing:line=>setEditing(v=>v?.line===line?undefined:v),
-    focusItem:line=>{setEditing(undefined);focusItem(line);}};
+    focusItem:line=>{setEditing(undefined);focusItem(line);},
+    neighbor:(line,direction)=>{const shown=[...root.current?.querySelectorAll<HTMLElement>('li.note-item[data-line]')??[]].map(el=>Number(el.dataset.line)),k=shown.indexOf(line);return k<0?undefined:shown[k+direction];},
+    completedOpen,setCompletedOpen};
+  // An edit can remount the focused row (ticking moves it into Completed); keep focus in the note so its shortcuts
+  // (⌘↩, Esc) still work. Removal fires no blur, so `inside` still holds when that happens.
+  const inside=useRef(false);
+  useEffect(()=>{if(inside.current&&(document.activeElement===document.body||!document.activeElement))root.current?.focus();},[text]);
   const blocks=parseBlocks(text);
-  return <div ref={root} tabIndex={onChange?-1:undefined} className={`note-markdown ${onChange?'interactive':''} ${className}`}>
+  return <div ref={root} tabIndex={onChange?-1:undefined} className={`note-markdown ${onChange?'interactive':''} ${className}`}
+    onFocus={()=>{inside.current=true;}} onBlur={event=>{if(!root.current?.contains(event.relatedTarget as Node|null))inside.current=false;}}>
     {blocks.map((block,i)=><BlockView key={i} block={block} ctx={ctx}/>)}
     {change&&!blocks.some(b=>b.t==='list'&&b.items.some(i=>i.task))&&<AddItem ctx={ctx} label="Add a to-do"/>}
   </div>;

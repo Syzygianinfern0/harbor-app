@@ -95,7 +95,8 @@ test('long notes, Markdown rendering, and Todoist-style tasks in the editor and 
     expect(await fire(row('local'),'dragover','top')).toBe(false);
     expect(await fire(row('Tag release'),'dragover','top')).toBe(true);
     await fire(row('Tag release'),'drop','top');await fire(row('Test upgrade'),'dragend');
-    expect(await order()).toEqual(['Test upgrade','devbox','local','Tag release','Write changelog']);
+    // The open item shows above the Completed section even though the ticked ones now come first in the Markdown.
+    expect(await order()).toEqual(['Tag release','Test upgrade','devbox','local','Write changelog']);
     await page.screenshot({path:'test-results/screenshots/74-note-formatted.png'});
     await page.keyboard.press('Meta+Enter');await expect(editor).toHaveCount(0);
     await expect.poll(()=>saved('aaaa')).toBe(['# Release','Ship **v2** with `npm run package`.','- [x] Test upgrade','  - [x] devbox','  - [x] local','- [ ] Tag release !p1','- [x] Write changelog'].join('\n'));

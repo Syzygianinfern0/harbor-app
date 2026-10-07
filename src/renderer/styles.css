@@ -341,6 +341,10 @@ button.note-check:hover{color:#8d98a6}
 .note-item-row:hover>.note-delete,.note-item.editing>.note-item-row>.note-delete,.note-delete:focus-visible{opacity:1}
 .note-delete:hover{color:#e1e7ee;background:#262d37}
 .note-add{display:flex;align-items:center;gap:6px;margin:-4px 0 9px;padding:2px 0;font-size:inherit;color:#6f7a88}
+.note-completed{margin:-4px 0 9px;padding-top:4px;border-top:1px solid #262d37}
+.note-completed-toggle{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:inherit;color:#6f7a88}
+.note-completed-toggle svg{width:14px;min-width:14px;transition:transform .12s}.note-completed-toggle[aria-expanded=true] svg{transform:rotate(90deg)}
+.note-completed-toggle:hover,.note-completed-toggle:focus-visible{color:#c3ccd7}.note-completed>.note-list{margin:3px 0 0}
 .note-add svg{width:14px;min-width:14px}.note-add:hover{color:#c3ccd7}.note-add:focus-visible{color:#c3ccd7;outline:1px solid #4a5563;outline-offset:2px;border-radius:3px}
 /* Project page notes. */
 .project-notes{max-width:840px;margin:0 0 26px}
