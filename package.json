@@ -65,6 +65,9 @@
       "category": "public.app-category.developer-tools",
       "identity": "-",
       "icon": "assets/Harbor.icns",
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Harbor asks iTerm2 to open a window when you open an SSH project in iTerm2."
+      },
       "artifactName": "Harbor-${version}-${arch}.${ext}"
     },
     "dmg": {

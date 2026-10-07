@@ -523,3 +523,18 @@ button.note-check:hover{color:#8d98a6}
 .delete-project-hint{font-size:11px!important;color:#7f8a99!important}
 .primary-button.danger-button{background:#e0a39b;color:#3b1712}.primary-button.danger-button:hover{background:#eab4ad;color:#3b1712}
 .delete-project-modal .modal-footer{justify-content:flex-end;gap:10px}.delete-project-modal .modal-footer .primary-button{margin-top:0}
+/* Open in: the menu's disclosure for other apps, and Preferences → Open in. */
+.popover .open-in-others button{padding-left:24px}
+.open-in-apps{display:flex;flex-direction:column;border:1px solid #2f3843;border-radius:8px;margin-bottom:18px}
+.open-in-app{display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid #2a323c}
+.open-in-app:last-child{border-bottom:0}
+.modal .open-in-app .toggle-field{flex:1;gap:10px;font-size:11px}
+.open-in-app .toggle-field>span{display:flex;flex-direction:column;gap:3px}
+.open-in-app strong{font-weight:550;color:#c9d2dd}
+.open-in-app small{font-size:9.5px;color:#7d8a9a;line-height:1.45}
+.open-in-app.missing strong{color:#7d8899}
+.modal .open-in-app input[type=checkbox],.modal .open-in-app input[type=radio]{width:14px;height:14px;padding:0;accent-color:var(--mint);flex-shrink:0}
+.modal .open-in-default{flex-direction:row;align-items:center;gap:6px;margin:0;font-size:10px;color:#93a0b0;white-space:nowrap}
+.open-in-custom{display:grid!important;grid-template-columns:1fr 2fr;gap:12px;max-width:none!important}
+.open-in-custom input{font-family:Menlo,monospace;font-size:11px!important}
+.open-in-preferences code{font-family:Menlo,monospace;font-size:9.5px;color:#b9c6d4}

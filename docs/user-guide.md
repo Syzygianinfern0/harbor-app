@@ -31,7 +31,10 @@ Use **Add project** to choose a saved host and an existing directory. The direct
 
 **Quitting Harbor or closing its macOS window does not close chats.** Their tmux sessions keep running. Network reconnects reattach automatically without restarting the agent. Host reboots still stop processes; saved agent conversations can be resumed afterward.
 
-Right-click a project and choose **Open in Cursor** to open its directory locally or through Cursor Remote-SSH. Harbor preserves the project’s saved SSH connection, including username, port, hostname, and identity-file overrides.
+Right-click a project or chat to open its folder in another app: the menu leads with your default app, and **Open in…** lists the others. The chat toolbar's app button (or ⌘⇧O) opens the focused chat's folder in the default app. Harbor offers Finder, Terminal, iTerm2, VS Code, Cursor and Zed when they are installed, plus a custom command.
+
+- **SSH projects:** VS Code and Cursor open through Remote-SSH, Zed through its ssh:// remote projects (hosts without hostname or identity-file overrides), and Terminal or iTerm2 open a window that runs `ssh -t <host>` and starts a login shell in the folder. Harbor keeps the host's saved username, port, hostname and identity-file overrides. Finder is not offered. The first time iTerm2 opens an SSH folder, macOS asks whether Harbor may control iTerm2.
+- **Preferences → Open in:** choose which apps the menus list and which one is the default. Apps that are not installed are shown but cannot be picked. The custom command runs with `/bin/sh` on your Mac with `$HARBOR_DIR` set to the folder (on the SSH host for remote projects) and `$HARBOR_HOST` to the SSH host, empty for local folders; for example `open -a "Sublime Text" "$HARBOR_DIR"`.
 
 - **Sticky headings:** while the sidebar scrolls, the **PROJECTS** heading stays at the top and the heading of the project you're scrolling through stays pinned under it.
 - **Opening a project:** clicking a project's name shows its page and also expands it in the sidebar. If you move on (another project or another project's chat) without opening any of its chats, it folds back the way it was; if you opened one of its chats, it stays expanded. Folding or expanding it by hand keeps your choice.
