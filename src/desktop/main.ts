@@ -1,6 +1,7 @@
 import { app, clipboard, BrowserWindow, dialog, ipcMain, Menu, net, Notification, powerMonitor, shell } from 'electron';
 import path from 'node:path';
-import { openProjectInCursor } from './cursor';
+import { installedApps, openIn } from './openIn';
+import { defaultApp, isOpenApp } from '../shared/openIn';
 import { AppUpdater } from './appUpdater';
 import { HarborEngine } from '../engine/engine';
 import { Transport } from '../engine/transport';
@@ -64,7 +65,15 @@ else {
     handle('fork', id => engine.fork(id));
     handle('checkUpdates', force => engine.checkUpdates(force));
     handle('updateAllAgents', () => engine.updateAllAgents());
-    handle('openProjectInCursor', async id => openProjectInCursor(await engine.projectForEditor(id)));
+    handle('openInApps', async () => Object.keys(await installedApps(true)));
+    handle('openIn', async (target: {kind: 'project' | 'chat'; id: string}, requested?: unknown) => {
+      if (!target || typeof target.id !== 'string' || (target.kind !== 'project' && target.kind !== 'chat') || (requested !== undefined && !isOpenApp(requested))) throw new Error('Invalid open request.');
+      const folder = await engine.folderForOpen(target.kind, target.id);
+      const preferences = engine.snapshot().preferences.openIn;
+      const app = requested ?? defaultApp(preferences, Object.keys(await installedApps()) as never, folder.connection);
+      if (!app) throw new Error('No app can open this folder. Choose apps in Preferences → Open in.');
+      await openIn(app, folder, preferences);
+    });
     handle('updateAgent', (hostId,agent) => engine.updateAgent(hostId,agent));
     handle('checkReachability', () => engine.checkReachability());
     handle('appUpdate', () => updater!.snapshot);

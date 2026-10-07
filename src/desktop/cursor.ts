@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import type { Project, SshConnection } from '../shared/types';
-import { validateConnection } from '../engine/transport';
+import { environment, validateConnection } from '../engine/transport';
 
 type SshDefaults = { hostname?: string; user?: string; port?: number };
 
@@ -71,28 +71,41 @@ export function cursorArguments(project: Pick<Project, 'connection' | 'cwd'>, ex
   return ['--new-window', '--folder-uri', `vscode-remote://ssh-remote+${authority}${folder}`];
 }
 
-async function cursorWindowFolders(): Promise<string[]> {
+/** Folders open in a VS Code-family editor's windows, from its window state (`Code` or `Cursor`). */
+async function windowFolders(product: string): Promise<string[]> {
   const dataHome = process.platform === 'darwin' ? path.join(homedir(), 'Library/Application Support')
     : process.platform === 'win32' ? process.env.APPDATA : process.env.XDG_CONFIG_HOME ?? path.join(homedir(), '.config');
   if (!dataHome) return [];
   try {
-    const state = JSON.parse(await readFile(path.join(dataHome, 'Cursor/User/globalStorage/storage.json'), 'utf8')).windowsState;
+    const state = JSON.parse(await readFile(path.join(dataHome, product, 'User/globalStorage/storage.json'), 'utf8')).windowsState;
     return [state?.lastActiveWindow, ...(Array.isArray(state?.openedWindows) ? state.openedWindows : [])]
       .map(window => window?.folder).filter((folder): folder is string => typeof folder === 'string');
   } catch { return []; }
 }
 
-export async function openProjectInCursor(project: Pick<Project, 'connection' | 'cwd'>) {
+/** The environment for an editor's command-line tool: Harbor's own Electron and agent markers removed, since the
+ *  tool runs the editor's Electron as Node and would otherwise inherit them. */
+export function editorEnvironment() {
+  const result = environment();
+  for (const key of Object.keys(result)) if (key.startsWith('ELECTRON_') || key.startsWith('VSCODE_')) delete result[key];
+  return result;
+}
+
+/** Opens a folder in VS Code or Cursor through the command-line tool bundled in the app, locally or through
+ *  Remote-SSH, focusing a window that already shows that folder. */
+export async function openInVsCodeFamily(editor: 'vscode' | 'cursor', appPath: string | undefined, project: Pick<Project, 'connection' | 'cwd'>) {
   cursorArguments(project); // Validate before resolving paths or reading SSH config.
-  const candidates = ['/Applications/Cursor.app/Contents/Resources/app/bin/cursor', path.join(homedir(), 'Applications/Cursor.app/Contents/Resources/app/bin/cursor'),
-    ...(process.env.PATH ?? '').split(path.delimiter).filter(Boolean).map(dir => path.join(dir, 'cursor'))];
+  const tool = editor === 'cursor' ? 'cursor' : 'code', product = editor === 'cursor' ? 'Cursor' : 'Code', name = editor === 'cursor' ? 'Cursor' : 'VS Code';
+  const env = editorEnvironment();
+  const candidates = [...(appPath ? [path.join(appPath, 'Contents/Resources/app/bin', tool)] : []),
+    ...(env.PATH ?? '').split(path.delimiter).filter(Boolean).map(dir => path.join(dir, tool))];
   let executable: string | undefined;
   for (const candidate of candidates) {try {await access(candidate, constants.X_OK); executable = candidate; break;} catch {}}
-  if (!executable) throw new Error('Cursor was not found. Install Cursor or add its cursor command to PATH.');
-  const existingFolders = await cursorWindowFolders();
+  if (!executable) throw new Error(`${name}’s command-line tool was not found. Reinstall ${name}, or add its ${tool} command to PATH.`);
+  const existingFolders = await windowFolders(product);
   let defaults: SshDefaults = {};
   if (project.connection === 'local') {
-    // Cursor identifies local folders by path, so resolve symlink aliases too.
+    // Editors identify local folders by path, so resolve symlink aliases too.
     try {
       const canonical = await realpath(project.cwd);
       let cwd = canonical;
@@ -113,5 +126,5 @@ export async function openProjectInCursor(project: Pick<Project, 'connection' | 
       defaults = {hostname: field('hostname'), user: field('user'), port: Number(field('port') || 22)};
     } catch { /* Exact authority matching still works without SSH config. */ }
   }
-  await promisify(execFile)(executable, cursorArguments(project, existingFolders, defaults), {timeout: 15000, maxBuffer: 1024 * 1024});
+  await promisify(execFile)(executable, cursorArguments(project, existingFolders, defaults), {timeout: 15000, maxBuffer: 1024 * 1024, env});
 }
