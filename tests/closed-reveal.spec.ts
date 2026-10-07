@@ -55,12 +55,13 @@ test('clicking a project name shows its closed chats even while closed chats are
     await hide.uncheck();await expect(page.locator('.sidebar .chat-row')).toHaveCount(7);
     await hide.check();await expect(page.locator('.sidebar .chat-row')).toHaveCount(0);
 
-    // A folded project stays folded; its overview still shows the closed chats.
+    // A folded project expands while its page shows, revealing its closed chats, and folds back when you move on.
     await page.getByRole('button',{name:'Collapse project Agent-Manager'}).click();
-    await name(page,'Agent-Manager').click();await expect(page.locator('.sidebar .chat-row')).toHaveCount(0);
-    expect(await overview(page)).toEqual(['Tab groups design','Fix SSH reattach','Release notes']);
-    await page.getByRole('button',{name:'Expand project Agent-Manager'}).click();
+    await name(page,'Agent-Manager').click();
     await expect.poll(()=>rows(page)).toEqual(['Tab groups design','Fix SSH reattach','Release notes']);
+    expect(await overview(page)).toEqual(['Tab groups design','Fix SSH reattach','Release notes']);
+    await name(page,'tessera-api').click();await expect.poll(()=>rows(page)).toEqual(['Rate limiter','Flaky auth test']);
+    await expect(page.getByRole('button',{name:'Expand project Agent-Manager'})).toBeVisible();
 
     // The reveal is momentary: a relaunch returns to the persisted toggle.
     await app.close();app=await data.launch();page=await app.firstWindow();
