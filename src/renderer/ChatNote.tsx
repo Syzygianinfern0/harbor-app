@@ -52,7 +52,8 @@ export function ChatNoteMarker({item,kind='chat',onEdit}:{item:Noted;kind?:NoteK
   </span>;
 }
 
-/** The note editor: a Markdown source view and a rendered view where tasks can be checked, reordered and prioritized.
+/** The note editor: a Markdown source view and a rendered view that works as a checklist (add, edit, tick, delete,
+ *  reorder and prioritize items).
  *  Saving is explicit (⌘↩, Save) or by clicking away; Esc discards. `inline` sizes it for a page instead of a popover. */
 export function NoteEditor({item,kind,onClose,inline=false,style}:{item:Noted;kind:NoteKind;onClose:()=>void;inline?:boolean;style?:CSSProperties}) {
   const [text,setText]=useState(item.note??'');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [mode,setModeState]=useState<Mode>(savedMode);
@@ -96,7 +97,7 @@ export function NoteEditor({item,kind,onClose,inline=false,style}:{item:Noted;ki
       ?<textarea ref={field} value={text} maxLength={NOTE_LIMIT} placeholder={'Write a note… Markdown works: # heading, **bold**, - [ ] to-do !p1'} aria-label="Note" disabled={busy} spellCheck
         onMouseUp={event=>{const h=event.currentTarget.offsetHeight;if(Math.abs(h-setHeight.current)>2)userHeight.current=h;}}
         onChange={e=>setText(e.target.value.replace(/\r\n?/g,'\n'))}/>
-      :<div className="chat-note-rendered" aria-label="Formatted note">{text.trim()?<NoteMarkdown text={text} onChange={setText}/>:<p className="chat-note-empty">Nothing yet. Switch to Markdown to write.</p>}</div>}
+      :<div className="chat-note-rendered" aria-label="Formatted note">{!text.trim()&&<p className="chat-note-empty">Nothing yet. Add a to-do, or switch to Markdown to write.</p>}<NoteMarkdown text={text} onChange={setText}/></div>}
     {error&&<p role="alert" className="form-error">{error}</p>}
     <footer><small>⌘↩ to save{text.length>NOTE_LIMIT*.8&&<span className={over?'note-count over':'note-count'}> · {text.length.toLocaleString()}/{NOTE_LIMIT.toLocaleString()}</span>}</small>{item.note&&<button type="button" className="chat-note-remove" disabled={busy} onClick={()=>void save('')}>Remove</button>}<button type="button" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className="chat-note-save" disabled={busy||over} onClick={()=>void save(text)}>Save</button></footer>
   </div>;

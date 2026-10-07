@@ -324,7 +324,7 @@ button.note-check:hover{color:#8d98a6}
 .note-item.task>.note-item-row>.note-grip{left:-16px}
 .note-item-row:hover>.note-grip{opacity:1}
 .note-priority{display:flex;padding:3px;margin:-1px 0 -1px 2px;border-radius:4px;color:#6d7886;opacity:0;transition:opacity .12s}
-.note-item-row:hover>.note-priority,.note-priority:focus-visible,.note-priority.open{opacity:1}
+.note-item-row:hover>.note-priority,.note-item.editing>.note-item-row>.note-priority,.note-priority:focus-visible,.note-priority.open{opacity:1}
 .note-priority:hover{background:#262d37}
 .note-priority-menu{position:fixed;z-index:1300;width:150px;padding:4px;border:1px solid #3b4551;border-radius:7px;background:#222833;box-shadow:0 12px 35px #0006}
 .note-priority-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:7px 8px;border-radius:5px;font-size:11px;color:#b5c1ce;text-align:left}
@@ -332,6 +332,16 @@ button.note-check:hover{color:#8d98a6}
 .note-priority-menu .p4 svg{color:#7e8a99}.note-priority-current{margin-left:auto;color:var(--mint)!important}
 .note-item.drop-before::before{top:-2px;left:-16px}.note-item.drop-after::after{bottom:-2px;left:-16px}
 .note-item.task.drop-before::before,.note-item.task.drop-after::after{left:-20px}
+.note-markdown.interactive:focus{outline:none}
+.note-item-text[tabindex]{cursor:text;border-radius:3px}.note-item-text[tabindex]:focus-visible{outline:none;background:#232a33;box-shadow:0 0 0 2px #232a33}
+.note-markdown .note-item-input:focus-visible{outline:none}
+.note-item.editing>.note-item-row{background:#1d232b;box-shadow:0 0 0 3px #1d232b}
+.note-markdown .note-item-input,.chat-note-editor .note-markdown .note-item-input{min-height:0;width:auto;font-family:inherit;font-size:inherit;flex:1;min-width:0;display:block;height:auto;margin:0;padding:0;border:0;border-radius:0;outline:none;resize:none;overflow:hidden;background:transparent;color:#e1e7ee;font:inherit;line-height:inherit;caret-color:var(--mint)}
+.note-delete{display:flex;padding:3px;margin:-1px 0;border-radius:4px;color:#6d7886;opacity:0;transition:opacity .12s}
+.note-item-row:hover>.note-delete,.note-item.editing>.note-item-row>.note-delete,.note-delete:focus-visible{opacity:1}
+.note-delete:hover{color:#e1e7ee;background:#262d37}
+.note-add{display:flex;align-items:center;gap:6px;margin:-4px 0 9px;padding:2px 0;font-size:inherit;color:#6f7a88}
+.note-add svg{width:14px;min-width:14px}.note-add:hover{color:#c3ccd7}.note-add:focus-visible{color:#c3ccd7;outline:1px solid #4a5563;outline-offset:2px;border-radius:3px}
 /* Project page notes. */
 .project-notes{max-width:840px;margin:0 0 26px}
 .project-note-card{padding:12px 16px 14px;margin-bottom:10px;border:1px solid #2a303a;border-radius:9px;background:#171b22}
