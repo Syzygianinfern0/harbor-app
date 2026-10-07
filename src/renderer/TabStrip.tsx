@@ -3,7 +3,7 @@ import { Bell, ChevronLeft, ChevronRight, Columns2, Plus, X } from 'lucide-react
 import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon, UnreadDot } from './ChatStatusIcon';
-import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
+import { activityLabel, chatActivity, tracksActivity, type ChatStatus } from '../shared/chatStatus';
 import { dropSide, planStripDrop, type StripSource } from '../shared/dropCue';
 import { splitRuns } from '../shared/splits';
 import { useDropCue } from './useDropCue';
@@ -141,7 +141,7 @@ export function TabStrip(props:TabStripProps) {
     const size=active||inView.has(id)||!groups.shrink?'':icons.has(id)?'compact':'narrow';
     const run=runs.get(id),partners=run?.filter(v=>v!==id).map(v=>byId.get(v)?.name).join(', ');
     const split=run?`split ${run[0]===id?'split-start':''} ${run.at(-1)===id?'split-end':''} ${inView.has(id)?'split-view':''}`:'';
-    return <div key={id} data-tab-id={id} data-attention={activity==='attention'?id:undefined} title={size==='compact'?`${s.name}\n${activityLabel[activity]}`:undefined}
+    return <div key={id} data-tab-id={id} data-attention={activity==='attention'?id:undefined} title={size==='compact'?(tracksActivity(s)?`${s.name}\n${activityLabel[activity]}`:s.name):undefined}
       style={{'--tab-color':color??(s.projectId&&groups.projectColors[s.projectId])??GROUP_COLORS[0].value,...(color?{'--group-color':color}:{})} as CSSProperties}
       onMouseDown={event=>{if(event.button===1)event.preventDefault();}} onAuxClick={event=>{if(event.button===1){event.preventDefault();props.onClose(s);}}}
       onContextMenu={event=>{event.preventDefault();event.stopPropagation();props.onTabMenu(id,event.clientX,event.clientY);}}

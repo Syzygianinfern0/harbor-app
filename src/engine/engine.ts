@@ -8,7 +8,7 @@ import { discoverHosts } from './hosts';
 import { checkAgentUpdates, updateMachines, installAgentUpdate } from './updates';
 import { validateMode } from '../shared/agentModes';
 import { forkBlocker, forkName } from '../shared/fork';
-import { onlyArtifactWatches } from '../shared/chatStatus';
+import { onlyArtifactWatches, tracksActivity } from '../shared/chatStatus';
 import { UpdateManager } from './updateManager';
 import { AgentBridge } from './bridge';
 import { PricingStore } from './pricing';
@@ -349,7 +349,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
   }
   /** The unread marker (see shared/unread.ts); only a real change is persisted. */
   async setUnread(id: string, unread: boolean) {
-    const session = this.sessions.find(s => s.id === id); if (!session || !!session.unread === unread) return;
+    const session = this.sessions.find(s => s.id === id); if (!session || !!session.unread === unread || (unread && !tracksActivity(session))) return;
     if (unread) session.unread = true; else delete session.unread;
     await this.persist(); this.changed();
   }

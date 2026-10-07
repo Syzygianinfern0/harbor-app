@@ -60,3 +60,11 @@ test('engine raises attention for input, errors and finished turns, which is wha
  meta={...meta,activity:'idle',completedAt:20,updatedAt:4};await poll();
  assert.deepEqual(events,[{id:'a',completed:false},{id:'a',completed:true}]);await engine.dispose();
 });
+test('engine never marks a terminal unread: terminals raise no notifications',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'harbor-unread-'));const createdAt=new Date().toISOString();
+ const base={name:'Terminal',host:'local',cwd:dir,group:'',tags:[],pinned:false,archived:false,createdAt,updatedAt:createdAt,status:'closed'};
+ await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects:[],sessions:[{...base,id:'s',tmuxName:'harbor-aaaa0',paneId:'%1',launcher:'shell'},{...base,id:'c',tmuxName:'harbor-aaaa1',paneId:'%2',launcher:'custom'},{...base,id:'a',tmuxName:'harbor-aaaa2',paneId:'%3',launcher:'claude'}]}));
+ const engine=new HarborEngine(dir,new Transport('harbor-unread-test'));await engine.init(false);
+ for(const id of ['s','c','a'])await engine.setUnread(id,true);
+ assert.deepEqual(engine.snapshot().sessions.map(s=>s.unread),[undefined,undefined,true]);await engine.dispose();
+});
