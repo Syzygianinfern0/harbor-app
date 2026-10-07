@@ -7,6 +7,9 @@ export const activityLabel = {
   error: 'Agent error', closed: 'Closed', unknown: 'Status unavailable', external: 'Running elsewhere'
 };
 export type ChatStatus = keyof typeof activityLabel;
+/** Only Codex and Claude chats have an agent Harbor can read status from. Terminals (and custom commands) show no status icon,
+ * unread marker or notification: their activity is never tracked, so any status shown would be a stale or "unknown" guess. */
+export const tracksActivity = (session: Pick<Session, 'launcher'>) => session.launcher === 'codex' || session.launcher === 'claude';
 export function chatActivity(session: Session): ChatStatus {
   if (session.status === 'closed') return session.externalActive ? 'external' : 'closed';
   if (['checking', 'unreachable', 'missing'].includes(session.status)) return 'unknown';
