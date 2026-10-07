@@ -33,6 +33,11 @@ Use **Add project** to choose a saved host and an existing directory. The direct
 
 Right-click a project and choose **Open in Cursor** to open its directory locally or through Cursor Remote-SSH. Harbor preserves the project’s saved SSH connection, including username, port, hostname, and identity-file overrides.
 
+- **Sticky headings:** while the sidebar scrolls, the **PROJECTS** heading stays at the top and the heading of the project you're scrolling through stays pinned under it.
+- **Opening a project:** clicking a project's name shows its page and also expands it in the sidebar. If you move on (another project or another project's chat) without opening any of its chats, it folds back the way it was; if you opened one of its chats, it stays expanded. Folding or expanding it by hand keeps your choice.
+- **Hide project:** right-click a project → **Hide project** takes it out of the sidebar without changing anything else; its open tabs stay open. When projects are hidden, an eye button with their count appears next to **PROJECTS**: click it to list them (dimmed, under **HIDDEN**) and use **Show** or right-click → **Show project**. Preferences → Projects has the same visibility switches.
+- **Delete project:** right-click a project (visible or hidden) → **Delete project…** asks for confirmation and deletes only Harbor's project entry. The folder and its files, saved Codex and Claude conversations, and tmux sessions are not touched; adding the folder again as a project brings its saved conversations back. If any of its chats are running, the dialog names them: they keep running, open tabs stay open, but they leave the sidebar. **Hide instead** is offered in the same dialog.
+
 ## Keyboard and layout
 
 - **⌘ Backspace:** delete back to the beginning of the terminal input line (Ctrl-U).
