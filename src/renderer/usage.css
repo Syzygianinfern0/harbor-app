@@ -1,0 +1,46 @@
+/* Plan-aware usage: account cards, limit meters, the chat plan chip and the tab warning ring. */
+:root{--limit-track:#2a303a;--limit-fill:#9be1c4;--limit-warn:#e8c282;--limit-warn-bg:#3a2f1f80;--limit-warn-border:#5a4a30;--limit-danger:#e79c88;--limit-danger-bg:#3a242080;--limit-danger-border:#594038}
+.sidebar-cost .warn{color:var(--limit-warn)}.sidebar-cost .danger{color:var(--limit-danger)}
+.sidebar-cost-collapsed.warn{color:var(--limit-warn)}.sidebar-cost-collapsed.danger{color:var(--limit-danger)}
+.account-list{display:flex;flex-direction:column}
+.account-card{padding:12px 0;border-top:1px solid rgba(128,128,128,.16)}
+.account-list .account-card:first-child{border-top:0;padding-top:2px}
+.account-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:10px 0 4px}
+.account-cards .account-card{border:1px solid var(--border);border-radius:10px;padding:14px;background:#1a1e25}
+.account-cards .account-card.warn{border-color:var(--limit-warn-border)}.account-cards .account-card.danger{border-color:var(--limit-danger-border)}
+.account-head{display:flex;align-items:center;gap:8px;min-width:0}
+.account-head strong{font-size:12px;font-weight:600;white-space:nowrap}
+.account-hosts{margin-left:auto;font-size:10px;color:var(--muted);text-align:right;overflow-wrap:anywhere}
+.account-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;flex-shrink:0;background:#ffffff0d;color:#dce1e9}
+.account-badge.claude{background:#d9775722;color:#e7a184}.account-badge.codex{background:#ffffff12;color:#e6e9ee}
+.plan-tag{font-size:9px;font-weight:600;letter-spacing:.3px;border-radius:4px;padding:1px 5px;border:1px solid #3a414d;color:#b5bdc9;white-space:nowrap}
+.plan-tag.subscription{border-color:#2f5d4b;color:var(--mint);background:#23372e55}
+.plan-tag.unknown,.plan-tag.down{border-style:dashed;color:var(--muted)}
+.limit-meter{margin-top:10px}
+.limit-meter-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:11px;color:#b5bdc9}
+.limit-meter-top strong{font-variant-numeric:tabular-nums;font-weight:600;color:#dce1e9}
+.limit-meter-top .warn{color:var(--limit-warn)}.limit-meter-top .danger{color:var(--limit-danger)}
+.limit-track{height:6px;background:var(--limit-track);border-radius:4px;margin-top:5px;overflow:hidden;position:relative}
+.limit-track>i{position:absolute;left:0;top:0;bottom:0;background:var(--limit-fill);border-radius:4px}
+.limit-track.warn>i{background:var(--limit-warn)}.limit-track.danger>i{background:var(--limit-danger)}
+.limit-meter-sub{font-size:10px;color:var(--muted);margin-top:4px;display:flex;justify-content:space-between;gap:8px}
+.account-money{display:flex;align-items:baseline;gap:6px;margin-top:8px}
+.account-money .cost-amount{font-size:22px;font-weight:550}
+.account-money small{font-size:11px;color:var(--muted)}
+.account-row{padding:4px 0;font-size:11px;color:var(--muted)}
+.account-foot{font-size:10px;color:#77808d;margin-top:10px;display:flex;justify-content:space-between;gap:4px 10px;flex-wrap:wrap;line-height:1.5}
+.usage-callout{display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.5;border-radius:7px;padding:8px 10px;margin-top:10px;border:1px solid}
+.usage-callout svg{flex-shrink:0;margin-top:2px}
+.usage-callout.warn{color:var(--limit-warn);background:var(--limit-warn-bg);border-color:var(--limit-warn-border)}
+.usage-callout.danger{color:var(--limit-danger);background:var(--limit-danger-bg);border-color:var(--limit-danger-border)}
+.usage-callout.info{color:var(--muted);background:#ffffff06;border-color:var(--border)}
+.usage-subhead{font-size:9px;font-weight:650;letter-spacing:1.3px;color:var(--muted);margin:20px 0 8px;text-transform:uppercase}
+.chat-usage-bar .chat-plan{margin-left:auto;display:inline-flex;align-items:center}
+.chat-usage-bar .chat-plan .chat-cost{margin-left:0}
+.plan-chip{display:inline-flex;align-items:center;gap:6px;padding:1px 4px;border-radius:4px}
+.plan-chip.warn{color:var(--limit-warn)}.plan-chip.danger{color:var(--limit-danger)}
+.limit-ring{width:13px;height:13px;flex-shrink:0;margin-left:3px}
+.limit-ring circle{fill:none;stroke-width:3}
+.limit-ring .bg{stroke:var(--limit-track)}
+.limit-ring .fg{stroke:var(--limit-fill);stroke-linecap:round}
+.limit-ring.warn .fg{stroke:var(--limit-warn)}.limit-ring.danger .fg{stroke:var(--limit-danger)}

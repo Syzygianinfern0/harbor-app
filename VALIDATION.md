@@ -63,6 +63,8 @@ Changes to `src/desktop/appUpdater*.ts`, `scripts/update-manifest.mjs`, packagin
 | --- | --- |
 | `HARBOR_DATA_DIR` | Profile directory instead of `~/Library/Application Support/Harbor`. |
 | `HARBOR_TMUX_SOCKET` | tmux socket name instead of `harbor` (`tmux -L <name>`). |
+| `HARBOR_USAGE_FIXTURE` | Serve fake usage, plans and chat costs from this JSON file (`npm run dev:sandbox` uses `tests/fixtures/usage-mixed.json`). |
+| `HARBOR_LIVE_USAGE` | `1` lets a `HARBOR_DATA_DIR` profile read real usage; without it, test and sandbox profiles show none. |
 | `HARBOR_TEST_APP` | Run the UI specs against a packaged app binary instead of the dev build. |
 | `HARBOR_TEST_AGENTS` | `1` enables real Codex/Claude tests. |
 | `HARBOR_TEST_SSH` | SSH alias for remote tests. |
