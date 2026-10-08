@@ -31,7 +31,7 @@ export function DeleteProjectDialog({project,running,onClose,onHide,onDelete}:{p
    <li>Saved Codex and Claude conversations are kept. Add the folder as a project again to bring them back.</li>
    {running.length?<li className="attention-text">{running.length} running {running.length===1?'chat keeps':'chats keep'} running in tmux: {running.map(s=>s.name).join(', ')}. Open tabs stay open, but these chats leave the sidebar. Close them first if you want to stop them.</li>:<li>No chats in this project are running, and no tmux session is closed.</li>}
   </ul>
-  <p className="delete-project-hint">To just get it out of the way, hide it instead. Hidden projects come back from the sidebar or Preferences → Projects.</p>
+  <p className="delete-project-hint">To just get it out of the way, hide it instead. Hidden projects come back from the sidebar or Settings → Projects.</p>
   {error&&<p role="alert" className="form-error">{error}</p>}
   <div className="modal-footer"><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className="secondary-button" disabled={busy} onClick={()=>void act(onHide)}>Hide instead</button><button className="primary-button danger-button" disabled={busy}>{busy?<LoaderCircle size={15} className="spin"/>:<Trash2 size={15}/>}Delete project</button></div>
  </form></div>;
