@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { ArrowUpCircle, Check, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { AppUpdateState, UpdateChannel } from '../shared/types';
 
+/** Shown next to every restart-to-update action: installing only detaches from tmux, and tabs and splits are restored on relaunch. */
+export const UPDATE_SAFE_NOTE = 'Safe to update now: your chats keep running in tmux, and your tabs and splits reopen where you left them.';
+
 export function useAppUpdate() {
   const [state, setState] = useState<AppUpdateState>();
   useEffect(() => {
@@ -17,7 +20,7 @@ export function useAppUpdate() {
 export function SidebarUpdateButton({ state, collapsed }: { state?: AppUpdateState; collapsed?: boolean }) {
   if (state?.status !== 'ready' && state?.status !== 'installing') return null;
   const label = `Restart to update to Harbor ${state.latest}`;
-  return <button className={`sidebar-update ${collapsed ? 'sidebar-update-collapsed' : ''}`} aria-label={label} title={label} disabled={state.status === 'installing'} onClick={() => void window.harbor.installAppUpdate()}>
+  return <button className={`sidebar-update ${collapsed ? 'sidebar-update-collapsed' : ''}`} aria-label={label} title={`${label}. ${UPDATE_SAFE_NOTE}`} disabled={state.status === 'installing'} onClick={() => void window.harbor.installAppUpdate()}>
     {state.status === 'installing' ? <LoaderCircle className="spin" size={collapsed ? 18 : 14}/> : <ArrowUpCircle size={collapsed ? 18 : 14}/>}{!collapsed && <span>{state.status === 'installing' ? 'Restarting…' : 'Restart to update'}</span>}
   </button>;
 }
@@ -44,6 +47,7 @@ export function HarborUpdatePanel({ channel, onChannel }: { channel: UpdateChann
           : state.status !== 'disabled' && <button className="secondary-button" disabled={busy} onClick={() => void check()}>{busy ? <LoaderCircle className="spin" size={14}/> : state.status === 'current' ? <Check size={14}/> : <RefreshCw size={14}/>}Check for Harbor updates</button>}
       </div>
     </div>
+    {state.status === 'ready' && <p className="update-safe" role="note">{UPDATE_SAFE_NOTE}</p>}
     {state.status !== 'disabled' && <div className="update-channel"><label>Update channel<select aria-label="Update channel" value={channel} onChange={event => onChannel(event.target.value as UpdateChannel)}><option value="stable">Stable</option><option value="beta">Beta</option></select><small>{channel === 'beta' ? 'Get each release as soon as it is published, before it reaches everyone. Switching back to Stable keeps your version until Stable catches up.' : 'Get releases once they are marked ready for everyone.'}</small></label></div>}
     {state.status !== 'disabled' && <p className="preferences-note">Updates come from GitHub releases and are signature-checked before they install. Restarting reopens Harbor; your chats keep running in tmux and reattach.{state.checkedAt ? ` Last checked ${new Date(state.checkedAt).toLocaleString()}.` : ''}</p>}
   </div>;
