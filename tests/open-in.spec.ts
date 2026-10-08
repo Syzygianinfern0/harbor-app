@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-test('Open in menus offer installed apps, hide Finder for SSH, and follow Preferences → Open in',async()=>{
+test('Open in menus offer installed apps, hide Finder for SSH, and follow Settings → Open in…',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'harbor-open-in-'));
   const createdAt=new Date().toISOString();
   const projects=[{id:'local-project',name:'Local project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt},{id:'remote-project',name:'Remote project',cwd:'/srv/app',connection:{target:'devbox'},hostLabel:'devbox',createdAt}];
@@ -13,7 +13,7 @@ test('Open in menus offer installed apps, hide Finder for SSH, and follow Prefer
   const app=await electron.launch({args:['.'],env:{...process.env,HARBOR_DATA_DIR:dir,HARBOR_TMUX_SOCKET:`harbor-open-in-${process.pid}`}});
   try {
     let page=await app.firstWindow();
-    await expect(page.getByRole('button',{name:'Preferences',exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeVisible();
     // Never launch real apps: record requests instead, and pretend Zed is not installed.
     await app.evaluate(({ipcMain})=>{
       (globalThis as any).opened=[];
@@ -44,9 +44,9 @@ test('Open in menus offer installed apps, hide Finder for SSH, and follow Prefer
     await expect(menu.getByRole('menuitem',{name:'Open in Finder'})).toHaveCount(0);
     await page.keyboard.press('Escape');
 
-    // Preferences: hide Finder, make VS Code the default, add a custom command. Zed is offered but not installed.
-    await page.getByRole('button',{name:'Preferences',exact:true}).click();
-    await page.getByRole('button',{name:'Open in',exact:true}).click();
+    // Settings: hide Finder, make VS Code the default, add a custom command. Zed is offered but not installed.
+    await page.getByRole('button',{name:'Settings',exact:true}).click();
+    await page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Open in…',exact:true}).click();
     await expect(page.getByLabel('Show Zed')).toBeDisabled();
     await expect(page.locator('.open-in-app',{hasText:'Zed'})).toContainText('Not installed');
     await expect(page.getByLabel('Use Finder by default')).toBeChecked();
@@ -59,10 +59,9 @@ test('Open in menus offer installed apps, hide Finder for SSH, and follow Prefer
     await page.getByLabel('Custom command',{exact:true}).fill('open -a "Sublime Text" "$HARBOR_DIR"');
     await expect(page.getByLabel('Show Custom command')).toBeEnabled();
     await expect(page.getByLabel('Show Custom command')).toBeChecked();
-    await page.locator('.preferences-modal').screenshot({path:'test-results/screenshots/open-in-preferences.png'});
-    await page.getByRole('button',{name:'Save preferences'}).click();
-    await expect(page.getByRole('dialog',{name:'Preferences'})).toHaveCount(0);
-    expect((await page.evaluate(()=>window.harbor.snapshot())).preferences.openIn).toEqual({hidden:['finder'],defaultApp:'vscode',customLabel:'Sublime',customCommand:'open -a "Sublime Text" "$HARBOR_DIR"'});
+    await page.locator('.settings-view').screenshot({path:'test-results/screenshots/open-in-preferences.png'});
+    // Changes save as you go.
+    await expect.poll(async()=>(await page.evaluate(()=>window.harbor.snapshot())).preferences.openIn).toEqual({hidden:['finder'],defaultApp:'vscode',customLabel:'Sublime',customCommand:'open -a "Sublime Text" "$HARBOR_DIR"'});
 
     // A chat: one-click toolbar button and ⌘⇧O open its folder in the default app; its menu lists the custom command.
     await page.getByRole('button',{name:'Local chat Closed',exact:true}).first().click();

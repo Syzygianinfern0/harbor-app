@@ -54,6 +54,8 @@ export interface AppUpdateState { current: string; status: 'disabled' | 'idle' |
 export interface HarborApi {
   snapshot(): Promise<Snapshot>;
   savePreferences(preferences: Preferences): Promise<void>;
+  /** Saves only these sections, merged with the latest saved preferences. */
+  updatePreferences(patch: Partial<Preferences>): Promise<void>;
   sshCandidates(): Promise<Host[]>;
   resolveSsh(alias: string): Promise<SshConnection>;
   create(input: CreateSession): Promise<Session>;

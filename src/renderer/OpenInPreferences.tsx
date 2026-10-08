@@ -1,7 +1,7 @@
 import { availableApps, openApps, type OpenAppId, type OpenInPreferences as Value } from '../shared/openIn';
 import { AppIcon, useInstalledApps } from './OpenIn';
 
-/** Preferences → Open in: which apps the Open in menus offer, the one-click default, and a custom command.
+/** Settings → Open in…: which apps the Open in menus offer, the one-click default, and a custom command.
  *  Self-contained (value in, value out) so it can move into a settings tab unchanged. */
 export function OpenInPreferences({ value, onChange }: { value: Value; onChange: (value: Value) => void }) {
   const installed = useInstalledApps(true);
@@ -13,7 +13,7 @@ export function OpenInPreferences({ value, onChange }: { value: Value; onChange:
   return <div className="terminal-preferences open-in-preferences">
     <h3>Open folders in your own tools.</h3>
     <p>Choose the apps listed under <strong>Open in</strong> when you right-click a project or chat. The default opens with one click from the chat toolbar, or with ⌘⇧O.</p>
-    <div className="open-in-apps" role="group" aria-label="Open in apps">
+    <div className="open-in-apps" role="group" aria-label="Open in apps" data-setting="apps">
       {openApps.map(app => {
         const missing = !available.includes(app.id);
         return <div key={app.id} className={`open-in-app ${missing ? 'missing' : ''}`}>
@@ -22,7 +22,7 @@ export function OpenInPreferences({ value, onChange }: { value: Value; onChange:
         </div>;
       })}
     </div>
-    <div className="form-row open-in-custom">
+    <div className="form-row open-in-custom" data-setting="custom">
       <label>Custom name<input aria-label="Custom command name" value={value.customLabel} maxLength={40} placeholder="Custom command" onChange={event => onChange({ ...value, customLabel: event.target.value })} /></label>
       <label>Custom command<input aria-label="Custom command" value={value.customCommand} maxLength={2000} placeholder={'open -a "Sublime Text" "$HARBOR_DIR"'} spellCheck={false} onChange={event => onChange({ ...value, customCommand: event.target.value })} /></label>
     </div>

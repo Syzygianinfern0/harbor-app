@@ -120,8 +120,8 @@ test('drag cues mark exactly where tabs, groups, projects and panes land, and cl
     // A later drag starts clean: no leftover preview from the last one.
     await fire(tab('b1'),'dragstart');await expect(target.locator('.pane-drop-zone').first()).toBeVisible();await expect(page.locator('.pane-drop-preview,.pane-drop-zone.over')).toHaveCount(0);await fire(tab('b1'),'dragend');
 
-    // Preferences project list: same line rules as the sidebar.
-    await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Projects',exact:true}).click();
+    // Settings project list: same line rules as the sidebar.
+    await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Projects',exact:true}).click();
     const rows=page.locator('.managed-project');await expect(rows).toHaveCount(3);
     await fire(rows.nth(2),'dragstart');expect(await fire(rows.nth(2),'dragover','top')).toBe(false);expect(await fire(rows.nth(1),'dragover','bottom')).toBe(false);
     await expect(page.locator('.managed-project.drop-before,.managed-project.drop-after')).toHaveCount(0);

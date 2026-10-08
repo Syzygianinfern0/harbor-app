@@ -101,6 +101,7 @@ export class HarborEngine extends EventEmitter {
     return { agentUpdates: this.updates.snapshot(), projects: structuredClone(this.projects), sessions: structuredClone(this.sessions), hosts: preferences.hosts.filter(host => host.enabled), preferences, home: homedir(), dataDir: this.dataDir };
   }
   async savePreferences(preferences: Preferences) { await this.preferencesStore.save(preferences); this.changed(); }
+  async updatePreferences(patch: Partial<Preferences>) { await this.preferencesStore.update(patch); this.changed(); }
   async sshCandidates() { return (await discoverHosts()).filter(host => host.source !== 'local'); }
   async resolveSsh(alias: string): Promise<SshConnection> {
     validateHost(alias);
