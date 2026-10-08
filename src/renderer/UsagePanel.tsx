@@ -119,12 +119,15 @@ export function SidebarCost({state,onDetails,collapsed=false}:{state:UsageState;
   return <><button ref={button} className={`sidebar-cost ${collapsed?'sidebar-cost-collapsed':''} ${footer.tone}`} aria-label="Usage and limits" aria-expanded={open} onClick={()=>setOpen(v=>!v)} title={footer.title}><Icon size={13}/>{!collapsed&&<><span>{footer.label}</span><span className="sidebar-cost-value">{footer.value}</span><ChevronRight size={12}/></>}</button>{open&&createPortal(<div ref={popup} tabIndex={-1} className="cost-popover usage-popover" role="dialog" aria-label="Usage" style={{left:Math.min(rect?.left??16,Math.max(8,window.innerWidth-396)),bottom:Math.max(12,window.innerHeight-(rect?.top??window.innerHeight)+8)}}><header><strong>Usage</strong><button className="icon-button" aria-label="Close usage" onClick={()=>{setOpen(false);button.current?.focus();}}><X size={15}/></button></header>{!state.hosts&&!state.limits&&<p role="status">{state.error||'Reading saved usage…'}</p>}{state.limits?.disabled&&!state.accounts.length&&<p className="cost-notes">{state.limits.disabled}</p>}<div className="account-list">{state.accounts.map(account=><AccountCard key={account.key} account={account} now={now} compact/>)}</div><div className="cost-notes"><p>Limits are per account, so a sign-in shared across hosts shows once. $ appears only for API-key accounts; ≈ marks estimates at model API rates.</p></div><button className="cost-details-button" onClick={()=>{setOpen(false);onDetails();}}>View detailed usage<ChevronRight size={14}/></button></div>,document.body)}</>;
 }
 
-// Collapsed by default so the plan cards come first; each viewer's choice is remembered.
-const COST_OPEN_KEY='harbor.usage.tokenCostOpen';
-const savedCostOpen=()=>{try{return localStorage.getItem(COST_OPEN_KEY)==='1';}catch{return false;}};
+// Collapsed by default so the plan cards come first; defaults to last week by day. Each viewer's choices are remembered.
+const COST_OPEN_KEY='harbor.usage.tokenCostOpen',COST_PERIOD_KEY='harbor.usage.tokenCostPeriod',COST_GROUP_KEY='harbor.usage.tokenCostGroup';
+const savedChoice=<T extends string>(key:string,allowed:readonly T[],fallback:T):T=>{try{const value=localStorage.getItem(key) as T|null;return value&&allowed.includes(value)?value:fallback;}catch{return fallback;}};
+const saveChoice=(key:string,value:string)=>{try{localStorage.setItem(key,value);}catch{/* per-viewer convenience only */}};
+const savedCostOpen=()=>savedChoice(COST_OPEN_KEY,['0','1'],'0')==='1';
 export function UsagePanel({state}:{state:UsageState}) {
-  const [period,setPeriod]=useState<UsagePeriod>('day');const [costPeriod,setCostPeriod]=useState<UsagePeriod>('day');const [group,setGroup]=useState('host');const data=summary(state.hosts,costPeriod);const now=useNow();
-  const [open,setOpenState]=useState(savedCostOpen);const toggle=()=>{const next=!open;setOpenState(next);try{localStorage.setItem(COST_OPEN_KEY,next?'1':'0');}catch{/* per-viewer convenience only */}};
+  const [period,setPeriod]=useState<UsagePeriod>('day');const [costPeriod,setCostPeriodState]=useState<UsagePeriod>(()=>savedChoice(COST_PERIOD_KEY,['day','week','month'],'week'));const [group,setGroupState]=useState(()=>savedChoice(COST_GROUP_KEY,['host','model','day'],'day'));
+  const setCostPeriod=(value:UsagePeriod)=>{setCostPeriodState(value);saveChoice(COST_PERIOD_KEY,value);};const setGroup=(value:string)=>{setGroupState(value);saveChoice(COST_GROUP_KEY,value);};const data=summary(state.hosts,costPeriod);const now=useNow();
+  const [open,setOpenState]=useState(savedCostOpen);const toggle=()=>{const next=!open;setOpenState(next);saveChoice(COST_OPEN_KEY,next?'1':'0');};
   const groups=new Map<string,Row[]>();for(const row of group==='day'?data.days:data.rows){const key=group==='host'?row.hostId:group==='model'?row.model:row.day!;groups.set(key,[...(groups.get(key)??[]),row]);}
   const sorted=[...groups].sort((a,b)=>group==='day'?b[0].localeCompare(a[0]):sum(b[1]).usd-sum(a[1]).usd);
   const subscriptions=state.accounts.filter(a=>a.kind==='subscription');const paying=state.accounts.filter(a=>a.kind!=='subscription');

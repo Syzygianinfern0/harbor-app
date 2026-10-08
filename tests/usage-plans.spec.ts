@@ -150,12 +150,13 @@ test('token cost at API rates folds away under the plan cards and shows tokens p
   try {
     await footer(page).click(); await page.getByRole('button', { name: 'View detailed usage' }).click();
     const head = page.locator('.cost-disclosure-head');
-    await expect(head).toHaveAttribute('aria-expanded', 'false'); await expect(head).toContainText('≈ $3.92'); await expect(head).toContainText('248k tokens');
+    await expect(head).toHaveAttribute('aria-expanded', 'false'); await expect(head).toContainText('≈ $18.80 · 1.2M tokens · last week');
     await shot(page, 'usage-cost-collapsed');
-    await head.click(); await page.getByLabel('Group usage by').selectOption('day');
-    await expect(page.locator('.cost-total')).toContainText('248k tokens · 239k input');
-    await expect(page.locator('.cost-group .cost-tokens').first()).toHaveText('248k tokens');
-    await expect(page.locator('.cost-model .cost-tokens')).toHaveCount(3);
+    // Defaults for a new viewer: last week, grouped by day, host and model.
+    await head.click(); await expect(page.getByRole('button', { name: 'Last week', exact: true }).last()).toHaveAttribute('aria-pressed', 'true'); await expect(page.getByLabel('Group usage by')).toHaveValue('day');
+    await expect(page.locator('.cost-total')).toContainText('1.2M tokens · 1.1M input · 940k cached · 43k output · 2k reasoning');
+    await expect(page.locator('.cost-group').first()).toContainText('2026-01-15'); await expect(page.locator('.cost-group .cost-tokens').first()).toHaveText('476k tokens');
+    await expect(page.locator('.cost-model .cost-tokens')).toHaveCount(12);
     await page.locator('.cost-total').scrollIntoViewIfNeeded(); await shot(page, 'usage-cost-expanded');
   } finally { await app.close(); }
 });

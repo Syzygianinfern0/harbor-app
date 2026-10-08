@@ -186,19 +186,22 @@ test('cost views show compact sidebar, rolling host and model totals, and lifeti
   await popover.getByRole('button',{name:'View detailed usage'}).click();
   // Token cost at API rates starts collapsed, with its total still in view.
   const disclosure=page.locator('.cost-disclosure-head');await expect(disclosure).toHaveAttribute('aria-expanded','false');await expect(page.locator('.cost-total')).toHaveCount(0);
-  await expect(disclosure).toContainText('Token cost at API rates');await expect(disclosure).toContainText('$24.68');await expect(disclosure).toContainText('2.5M tokens');await expect(disclosure).toContainText('last 24 hours');
+  await expect(disclosure).toContainText('Token cost at API rates');await expect(disclosure).toContainText('$100.00 · 2.5M tokens · last week');
   await page.screenshot({path:'test-results/screenshots/18-usage-collapsed.png'});
   await disclosure.focus();await page.keyboard.press('Enter');await expect(disclosure).toHaveAttribute('aria-expanded','true');
-  await expect(page.locator('.cost-total')).toContainText('$24.68');await expect(page.locator('.cost-total')).toContainText('partial coverage');await expect(page.locator('.cost-total')).toContainText('2.5M tokens · 2.4M input · 1.8M cached · 68k output · 24k reasoning');
-  await expect(page.locator('.cost-group').first().locator('.cost-tokens')).toHaveText('1.2M tokens');
+  // A new viewer starts on last week, grouped by day, host and model.
+  await expect(page.locator('.cost-total')).toContainText('$100.00');await expect(page.locator('.usage-panel')).toContainText('Rolling 7 days');await expect(page.getByLabel('Group usage by')).toHaveValue('day');await expect(page.locator('.cost-total')).toContainText('partial coverage');await expect(page.locator('.cost-total')).toContainText('2.5M tokens · 2.4M input · 1.8M cached · 68k output · 24k reasoning');
+  await expect(page.locator('.cost-group').first()).toContainText('2026-09-17');await expect(page.locator('.cost-group').first().locator('.cost-tokens')).toHaveText('2.5M tokens');
   await expect(page.locator('.cost-model').first().locator('.cost-tokens')).toHaveAttribute('title','1,234,000 tokens · Input 1,200,000 (cache read 900,000) · Output 34,000 (reasoning 12,000)');
   await page.getByRole('button',{name:'Last month',exact:true}).last().click();await expect(page.locator('.cost-total')).toContainText('$200.00');await expect(page.locator('.usage-panel')).toContainText('Rolling 30 days');await expect(disclosure).toContainText('last month');
   await page.getByLabel('Group usage by').selectOption('model');await expect(page.locator('.cost-group')).toHaveCount(1);await expect(page.locator('.cost-group')).toContainText('gpt-6-astra');
   await page.getByLabel('Group usage by').selectOption('day');await expect(page.locator('.cost-group')).toContainText('2026-09-17');await expect(page.locator('.cost-unavailable')).toContainText('SSH connection timed out');
   const bounds=await page.getByRole('dialog',{name:'Preferences',exact:true}).boundingBox();const viewport=page.viewportSize()??await page.evaluate(()=>({width:innerWidth,height:innerHeight}));expect(bounds!.height).toBeLessThan(viewport.height);expect(bounds!.width).toBeLessThan(viewport.width);
   await page.screenshot({path:'test-results/screenshots/18-usage.png'});
-  // The open state is remembered for this viewer; Space toggles it like a click.
+  // The open state, range and grouping are remembered for this viewer; Space toggles like a click.
+  await page.getByLabel('Group usage by').selectOption('host');
   await page.reload();await sidebar.click();await page.getByRole('button',{name:'View detailed usage'}).click();await expect(disclosure).toHaveAttribute('aria-expanded','true');
+  await expect(disclosure).toContainText('last month');await expect(page.getByLabel('Group usage by')).toHaveValue('host');
   await disclosure.focus();await page.keyboard.press('Space');await expect(disclosure).toHaveAttribute('aria-expanded','false');await expect(page.locator('.cost-table')).toHaveCount(0);
  }finally{await app.close();}
 });
