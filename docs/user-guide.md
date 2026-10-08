@@ -48,7 +48,7 @@ Right-click a project or chat to open its folder in another app: the menu leads 
 - With many tabs, inactive tabs shrink first; then the tab strip scrolls horizontally (trackpad or mouse wheel) with its scrollbar hidden. The active tab stays in view.
 - **Control-Tab / Control-Shift-Tab:** next / previous tab, with wraparound. **⌘ Shift-[ / ⌘ Shift-]:** previous / next tab.
 - **⌘ W:** close the active chat, confirming before stopping a live session (or close Settings when it is showing).
-- **⌘ ,:** open Settings, or go to it if it's already open. While Settings is showing, **⌘ W** closes it (no confirmation), **⌘ F** focuses its search, and **Control-Tab** reaches it after the last chat; **⌘ 1–9** only pick chats. **Settings → Shortcuts** lists every shortcut.
+- **⌘ ,:** open Settings, or go to it if it's already open. While Settings is showing, **⌘ W** closes it (no confirmation) and **⌘ F** focuses its search. It is a tab like any other for **⌘ 1–9** and **Control-Tab**. **Settings → Shortcuts** lists every shortcut.
 - **⌘ C / ⌘ V:** terminal copy and paste.
 - **Control-letter shortcuts** pass through to the terminal, including **Ctrl-T** for Codex's transcript, **Ctrl-R** for shell history search, and **Ctrl-W** for word deletion. **Control-Tab / Control-Shift-Tab** remain Harbor tab navigation.
 
@@ -88,7 +88,7 @@ Groups, folding, colors and the switches persist across restarts alongside tab o
 
 ## Settings
 
-Settings opens as a tab at the right end of the tab bar (**⌘ ,**, or **Settings** at the bottom of the sidebar). There is only ever one: asking again switches to it and flashes it. Your chats keep running and stay attached behind it, and the sidebar keeps showing their status. Click a chat tab (or the chat in the sidebar) to go back; close the tab with its **×** or **⌘ W**. If Settings was open when you quit, its tab comes back on the next launch, behind the chat you were in.
+Settings opens as a tab (**⌘ ,**, or **Settings** at the bottom of the sidebar). It behaves like a chat tab: it opens at the end of the tab bar, you can drag it anywhere among your tabs, **⌘ 1–9** and **Control-Tab** include it, and its **×**, a middle-click or **⌘ W** close it (closing it shows the tab next to it, as closing a chat does). It never joins a tab group or a split: dropped on a group, it lands beside the whole group. There is only ever one: asking again switches to it and flashes it. Your chats keep running and stay attached behind it, and the sidebar keeps showing their status. If Settings was open when you quit, its tab comes back in the same place on the next launch, showing again if it was the tab in front.
 
 The list on the left has a category per page, with one entry per machine under **Remotes**, and a search box (**⌘ F**) that finds a setting by name or keyword (try "ssh", "beta" or "sound") across every page and machine; pick a result to jump to it. The page column keeps the same size whatever the category. In a narrow window the categories move to a row above the page.
 
@@ -98,7 +98,7 @@ The list on the left has a category per page, with one entry per machine under *
 
 **Status icons:** shows the actual chat status icons with a short explanation of each.
 
-**Remotes:** only This Mac is present initially. Import selected SSH aliases or add remotes manually; a remote added by hand is kept as a draft until you save it. Imported hosts remain editable: display name, address, username, port, identity file, and default folder. **Test connection** sits at the top of each remote's page; it checks SSH and tmux and reports whether Codex and Claude Code are installed there. SSH config is never edited. Host profile edits apply to new projects; existing projects and chats retain their connection settings.
+**Remotes:** only This Mac is present initially. **Import from SSH config** lists the aliases in `~/.ssh/config` (and its `Include` files) as rows to tick, with a search box and **Select all**; aliases you already added are marked. Or add remotes manually; a remote added by hand is kept as a draft until you save it. Imported hosts remain editable: display name, address, username, port, identity file, and default folder. **Test connection** sits at the top of each remote's page; it checks SSH and tmux and reports whether Codex and Claude Code are installed there. SSH config is never edited. Host profile edits apply to new projects; existing projects and chats retain their connection settings.
 
 **Terminal colors:** new launches clear inherited color-disabling variables and advertise full color. Colors and ⌘ Backspace are tested inside the actual Codex and Claude interfaces.
 

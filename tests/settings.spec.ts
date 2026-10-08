@@ -1,4 +1,4 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { test, expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,16 +14,23 @@ async function fixture(chats=true) {
   const projects=PROJECTS.map(([id,name])=>({id,name,cwd:dir,hostId:'local',hostLabel:'This Mac',connection:'local',createdAt}));
   const sessions=chats?CHATS.map(([id,projectId,name],i)=>({id,tmuxName:`harbor-bbbb${i}`,paneId:`%${i}`,name,host:'local',cwd:dir,launcher:'codex',group:'',tags:[],pinned:false,archived:false,createdAt,updatedAt:new Date(Date.now()-i*1000).toISOString(),status:'closed',projectId,hasMessages:true})):[];
   await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects,sessions}));
-  return {dir,launch:()=>electron.launch({executablePath:process.env.HARBOR_TEST_APP,args:process.env.HARBOR_TEST_APP?[]:['.'],env:{...process.env,HARBOR_DATA_DIR:dir,HARBOR_TMUX_SOCKET:socket}})};
+  return {dir,launch:(env:Record<string,string>={})=>electron.launch({executablePath:process.env.HARBOR_TEST_APP,args:process.env.HARBOR_TEST_APP?[]:['.'],env:{...process.env,HARBOR_DATA_DIR:dir,HARBOR_TMUX_SOCKET:socket,...env}})};
 }
 const openChat=(page:Page,name:string)=>page.locator('.sidebar .chat-row',{hasText:name}).click();
-const settingsTab=(page:Page)=>page.locator('[data-page-tab="settings"]');
-const activeTab=(page:Page)=>page.locator('.session-toolbar .tab.active').evaluateAll(tabs=>tabs.map(t=>(t as HTMLElement).dataset.tabId??(t as HTMLElement).dataset.pageTab));
+const settingsTab=(page:Page)=>page.locator('.session-toolbar [data-tab-id="settings"]');
+const activeTab=(page:Page)=>page.locator('.session-toolbar .tab.active').evaluateAll(tabs=>tabs.map(t=>(t as HTMLElement).dataset.tabId));
+const tabOrder=(page:Page)=>page.locator('.session-toolbar [data-tab-id]').evaluateAll(e=>e.map(t=>(t as HTMLElement).dataset.tabId));
+/** Synthetic drag event at the left or right edge of an element, sharing one DataTransfer per drag. */
+const fire=(target:Locator,type:string,spot:'left'|'right'|'middle'='middle')=>target.evaluate((el,[type,spot])=>{
+  const r=el.getBoundingClientRect(),w=window as any;if(type==='dragstart')w.__transfer=new DataTransfer();
+  const x=spot==='left'?r.left+3:spot==='right'?r.right-3:r.left+r.width/2;
+  return !el.dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:w.__transfer,clientX:x,clientY:r.top+r.height/2}));
+},[type,spot] as const);
 const prefs=(page:Page)=>page.evaluate(()=>window.harbor.snapshot().then(s=>s.preferences));
 const nav=(page:Page,name:string)=>page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name,exact:true});
 const quiet=async(app:ElectronApplication)=>{await (await app.firstWindow()).getByRole('button',{name:'Settings',exact:true}).waitFor();await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('harbor:checkReachability');ipcMain.handle('harbor:checkReachability',()=>({}));ipcMain.removeHandler('harbor:importHistory');ipcMain.handle('harbor:importHistory',()=>{});ipcMain.removeHandler('harbor:usage');ipcMain.handle('harbor:usage',()=>[]);});};
 
-test('Settings is one tab beside the chats: ⌘, focuses it, ⌘W closes only it, Control-Tab stops there last',async()=>{
+test('Settings is a regular tab: it opens at the end, ⌘, focuses it, it reorders, ⌘1–9 and Control-Tab include it, ⌘W closes only it',async()=>{
   const data=await fixture();let app=await data.launch();let page=await app.firstWindow();
   try {
     await quiet(app);await mkdir('test-results/screenshots',{recursive:true});
@@ -39,29 +46,39 @@ test('Settings is one tab beside the chats: ⌘, focuses it, ⌘W closes only it
     // Asking again focuses the same tab, with a pulse; the sidebar button does too.
     await page.keyboard.press('Meta+,');await expect(settingsTab(page)).toHaveAttribute('data-pulse','1');
     await page.getByRole('button',{name:'Settings',exact:true}).click();await expect(settingsTab(page)).toHaveCount(1);
-    // The chat tabs stay as they were: ⌘1–9 pick chats only.
-    await expect(page.locator('.session-toolbar [data-tab-id]')).toHaveCount(2);
+    // It opened at the end, like a new chat tab, and it is ungrouped.
+    expect(await tabOrder(page)).toEqual(['a1','b1','settings']);await expect(settingsTab(page)).not.toHaveClass(/grouped/);
+    // ⌘1–9 and Control-Tab treat it like any tab.
     await page.keyboard.press('Meta+1');expect(await activeTab(page)).toEqual(['a1']);await expect(page.locator('.settings-view')).toBeHidden();await expect(settingsTab(page)).toHaveCount(1);
-    await page.keyboard.press('Meta+9');expect(await activeTab(page)).toEqual(['b1']);
-    // Control-Tab: last chat → Settings → first chat, and back.
-    await page.keyboard.press('Control+Tab');expect(await activeTab(page)).toEqual(['settings']);
+    await page.keyboard.press('Meta+9');expect(await activeTab(page)).toEqual(['settings']);await expect(page.locator('.settings-view')).toBeVisible();
     await page.keyboard.press('Control+Tab');expect(await activeTab(page)).toEqual(['a1']);
     await page.keyboard.press('Control+Shift+Tab');expect(await activeTab(page)).toEqual(['settings']);
     await page.keyboard.press('Meta+Shift+[');expect(await activeTab(page)).toEqual(['b1']);
-    // The tab comes back after a restart, behind the chat you were in.
+    // Dragged onto a group's tab, it lands beside the whole group and stays out of it.
+    const chip=page.locator('.session-toolbar [data-group-key="p:app"]');
+    await fire(settingsTab(page),'dragstart');expect(await fire(page.locator('[data-tab-id="a1"]'),'dragover','left')).toBe(true);
+    await expect(page.locator('.tab-drop-caret')).toBeVisible();await fire(page.locator('[data-tab-id="a1"]'),'drop','left');await fire(settingsTab(page),'dragend');
+    expect(await tabOrder(page)).toEqual(['settings','a1','b1']);
+    expect(await settingsTab(page).evaluate(e=>e.compareDocumentPosition(document.querySelector('[data-group-key="p:app"]')!)&Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
+    // It cannot be dropped into a group chip or onto a chat pane.
+    await fire(settingsTab(page),'dragstart');expect(await fire(chip,'dragover','middle')).toBe(false);await expect(page.locator('.pane-drop-zone')).toHaveCount(0);await fire(settingsTab(page),'dragend');
+    await page.waitForTimeout(500);await page.screenshot({path:'test-results/screenshots/settings-tab-moved.png'});
+    // Its place comes back after a restart, behind the chat you were in.
     await app.close();app=await data.launch();page=await app.firstWindow();await quiet(app);
-    await expect(settingsTab(page)).toHaveCount(1);expect(await activeTab(page)).toEqual(['b1']);
+    await expect(settingsTab(page)).toHaveCount(1);expect(await activeTab(page)).toEqual(['b1']);expect(await tabOrder(page)).toEqual(['settings','a1','b1']);
     // Clicking it shows it; ⌘W then closes Settings alone, without asking, and the chat comes back.
     await settingsTab(page).getByRole('button',{name:'Settings tab'}).click();expect(await activeTab(page)).toEqual(['settings']);
     await app.evaluate(({dialog})=>{(globalThis as any).asked=0;dialog.showMessageBox=(async()=>{(globalThis as any).asked++;return {response:0,checkboxChecked:false};}) as any;});
     await page.keyboard.press('Meta+w');
-    await expect(settingsTab(page)).toHaveCount(0);await expect(page.locator('.session-toolbar [data-tab-id]')).toHaveCount(2);expect(await activeTab(page)).toEqual(['b1']);
+    await expect(settingsTab(page)).toHaveCount(0);expect(await tabOrder(page)).toEqual(['a1','b1']);expect(await activeTab(page)).toEqual(['a1']);
     expect(await app.evaluate(()=>(globalThis as any).asked)).toBe(0);
     // Links into Settings open the right page: Add project → Manage remotes, and the menu's ⌘, path.
     await page.getByRole('button',{name:'Add project',exact:true}).click();await page.getByLabel('Host',{exact:true}).selectOption('manage');
     await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('.settings-page')).toHaveAttribute('data-category','remotes');
     await settingsTab(page).getByRole('button',{name:'Close Settings'}).click();await expect(settingsTab(page)).toHaveCount(0);
     await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('harbor:preferences'));await expect(page.locator('.settings-page')).toHaveAttribute('data-category','remotes');
+    // Middle-click closes it, like a chat tab.
+    await settingsTab(page).click({button:'middle'});await expect(settingsTab(page)).toHaveCount(0);
   } finally {await app.close();await rm(data.dir,{recursive:true,force:true});}
 });
 
@@ -195,5 +212,44 @@ test('search finds settings across categories and remotes, and jumps to the sett
     await expect(page.locator('.settings-page')).toHaveAttribute('data-category','updates');
     await search.fill('nothing like this');await expect(page.locator('.settings-empty')).toBeVisible();
     await search.press('Escape');await expect(search).toHaveValue('');await expect(page.locator('.settings-view')).toBeVisible();
+  } finally {await app.close();await rm(data.dir,{recursive:true,force:true});}
+});
+
+test('importing from SSH config lists aliases as rows to pick, filter and import',async()=>{
+  const data=await fixture();
+  // A throwaway HOME whose ~/.ssh/config holds placeholder aliases; the real one is never read.
+  const home=path.join(data.dir,'home');await mkdir(path.join(home,'.ssh'),{recursive:true});
+  const aliases=['devbox','build-01','build-02','gpu-node','gpu-node-long-name.example.invalid','staging','bastion'];
+  await writeFile(path.join(home,'.ssh','config'),aliases.map(a=>`Host ${a}\n  HostName ${a}.example.invalid\n`).join('\n')+'Host *\n  ServerAliveInterval 30\n');
+  const app=await data.launch({HOME:home});const page=await app.firstWindow();
+  try {
+    await quiet(app);await mkdir('test-results/screenshots',{recursive:true});
+    await page.keyboard.press('Meta+,');await nav(page,'Remotes').click();
+    await page.getByRole('button',{name:'Import from SSH config'}).click();
+    const list=page.getByRole('group',{name:'SSH aliases'}),rows=list.locator('.import-option');
+    await expect(rows).toHaveCount(aliases.length);
+    // Rows, not one wrapped line: each alias sits on its own row, in a column or a tidy grid.
+    const boxes=await rows.evaluateAll(e=>e.map(r=>{const b=r.getBoundingClientRect();return {x:Math.round(b.x),y:Math.round(b.y),w:Math.round(b.width),h:Math.round(b.height)};}));
+    expect(new Set(boxes.map(b=>b.w)).size).toBe(1);expect(Math.min(...boxes.map(b=>b.h))).toBeGreaterThanOrEqual(28);expect(new Set(boxes.map(b=>b.x)).size).toBeLessThanOrEqual(3);
+    await page.screenshot({path:'test-results/screenshots/settings-ssh-import.png'});
+    // At the minimum window the grid drops to fewer columns and nothing scrolls sideways.
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(950,640));await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThanOrEqual(950);
+    expect(await page.locator('.settings-content').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+    await page.screenshot({path:'test-results/screenshots/settings-ssh-import-narrow.png'});
+    // Clicking the row's name ticks it; the count follows.
+    await rows.filter({hasText:'devbox'}).locator('span').click();await expect(page.getByRole('button',{name:'Import selected (1)'})).toBeEnabled();
+    await page.getByLabel('Search SSH aliases').fill('gpu');await expect(rows).toHaveCount(2);
+    await page.getByRole('button',{name:'Select all',exact:true}).click();await expect(page.getByRole('button',{name:'Import selected (3)'})).toBeEnabled();
+    await page.getByRole('button',{name:'Clear',exact:true}).click();await expect(page.getByRole('button',{name:'Import selected (1)'})).toBeEnabled();
+    await page.getByLabel('Search SSH aliases').fill('nothing');await expect(list).toContainText('No aliases match');
+    await page.getByLabel('Search SSH aliases').fill('');await rows.filter({hasText:'staging'}).click();
+    await page.getByRole('button',{name:'Import selected (2)'}).click();
+    await expect.poll(async()=>(await prefs(page)).hosts.filter(h=>h.source==='ssh-config').map(h=>h.connection?.target).sort()).toEqual(['devbox','staging']);
+    // The first imported remote's page opens; both are listed under Remotes.
+    await expect(page.locator('.host-editor')).toContainText('devbox');await nav(page,'Remotes').click();await expect(page.locator('.settings-row',{hasText:'staging'})).toBeVisible();
+    // Importing again marks what is already added.
+    await page.getByRole('button',{name:'Import from SSH config'}).click();
+    await expect(rows.filter({hasText:'devbox'})).toContainText('Added');await expect(rows.filter({hasText:'devbox'}).getByRole('checkbox')).toBeDisabled();
+    await page.getByRole('button',{name:'Select all',exact:true}).click();await expect(page.getByRole('button',{name:`Import selected (${aliases.length-2})`})).toBeEnabled();
   } finally {await app.close();await rm(data.dir,{recursive:true,force:true});}
 });

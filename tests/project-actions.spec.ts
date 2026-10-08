@@ -73,6 +73,12 @@ test('update settings show cached automatic results and bulk progress survives c
     await expect(page.locator('.updates-table')).toContainText('SSH unavailable');
     await expect(page.getByRole('button',{name:'Update all (1)',exact:true})).toBeEnabled();
     await page.screenshot({path:'test-results/screenshots/bulk-agent-updates.png'});
+    // Narrow window: each row keeps its status and Update button on one line.
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(950,640));await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThanOrEqual(950);
+    const line=page.locator('.update-status-line').filter({has:page.getByRole('button',{name:'Update Claude Code'})});
+    const [status,button]=await Promise.all([line.locator('.update-status').boundingBox(),line.getByRole('button').boundingBox()]);
+    expect(Math.abs((status!.y+status!.height/2)-(button!.y+button!.height/2))).toBeLessThan(3);
+    await page.screenshot({path:'test-results/screenshots/bulk-agent-updates-narrow.png'});
   }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
 

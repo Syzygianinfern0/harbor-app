@@ -6,6 +6,8 @@ export const GROUP_COLORS = [
   {name:'Rose',value:'#e3a1a8'},{name:'Teal',value:'#7fd0d6'},{name:'Orange',value:'#e5ab80'},{name:'Grey',value:'#a3adbb'},
 ] as const;
 const colorValues:string[]=GROUP_COLORS.map(c=>c.value);
+/** The Settings tab's ID in the tab list. Chat IDs are UUIDs, so it never names a chat; it is always ungrouped and never split. */
+export const SETTINGS_TAB='settings';
 
 export interface CustomGroup { id:string; name:string; color:string; collapsed:boolean; members:string[] }
 export interface TabGroups {
@@ -35,8 +37,9 @@ export function restoreTabGroups(value:unknown):TabGroups {
  *  A split's tabs are gathered first, so within a group they sit side by side. */
 export function layoutTabs(given:string[],state:TabGroups,projectOf:ProjectOf,projectOrder:string[]=[],splits:string[][]=[]) {
   const tabs=joinSplits(given,splits);
-  const raw=tabs.map(id=>{const g=state.custom.find(g=>g.members.includes(id));if(g)return `g:${g.id}`;const p=state.byProject?projectOf(id):undefined;return p?`p:${p}`:undefined;});
-  const distinct=new Set(raw);const solo=distinct.size===1&&raw[0]?.startsWith('p:');
+  const raw=tabs.map(id=>{if(id===SETTINGS_TAB)return undefined;const g=state.custom.find(g=>g.members.includes(id));if(g)return `g:${g.id}`;const p=state.byProject?projectOf(id):undefined;return p?`p:${p}`:undefined;});
+  // Settings does not count: opening it beside one project's tabs should not make their label appear.
+  const chats=raw.filter((_,i)=>tabs[i]!==SETTINGS_TAB);const distinct=new Set(chats);const solo=distinct.size===1&&chats[0]?.startsWith('p:');
   const keyOf=new Map<string,string|undefined>(tabs.map((id,i)=>[id,solo?undefined:raw[i]]));
   const segments:Segment[]=[];const index=new Map<string,Extract<Segment,{kind:'group'}>>();
   for(const id of tabs){const key=keyOf.get(id);if(!key){segments.push({kind:'tab',id});continue;}
