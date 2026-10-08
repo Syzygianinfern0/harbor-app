@@ -53,10 +53,15 @@ test('open terminals are listed and tabbed without a status, unread mark or noti
     await expect(row(page,'Build shell')).toHaveClass(/open-tab/);
 
     // A remote host dropping and coming back: unreachable, then running with stale activity. Still no "?".
-    await push(app,snapshot,{t1:{status:'unreachable',activity:'unknown'},a1:{status:'unreachable',activity:'unknown'}});
+    // The poll's foreground command shows beside the name; it goes away while the host is unreachable and returns after.
+    await push(app,snapshot,{t1:{status:'running',activity:'unknown',detail:'python3'},a1:{status:'running',activity:'unknown'}});
+    await expect(row(page,'Build shell').locator('.terminal-command')).toHaveText(' · python3');await expect(tab.locator('.tab-name')).toHaveText('Build shell · python3');
+    await push(app,snapshot,{t1:{status:'unreachable',activity:'unknown',detail:'ssh: connect to host devbox port 22: Operation timed out'},a1:{status:'unreachable',activity:'unknown'}});
+    await expect(row(page,'Build shell').locator('.terminal-command')).toHaveCount(0);await expect(tab.locator('.tab-name')).toHaveText('Build shell');
     await expect(row(page,'Agent chat').getByRole('img',{name:'Status unavailable'})).toHaveCount(1);
     await expect(tab.getByRole('img')).toHaveCount(0);await expect(row(page,'Build shell').getByRole('img')).toHaveCount(0);
-    await push(app,snapshot,{t1:{status:'running',activity:'unknown',unread:true},a1:{status:'running',activity:'attention'}});
+    await push(app,snapshot,{t1:{status:'running',activity:'unknown',unread:true,detail:'htop'},a1:{status:'running',activity:'attention'}});
+    await expect(tab.locator('.tab-name')).toHaveText('Build shell · htop');
     await expect(row(page,'Agent chat').getByRole('img',{name:'Needs input or approval'})).toHaveCount(1);
     await expect(tab.getByRole('img')).toHaveCount(0);await expect(tab.locator('.unread-dot')).toHaveCount(0);
     await expect(row(page,'Build shell').locator('.unread-dot')).toHaveCount(0);
