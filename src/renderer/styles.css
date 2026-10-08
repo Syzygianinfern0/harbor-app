@@ -506,6 +506,25 @@ button.note-check:hover{color:#8d98a6}
 .update-safe{margin:12px 0 0;padding:9px 12px;border:1px solid #3b5645;border-radius:6px;background:#223b2b4d;color:#a8d3b9;font-size:11px;line-height:1.5}
 .host-test{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:-4px 0 18px}.host-test .diagnostic{align-self:stretch;margin:4px 0 0}
 .update-channel{margin-top:14px;max-width:420px}
+/* Sidebar projects: the PROJECTS heading and each project's heading stay in view while its chats scroll */
+.projects-list>.section-label{position:sticky;top:0;z-index:4;background:#191c23;height:var(--projects-label-height,37px)}
+.project-section>.project-heading{position:sticky;top:calc(var(--projects-label-height,37px) - 1px);z-index:3;background:#191c23;border-radius:0;box-shadow:0 4px 0 #191c23}
+.hidden-projects-toggle{display:inline-flex;align-items:center;gap:3px;color:#707c8d}.hidden-projects-toggle span{font-size:10px;letter-spacing:0}.hidden-projects-toggle.active{color:#9be1c4}
+/* Hidden projects open in a panel pinned right under the PROJECTS heading, above the list however far it is scrolled */
+.hidden-projects{position:sticky;top:calc(var(--projects-label-height,37px) - 1px);z-index:4;margin:0 2px 8px;padding:2px 4px 4px;background:#20252e;border:1px solid #2e3541;border-radius:8px;box-shadow:0 6px 14px rgba(0,0,0,.35)}
+.hidden-projects-label{display:flex;align-items:center;justify-content:space-between;color:#7f8a99;font-size:9px;font-weight:650;letter-spacing:1.4px;padding:2px 0 2px 6px}
+.hidden-projects-label .icon-button{width:22px;height:22px}
+.hidden-projects-rows{max-height:min(40vh,240px);overflow-y:auto}
+.project-heading.hidden-project{gap:7px;padding:0 6px;color:#6d7887}
+.hidden-project-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.hidden-project .project-host{font-size:10px}
+.hidden-project .text-button{font-size:10px;padding:3px 4px}
+.delete-project-modal{width:520px}.delete-project-modal p{color:#a4afbe;font-size:12px;line-height:1.5}
+.delete-project-facts{margin:6px 0 10px;padding-left:18px;color:#b8c3cf;font-size:12px;line-height:1.55}.delete-project-facts li{margin:4px 0}
+.delete-project-facts code{font-size:11px;color:#d6dee7;background:#141820;padding:1px 5px;border-radius:4px;word-break:break-all}
+.delete-project-hint{font-size:11px!important;color:#7f8a99!important}
+.primary-button.danger-button{background:#e0a39b;color:#3b1712}.primary-button.danger-button:hover{background:#eab4ad;color:#3b1712}
+.delete-project-modal .modal-footer{justify-content:flex-end;gap:10px}.delete-project-modal .modal-footer .primary-button{margin-top:0}
 /* Inline chat rename (double-click a chat's name in the sidebar or its tab) */
 .inline-rename{flex:1;min-width:0;padding:3px 6px;margin:-4px 0;border-radius:4px;border:1px solid #9be1c4;background:#151a20;color:#eef3f9;font-size:11px;outline:none}
 .inline-rename:focus-visible{outline:none}.project-conversations .chat-row .inline-rename{font-size:12px}
