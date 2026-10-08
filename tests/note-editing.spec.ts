@@ -119,3 +119,75 @@ test('the Formatted view is an editable checklist: add, edit, split, delete, reo
     await card.screenshot({path:'test-results/screenshots/82-project-note-editing.png'});
   }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('items reorder by dragging with the mouse, with tab-style cues: a line where it lands, the source dimmed, rows sliding into place',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'harbor-note-drag-'));
+  const createdAt=new Date().toISOString();
+  const projects=[{id:'project',name:'Notes project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt}];
+  const note=['- [ ] Write changelog','- [ ] Test upgrade','  - [ ] local','- [ ] Tag release','- [x] Bump version'].join('\n');
+  const session={id:'aaaa',name:'Todo chat',projectId:'project',cwd:dir,host:'local',launcher:'codex',hasMessages:true,status:'closed',activity:'closed',tmuxName:'harbor-aaaa',paneId:'%9999',tags:[],group:'',pinned:false,archived:false,createdAt,updatedAt:createdAt,note};
+  await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects,sessions:[session]}));
+  const app=await electron.launch({executablePath:process.env.HARBOR_TEST_APP,args:process.env.HARBOR_TEST_APP?[]:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
+  const saved=async()=>JSON.parse(await readFile(path.join(dir,'sessions.json'),'utf8')).sessions[0].note;
+  try {
+    const page=await app.firstWindow();
+    await app.evaluate(({ipcMain})=>{
+      ipcMain.removeHandler('harbor:checkReachability');ipcMain.handle('harbor:checkReachability',()=>({}));
+      ipcMain.removeHandler('harbor:importHistory');ipcMain.handle('harbor:importHistory',()=>{});
+    });
+    await mkdir('test-results/screenshots',{recursive:true});
+    await page.locator('.sidebar').getByRole('button',{name:'Todo chat Closed',exact:true}).locator('.chat-note').click();
+    const editor=page.getByRole('dialog',{name:'Note for Todo chat'});
+    await editor.getByRole('radio',{name:'Formatted'}).click();
+    const view=editor.locator('.chat-note-rendered'),caret=view.locator('.note-drop-caret');
+    const order=()=>view.locator('.note-item-text').allInnerTexts();
+    const row=(name:string)=>view.locator('.note-item-row',{has:page.locator('.note-item-text',{hasText:new RegExp(`^${name}$`)})});
+    /** A real mouse drag (pointer down, moves in steps, up): from an item's grip (or its text) to the upper or lower half of another row. */
+    const drag=async(name:string,target:string,half:'upper'|'lower',{from='grip',finish=async()=>{await page.mouse.up();}}:{from?:'grip'|'text';finish?:()=>Promise<void>}={})=>{
+      await row(name).hover();const g=(await row(name).locator(from==='grip'?'.note-grip':'.note-item-text').boundingBox())!,t=(await row(target).boundingBox())!;
+      const x=g.x+Math.min(g.width/2,20),y=g.y+g.height/2,ty=t.y+t.height*(half==='upper'?.25:.75);
+      await page.mouse.move(x,y);await page.mouse.down();
+      for(let i=1;i<=8;i++)await page.mouse.move(x+i,y+(ty-y)*i/8,{steps:2});
+      await finish();
+    };
+
+    // Dragging by the grip: the source dims, a line marks the gap above the target, and the drop lands there.
+    expect(await order()).toEqual(['Write changelog','Test upgrade','local','Tag release','Bump version']);
+    await drag('Tag release','Write changelog','upper',{finish:async()=>{
+      await expect(caret).toHaveCount(1);await expect(view.locator('li.note-item.drag-source')).toHaveText('Tag release');
+      await expect.poll(()=>view.locator('li.note-item.drag-source').evaluate(e=>getComputedStyle(e).opacity)).toBe('0.4');
+      const [line,top]=await Promise.all([caret.boundingBox(),row('Write changelog').boundingBox()]);
+      expect(line!.y+line!.height/2).toBeLessThan(top!.y+2);
+      await page.screenshot({path:'test-results/screenshots/84-note-drag-line.png'});
+      await page.mouse.up();
+    }});
+    expect(await order()).toEqual(['Tag release','Write changelog','Test upgrade','local','Bump version']);
+    await expect(caret).toHaveCount(0);await expect(view.locator('.drag-source')).toHaveCount(0);
+    // A parent drags from its text, carrying its sub-items, and the rows slide into place rather than jumping.
+    await drag('Test upgrade','Tag release','upper',{from:'text',finish:async()=>{
+      await expect(caret).toHaveCount(1);await page.mouse.up();
+      expect(await row('Write changelog').evaluate(e=>e.getAnimations().length)).toBeGreaterThan(0);
+    }});
+    expect(await order()).toEqual(['Test upgrade','local','Tag release','Write changelog','Bump version']);
+    await expect(view.getByRole('textbox')).toHaveCount(0); // a drag is not a click: nothing went into editing
+    // The lower half of a parent's row lands as its first sub-item.
+    await drag('Write changelog','Test upgrade','lower',{finish:async()=>{await page.screenshot({path:'test-results/screenshots/85-note-drag-nest.png'});await page.mouse.up();}});
+    expect(await order()).toEqual(['Test upgrade','Write changelog','local','Tag release','Bump version']);
+    await expect(view.locator('li.note-item',{hasText:'Test upgrade'}).locator('li.note-item').first()).toHaveText('Write changelog');
+
+    // Spots that change nothing, and a ticked item among open ones, show no line and drop nothing.
+    await drag('Tag release','Tag release','lower',{finish:async()=>{await expect(caret).toHaveCount(0);await page.mouse.up();}});
+    await drag('Bump version','Test upgrade','upper',{finish:async()=>{await expect(caret).toHaveCount(0);await page.mouse.up();}});
+    expect(await order()).toEqual(['Test upgrade','Write changelog','local','Tag release','Bump version']);
+    // Esc cancels the drag (not the note): the line goes and nothing moves.
+    await drag('Tag release','Test upgrade','upper',{finish:async()=>{
+      await expect(caret).toHaveCount(1);await page.keyboard.press('Escape');await expect(caret).toHaveCount(0);await page.mouse.up();
+    }});
+    await expect(editor).toBeVisible();expect(await order()).toEqual(['Test upgrade','Write changelog','local','Tag release','Bump version']);
+    // A click (no drag) still edits the item.
+    await view.locator('.note-item-text',{hasText:'Tag release'}).click();await expect(view.getByRole('textbox',{name:'Item text'})).toHaveValue('Tag release');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Meta+Enter');await expect(editor).toHaveCount(0);
+    await expect.poll(saved).toBe(['- [ ] Test upgrade','  - [ ] Write changelog','  - [ ] local','- [ ] Tag release','- [x] Bump version'].join('\n'));
+  }finally{await app.close();await rm(dir,{recursive:true,force:true});}
+});

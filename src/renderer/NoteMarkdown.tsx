@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type RefObject } from 'react';
 import { Check, ChevronRight, Flag, GripVertical, Plus, X } from 'lucide-react';
 import { groupLists, inlineText, parseBlocks, parseInline, scanLines, type Block, type Inline, type List, type ListNode, type Priority } from '../shared/markdown';
-import { dropSide } from '../shared/dropCue';
 import { addTask, deleteTask, editTask, indentTask, insertTask, moveTask, nudgeTask, outdentTask, setPriority, toggleTask, type Placed } from '../shared/todos';
 import { useDropCue } from './useDropCue';
+import { reducedMotion } from './useTabMotion';
 
 // Notes render from a parsed tree into React text nodes only; there is no HTML path, so nothing in a note can inject markup.
 export const PRIORITY_NAMES:Record<Priority,string>={1:'Priority 1',2:'Priority 2',3:'Priority 3',4:'Priority 4'};
@@ -27,25 +27,76 @@ interface Ctx {
   neighbor:(line:number,direction:-1|1)=>number|undefined;
   completedOpen:boolean;setCompletedOpen:(open:boolean)=>void;
 }
-function useItemDrag(text:string,onChange?:(text:string)=>void) {
-  const {source,setSource,cue,show,leave}=useDropCue<number,{line:number;after:boolean}>();
-  const side=(event:DragEvent)=>dropSide(event.currentTarget.getBoundingClientRect(),event.clientX,event.clientY,'y')==='after';
+interface Cue {line:number;after:boolean;x:number;y:number;width:number}
+const rowOf=(li:Element)=>li.querySelector<HTMLElement>(':scope>.note-item-row');
+const isChecked=(li:Element)=>li.classList.contains('checked');
+/** Drag to reorder, the way tabs drag: the browser's drag (its threshold, image and Escape), the source dims, one mint
+ *  line marks where the item lands, and the rows slide into place. The whole list is the target: the row nearest the
+ *  pointer decides the spot, so gaps between rows never drop the cue. Every cue comes from the same move the drop
+ *  applies; a move that changes nothing shows nothing. */
+function useItemDrag(root:RefObject<HTMLDivElement|null>,get:()=>string,onChange?:(text:string)=>void) {
+  const {source,setSource,cue,show,leave}=useDropCue<number,Cue>();
+  const resolve=(event:DragEvent,from:number):Cue|undefined=>{
+    const el=root.current;if(!el)return;
+    const rows=[...el.querySelectorAll<HTMLElement>('li.note-item[data-line]>.note-item-row')].map(row=>({row,r:row.getBoundingClientRect()})).filter(v=>v.r.height);
+    if(!rows.length)return;
+    const y=event.clientY,dist=(r:DOMRect)=>y<r.top?r.top-y:y>r.bottom?y-r.bottom:0;
+    let {row,r}=rows.reduce((a,b)=>dist(b.r)<dist(a.r)?b:a);
+    let li=row.parentElement!,after=y>r.top+r.height/2;
+    // The lower half of a parent's row means "before its first sub-item", so the line sits right under that row.
+    const child=after?li.querySelector<HTMLElement>(':scope>.note-list>li.note-item[data-line]'):null;
+    if(child){li=child;row=rowOf(child)!;r=row.getBoundingClientRect();after=false;}
+    const line=Number(li.dataset.line),src=el.querySelector(`li.note-item[data-line="${from}"]`);
+    // A top-level item shows in the open list or under Completed by its own tick, so it can only land among its kind.
+    const topLevel=!li.parentElement?.closest('li.note-item');
+    if(!src||topLevel&&isChecked(src)!==isChecked(li)||!moveTask(get(),from,line,after))return;
+    // Centre the line in the gap to the neighbouring row, starting at the target's checkbox like the list it joins.
+    const box=el.getBoundingClientRect(),edge=after?li.getBoundingClientRect().bottom:r.top;
+    const near=rows.map(v=>v.r).filter(v=>after?v.top>=edge-1:v.bottom<=edge+1).sort((a,b)=>after?a.top-b.top:b.bottom-a.bottom)[0];
+    const gap=near&&Math.abs((after?near.top:near.bottom)-edge)<12?((after?near.top:near.bottom)+edge)/2:edge+(after?1:-1);
+    const left=(row.querySelector('.note-check')??row).getBoundingClientRect().left-2;
+    return {line,after,x:Math.round(left-box.left),y:Math.round(gap-box.top+el.scrollTop),width:Math.round(box.right-left-4)};
+  };
+  const has=(event:DragEvent)=>event.dataTransfer.types.includes(TYPE);
   return {
-    className:(line:number)=>`${source===line?'drag-source':''} ${cue?.line===line?(cue.after?'drop-after':'drop-before'):''}`,
+    source,cue,
     row:(line:number)=>onChange?{draggable:true,
       onDragStart:(event:DragEvent)=>{event.stopPropagation();event.dataTransfer.setData(TYPE,String(line));event.dataTransfer.effectAllowed='move';setSource(line);},
-      onDragEnd:()=>setSource(undefined),
+      onDragEnd:()=>setSource(undefined)}:{},
+    list:onChange?{
       onDragOver:(event:DragEvent)=>{
-        if(!event.dataTransfer.types.includes(TYPE))return;const after=side(event);
-        if(source===undefined||!moveTask(text,source,line,after)){show(undefined);return;}
-        event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move';show({line,after});
+        if(!has(event)||source===undefined)return;const hit=resolve(event,source);show(hit);
+        if(hit){event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move';}
       },
-      onDragLeave:(event:DragEvent)=>leave(event,c=>c.line===line),
+      onDragLeave:(event:DragEvent)=>leave(event,()=>true),
+      // The line comes from the drag's own data: a real drop runs after the window-level listener that clears `source`.
       onDrop:(event:DragEvent)=>{
-        if(!event.dataTransfer.types.includes(TYPE)||source===undefined)return;event.preventDefault();
-        const next=moveTask(text,source,line,side(event));if(next)onChange!(next);
+        if(!has(event))return;event.preventDefault();event.stopPropagation();
+        const from=Number(event.dataTransfer.getData(TYPE)),hit=Number.isInteger(from)?resolve(event,from):undefined;
+        const next=hit&&moveTask(get(),from,hit.line,hit.after);if(next)onChange(next);
       }}:{},
   };
+}
+
+// FLIP for note rows, timed like the tab strip's: rows that move slide from where they were painted. A row is known by
+// its text (and which copy of that text it is), since its line number changes when it moves.
+const EASE='cubic-bezier(.2,0,0,1)',MOVE=170;
+const rowKeys=(el:HTMLElement)=>{const seen=new Map<string,number>();return [...el.querySelectorAll<HTMLElement>('li.note-item>.note-item-row')].map(row=>{
+  const text=row.querySelector<HTMLTextAreaElement>('.note-item-input')?.value??row.querySelector('.note-item-text')?.textContent??'',n=seen.get(text)??0;seen.set(text,n+1);
+  return [`${text}\u0000${n}`,row] as const;});};
+function useRowMotion(root:RefObject<HTMLDivElement|null>,text:string) {
+  const shown=useRef(text),before=useRef<Map<string,DOMRect>|null>(null),running=useRef<Animation[]>([]);
+  // Measure the painted rows during the render that brings new text, before React commits it.
+  if(shown.current!==text&&!before.current&&root.current&&!reducedMotion())before.current=new Map(rowKeys(root.current).map(([k,row])=>[k,row.getBoundingClientRect()]));
+  shown.current=text;
+  useLayoutEffect(()=>{
+    const el=root.current,prev=before.current;before.current=null;if(!el||!prev)return;
+    running.current.forEach(a=>a.cancel());running.current=[];
+    for(const [key,row] of rowKeys(el)){
+      const old=prev.get(key);if(!old)continue;const now=row.getBoundingClientRect(),dx=old.left-now.left,dy=old.top-now.top;
+      if(Math.abs(dx)>.5||Math.abs(dy)>.5)running.current.push(row.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],{duration:MOVE,easing:EASE}));
+    }
+  },[text]);
 }
 
 function PriorityMenu({priority,onPick}:{priority:Priority;onPick:(p:Priority)=>void}) {
@@ -114,7 +165,7 @@ function ItemView({item,ctx}:{item:ListNode;ctx:Ctx}) {
     const placed=nudgeTask(ctx.get(),item.line,event.key==='ArrowUp'?-1:1);event.preventDefault();event.stopPropagation();
     if(placed){change(placed.text);ctx.focusItem(placed.line);}
   };
-  return <li className={`note-item ${item.task?'task':''} ${item.checked?'checked':''} p${item.priority} ${drag.className(item.line)} ${editing?'editing':''}`} data-line={item.line}>
+  return <li className={`note-item ${item.task?'task':''} ${item.checked?'checked':''} p${item.priority} ${drag.source===item.line?'drag-source':''} ${editing?'editing':''}`} data-line={item.line}>
     <div className="note-item-row" {...(editing?{}:drag.row(item.line))} onKeyDown={rowKeys}>
       {change&&<span className="note-grip" aria-hidden="true"><GripVertical size={11}/></span>}
       {item.task&&(change
@@ -180,7 +231,7 @@ export function NoteMarkdown({text,onChange,className='',id}:{text:string;onChan
   const [completedOpen,setCompletedOpen]=useCompletedOpen(id);
   const latest=useRef(text);latest.current=text;
   const root=useRef<HTMLDivElement>(null);const [editing,setEditing]=useState<{line:number;caret:Caret}>();const focusItem=useFocusItem(root,text);
-  const drag=useItemDrag(text,onChange);
+  const drag=useItemDrag(root,()=>latest.current,onChange);useRowMotion(root,text);
   const change=onChange&&((next:string)=>{if(next===latest.current)return;latest.current=next;onChange(next);});
   const ctx:Ctx={get:()=>latest.current,change,drag,editing,
     edit:(line,caret='end')=>setEditing({line,caret}),
@@ -194,8 +245,9 @@ export function NoteMarkdown({text,onChange,className='',id}:{text:string;onChan
   useEffect(()=>{if(inside.current&&(document.activeElement===document.body||!document.activeElement))root.current?.focus();},[text]);
   const blocks=parseBlocks(text);
   return <div ref={root} tabIndex={onChange?-1:undefined} className={`note-markdown ${onChange?'interactive':''} ${className}`}
-    onFocus={()=>{inside.current=true;}} onBlur={event=>{if(!root.current?.contains(event.relatedTarget as Node|null))inside.current=false;}}>
+    onFocus={()=>{inside.current=true;}} onBlur={event=>{if(!root.current?.contains(event.relatedTarget as Node|null))inside.current=false;}} {...drag.list}>
     {blocks.map((block,i)=><BlockView key={i} block={block} ctx={ctx}/>)}
+    {drag.cue&&<span className="note-drop-caret" style={{left:drag.cue.x,top:drag.cue.y,width:drag.cue.width}} aria-hidden="true"/>}
     {change&&!blocks.some(b=>b.t==='list'&&b.items.some(i=>i.task))&&<AddItem ctx={ctx} label="Add a to-do"/>}
   </div>;
 }

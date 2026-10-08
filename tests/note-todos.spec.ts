@@ -83,23 +83,23 @@ test('long notes, Markdown rendering, and Todoist-style tasks in the editor and 
 
     // Dragging: a child reorders within its parent; a parent moves with its subtree; no-op and into-itself drops show nothing.
     const row=(name:string)=>view.locator('.note-item-row',{has:page.locator('.note-item-text',{hasText:new RegExp(`^${name}$`)})});
-    const li=(name:string)=>view.locator('li.note-item',{has:page.locator(':scope>.note-item-row .note-item-text',{hasText:new RegExp(`^${name}$`)})});
     await fire(row('devbox'),'dragstart');
-    expect(await fire(row('local'),'dragover','bottom')).toBe(false);await expect(view.locator('.drop-before,.drop-after')).toHaveCount(0);
-    expect(await fire(row('local'),'dragover','top')).toBe(true);await expect(li('local')).toHaveClass(/drop-before/);
+    expect(await fire(row('local'),'dragover','bottom')).toBe(false);await expect(view.locator('.note-drop-caret')).toHaveCount(0);
+    expect(await fire(row('local'),'dragover','top')).toBe(true);await expect(view.locator('.note-drop-caret')).toHaveCount(1);
     await page.screenshot({path:'test-results/screenshots/73-note-drag-cue.png'});
     await fire(row('local'),'drop','top');await fire(row('devbox'),'dragend');
-    await expect(view.locator('.drop-before,.drop-after,.drag-source')).toHaveCount(0);
+    await expect(view.locator('.note-drop-caret,.drag-source')).toHaveCount(0);
     expect(await order()).toEqual(['Tag release','Write changelog','Test upgrade','devbox','local']);
     await fire(row('Test upgrade'),'dragstart');
     expect(await fire(row('local'),'dragover','top')).toBe(false);
-    expect(await fire(row('Tag release'),'dragover','top')).toBe(true);
-    await fire(row('Tag release'),'drop','top');await fire(row('Test upgrade'),'dragend');
-    // The open item shows above the Completed section even though the ticked ones now come first in the Markdown.
+    // A ticked item stays under Completed, so it has no place among the open items.
+    expect(await fire(row('Tag release'),'dragover','top')).toBe(false);await expect(view.locator('.note-drop-caret')).toHaveCount(0);
+    expect(await fire(row('Write changelog'),'dragover','top')).toBe(true);
+    await fire(row('Write changelog'),'drop','top');await fire(row('Test upgrade'),'dragend');
     expect(await order()).toEqual(['Tag release','Test upgrade','devbox','local','Write changelog']);
     await page.screenshot({path:'test-results/screenshots/74-note-formatted.png'});
     await page.keyboard.press('Meta+Enter');await expect(editor).toHaveCount(0);
-    await expect.poll(()=>saved('aaaa')).toBe(['# Release','Ship **v2** with `npm run package`.','- [x] Test upgrade','  - [x] devbox','  - [x] local','- [ ] Tag release !p1','- [x] Write changelog'].join('\n'));
+    await expect.poll(()=>saved('aaaa')).toBe(['# Release','Ship **v2** with `npm run package`.','- [ ] Tag release !p1','- [x] Test upgrade','  - [x] devbox','  - [x] local','- [x] Write changelog'].join('\n'));
 
     // The chosen view is remembered; ⌘E switches back to the source.
     await sidebar.getByRole('button',{name:'Todo chat Closed',exact:true}).locator('.chat-note').click();
