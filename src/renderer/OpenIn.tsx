@@ -4,7 +4,7 @@ import type { Connection, Session } from '../shared/types';
 import { appLabel, defaultApp, menuApps, type OpenAppId, type OpenInPreferences } from '../shared/openIn';
 
 let installed: Promise<OpenAppId[]> | undefined;
-/** Installed apps, detected once per window (Preferences → Open in re-detects). */
+/** Installed apps, detected once per window (Settings → Open in… re-detects). */
 export function useInstalledApps(refresh = false) {
   const [apps, setApps] = useState<OpenAppId[]>([]);
   useEffect(() => {
@@ -44,7 +44,7 @@ export function OpenInButton({ session, preferences, report }: { session: Sessio
   const app = defaultApp(preferences, apps, sessionConnection(session));
   if (!app) return null;
   const label = `Open folder in ${appLabel(app, preferences)}`;
-  return <button className="icon-button open-in-button" aria-label={label} title={`${label} (⌘⇧O)\nChoose apps in Preferences → Open in`} onClick={() => open({ kind: 'chat', id: session.id }, undefined, report)}><AppIcon app={app} size={16} /></button>;
+  return <button className="icon-button open-in-button" aria-label={label} title={`${label} (⌘⇧O)\nChoose apps in Settings → Open in…`} onClick={() => open({ kind: 'chat', id: session.id }, undefined, report)}><AppIcon app={app} size={16} /></button>;
 }
 /** ⌘⇧O: the same as the toolbar button, for the focused chat. */
 export const openChatFolder = (session: Session, report: (message: string) => void) => open({ kind: 'chat', id: session.id }, undefined, report);

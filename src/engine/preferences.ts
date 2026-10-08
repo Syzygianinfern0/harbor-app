@@ -46,6 +46,7 @@ export function validatePreferences(value: Preferences): Preferences {
   if (!['stable', 'beta'].includes(updates.channel)) throw new Error('Invalid update preferences.');
   return { agents:{codex:agents.codex,claude:agents.claude}, notifications: { ...notifications }, sidebar: { expandOnHover: sidebar.expandOnHover }, hosts, terminal: { fontSize, fontFamily, cursorBlink }, updates: { channel: updates.channel }, openIn: normalizeOpenIn(value.openIn) };
 }
+const preferenceSections: (keyof Preferences)[] = ['agents', 'notifications', 'sidebar', 'hosts', 'terminal', 'updates', 'openIn'];
 export class PreferencesStore {
   value = defaultPreferences();
   private writes = Promise.resolve();
@@ -59,9 +60,15 @@ export class PreferencesStore {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`Could not load preferences. The file has been preserved. ${String(error)}`);
     }
   }
-  async save(input: Preferences) {
-    const value = validatePreferences(input);
+  async save(input: Preferences) { await this.queue(() => validatePreferences(input)); }
+  /** Replaces only the given sections, merged with the latest saved value inside the write queue, so concurrent updates from different settings pages never overwrite each other. */
+  async update(patch: Partial<Preferences>) {
+    if (!patch || typeof patch !== 'object' || Object.keys(patch).some(key => !preferenceSections.includes(key as keyof Preferences))) throw new Error('Invalid preferences.');
+    await this.queue(() => validatePreferences({ ...this.value, ...patch }));
+  }
+  private async queue(next: () => Preferences) {
     const write = this.writes.catch(() => {}).then(async () => {
+      const value = next();
       const temporary = path.join(this.dataDir, `preferences.${randomUUID()}.tmp`);
       await writeFile(temporary, JSON.stringify({ version: 1, preferences: value }, null, 2), { mode: 0o600, flush: true });
       await rename(temporary, path.join(this.dataDir, 'preferences.json'));

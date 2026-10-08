@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent } from 'react';
-import { Bell, ChevronLeft, ChevronRight, Columns2, Plus, X } from 'lucide-react';
+import { Bell, ChevronLeft, ChevronRight, Columns2, Plus, Settings2, X } from 'lucide-react';
 import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon, UnreadDot } from './ChatStatusIcon';
@@ -7,7 +7,7 @@ import { activityLabel, chatActivity, tracksActivity, type ChatStatus } from '..
 import { dropSide, planStripDrop, type StripSource } from '../shared/dropCue';
 import { splitRuns } from '../shared/splits';
 import { useDropCue } from './useDropCue';
-import { useTabMotion } from './useTabMotion';
+import { reducedMotion, useTabMotion } from './useTabMotion';
 import { InlineRename } from './InlineRename';
 import { groupEntry, isCollapsed, layoutTabs, rollup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
 
@@ -37,6 +37,18 @@ export interface TabStripProps {
   onDragStart:(event:DragEvent,id:string)=>void; onDragEnd:()=>void; onNewChat:()=>void;
   onToggleGroup:(key:string)=>void; onTabMenu:(id:string,x:number,y:number)=>void; onGroupMenu:(key:string,x:number,y:number)=>void; onMoveProject:(source:string,target:string,after:boolean)=>void;
   /** The tab whose name is being edited in place (double-click a tab to start). */ renaming?:string; onStartRename?:(id:string)=>void; onRename?:(session:Session,name?:string)=>void;
+  /** A tab that is not a chat (Settings): drawn after the strip, outside groups, splits and the fitting logic, and never dragged. */ pageTab?:PageTab;
+}
+export interface PageTab { label:string; active:boolean; /** Bumped to flash the tab when it is asked for while already showing. */ pulse:number; onSelect:()=>void; onClose:()=>void }
+
+function PageTabView({tab}:{tab:PageTab}) {
+  const ref=useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(tab.pulse&&!reducedMotion())ref.current?.animate([{boxShadow:'inset 0 0 0 1px #9be1c4'},{boxShadow:'inset 0 0 0 1px #9be1c400'}],{duration:700,easing:'ease-out'});},[tab.pulse]);
+  return <div ref={ref} data-page-tab="settings" data-pulse={tab.pulse} className={`tab page-tab ${tab.active?'active':''}`} title="Settings (⌘ ,)"
+    onMouseDown={event=>{if(event.button===1)event.preventDefault();}} onAuxClick={event=>{if(event.button===1){event.preventDefault();tab.onClose();}}} onContextMenu={event=>{event.preventDefault();event.stopPropagation();}}>
+    <button aria-label={`${tab.label} tab`} aria-current={tab.active?'page':undefined} onClick={tab.onSelect}><Settings2 size={14}/><span className="tab-name">{tab.label}</span></button>
+    <button className="tab-close" aria-label={`Close ${tab.label}`} title={`Close ${tab.label} (⌘ W)`} onClick={tab.onClose}><X size={12}/></button>
+  </div>;
 }
 
 export function TabStrip(props:TabStripProps) {
@@ -84,7 +96,7 @@ export function TabStrip(props:TabStripProps) {
     setEdges(v=>JSON.stringify(v)===JSON.stringify(next)?v:next);
   };
   useLayoutEffect(measure);
-  useEffect(()=>{document.querySelector('.session-toolbar .tab.active')?.scrollIntoView({block:'nearest',inline:'nearest'});},[selected,shrink]);
+  useEffect(()=>{document.querySelector('.session-toolbar .tab-strip .tab.active')?.scrollIntoView({block:'nearest',inline:'nearest'});},[selected,shrink]);
   const reveal=(side:'left'|'right')=>{
     const el=strip.current!;const target=edges[side].target;
     const item=target&&el.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(target)}"],[data-group-key="${CSS.escape(target)}"]`);
@@ -139,7 +151,7 @@ export function TabStrip(props:TabStripProps) {
     if(selection.size)props.onSelection(new Set());props.onOpen(session);
   };
   const tab=(id:string,color?:string,end=false)=>{
-    const s=byId.get(id)!;const active=id===selected;const activity=chatActivity(s);const editing=props.renaming===id;
+    const s=byId.get(id)!;const active=id===selected&&!props.pageTab?.active;const activity=chatActivity(s);const editing=props.renaming===id;
     const size=active||editing||inView.has(id)||!groups.shrink?'':icons.has(id)?'compact':'narrow';
     const run=runs.get(id),partners=run?.filter(v=>v!==id).map(v=>byId.get(v)?.name).join(', ');
     const split=run?`split ${run[0]===id?'split-start':''} ${run.at(-1)===id?'split-end':''} ${inView.has(id)?'split-view':''}`:'';
@@ -180,7 +192,7 @@ export function TabStrip(props:TabStripProps) {
       {side==='right'?<><span className="edge-pill">{e.count} more<Arrow size={11}/></span>{e.attention>0&&<span className="edge-pill attention"><Bell size={11}/>{e.attention}</span>}</>:<>{e.attention>0&&<span className="edge-pill attention"><Bell size={11}/>{e.attention}</span>}<span className="edge-pill"><Arrow size={11}/>{e.count} more</span></>}
     </button>;};
 
-  return <div className="tab-strip-wrap">
+  return <><div className="tab-strip-wrap">
     <div ref={strip} className="tab-strip" onScroll={measure} onWheel={event=>{if(Math.abs(event.deltaY)>Math.abs(event.deltaX))event.currentTarget.scrollLeft+=event.deltaY;}}>
       {segments.map(seg=>{
         if(seg.kind==='tab')return tab(seg.id);
@@ -191,5 +203,5 @@ export function TabStrip(props:TabStripProps) {
     </div>
     {edge('left')}{edge('right')}
     {drag.cue?.x!==undefined&&<span className="tab-drop-caret" style={{left:drag.cue.x}} aria-hidden="true"/>}
-  </div>;
+  </div>{props.pageTab&&<PageTabView tab={props.pageTab}/>}</>;
 }

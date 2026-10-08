@@ -16,12 +16,12 @@ export function useAppUpdate() {
   return state;
 }
 
-/** Shown above Preferences once an update has been downloaded. */
-export function SidebarUpdateButton({ state, collapsed }: { state?: AppUpdateState; collapsed?: boolean }) {
+/** Shown above Settings once an update has been downloaded. It opens Settings → Updates, where Restart to update sits beside the reassurance that chats survive. */
+export function SidebarUpdateButton({ state, collapsed, onOpen }: { state?: AppUpdateState; collapsed?: boolean; onOpen: () => void }) {
   if (state?.status !== 'ready' && state?.status !== 'installing') return null;
-  const label = `Restart to update to Harbor ${state.latest}`;
-  return <button className={`sidebar-update ${collapsed ? 'sidebar-update-collapsed' : ''}`} aria-label={label} title={`${label}. ${UPDATE_SAFE_NOTE}`} disabled={state.status === 'installing'} onClick={() => void window.harbor.installAppUpdate()}>
-    {state.status === 'installing' ? <LoaderCircle className="spin" size={collapsed ? 18 : 14}/> : <ArrowUpCircle size={collapsed ? 18 : 14}/>}{!collapsed && <span>{state.status === 'installing' ? 'Restarting…' : 'Restart to update'}</span>}
+  const label = `Harbor ${state.latest} is ready to install`;
+  return <button className={`sidebar-update ${collapsed ? 'sidebar-update-collapsed' : ''}`} aria-label={label} title={`${label}. Open Settings → Updates to restart now, or it installs the next time you quit Harbor. ${UPDATE_SAFE_NOTE}`} onClick={onOpen}>
+    {state.status === 'installing' ? <LoaderCircle className="spin" size={collapsed ? 18 : 14}/> : <ArrowUpCircle size={collapsed ? 18 : 14}/>}{!collapsed && <span>{state.status === 'installing' ? 'Restarting…' : 'Update ready'}</span>}
   </button>;
 }
 
@@ -39,7 +39,7 @@ export function HarborUpdatePanel({ channel, onChannel }: { channel: UpdateChann
     : state.status === 'current' ? 'You have the latest version.'
     : state.status === 'error' ? state.error
     : 'Harbor checks for new versions automatically and downloads them in the background.';
-  return <div className="harbor-update">
+  return <div className="harbor-update" data-setting="harbor">
     <div className="updates-heading"><div><h3>Harbor {state.current}</h3><p className={state.status === 'error' ? 'update-unknown' : state.status === 'ready' ? 'update-available' : ''} aria-live="polite">{status}</p></div>
       <div className="updates-actions">
         {state.notes && state.latest && <button className="text-button" onClick={() => void window.harbor.openExternal(state.notes!)}><ExternalLink size={13}/>What’s new in {state.latest}</button>}
@@ -48,7 +48,7 @@ export function HarborUpdatePanel({ channel, onChannel }: { channel: UpdateChann
       </div>
     </div>
     {state.status === 'ready' && <p className="update-safe" role="note">{UPDATE_SAFE_NOTE}</p>}
-    {state.status !== 'disabled' && <div className="update-channel"><label>Update channel<select aria-label="Update channel" value={channel} onChange={event => onChannel(event.target.value as UpdateChannel)}><option value="stable">Stable</option><option value="beta">Beta</option></select><small>{channel === 'beta' ? 'Get each release as soon as it is published, before it reaches everyone. Switching back to Stable keeps your version until Stable catches up.' : 'Get releases once they are marked ready for everyone.'}</small></label></div>}
+    {state.status !== 'disabled' && <div className="update-channel" data-setting="channel"><label>Update channel<select aria-label="Update channel" value={channel} onChange={event => onChannel(event.target.value as UpdateChannel)}><option value="stable">Stable</option><option value="beta">Beta</option></select><small>{channel === 'beta' ? 'Get each release as soon as it is published, before it reaches everyone. Switching back to Stable keeps your version until Stable catches up.' : 'Get releases once they are marked ready for everyone.'}</small></label></div>}
     {state.status !== 'disabled' && <p className="preferences-note">Updates come from GitHub releases and are signature-checked before they install. Restarting reopens Harbor; your chats keep running in tmux and reattach.{state.checkedAt ? ` Last checked ${new Date(state.checkedAt).toLocaleString()}.` : ''}</p>}
   </div>;
 }

@@ -41,12 +41,12 @@ test('refresh is aligned and clickable, and local/remote project menus hand off 
   }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
 
-test('update settings show cached automatic results and bulk progress survives closing preferences',async()=>{
+test('update settings show cached automatic results and bulk progress survives closing Settings',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'harbor-bulk-ui-'));
   const app=await electron.launch({args:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
   try {
     const page=await app.firstWindow();
-    await expect(page.getByRole('button',{name:'Preferences',exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeVisible();
     await app.evaluate(async ({ipcMain,BrowserWindow})=>{
       const original=await new Promise<any>(resolve=>{const window=BrowserWindow.getAllWindows()[0];window.webContents.executeJavaScript('window.harbor.snapshot()').then(resolve);});
       const row=(hostId:string,agent:string)=>({hostId,hostLabel:hostId,agent,status:'available',installed:'1.0.0',latest:'1.1.0',checkedAt:new Date().toISOString()});
@@ -63,12 +63,12 @@ test('update settings show cached automatic results and bulk progress survives c
         state.results={'This Mac:codex':{message:'Verified: 1.1.0 is up to date.'},'Research server:claude':{message:'Update failed: SSH unavailable'}};publish();
       });
     });
-    const open=async()=>{await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Updates',exact:true}).click();};
+    const open=async()=>{await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('button',{name:'Updates',exact:true}).click();};
     await open();await expect(page.locator('.update-host')).toHaveCount(2);
     await page.getByRole('button',{name:'Update all (2)',exact:true}).click();
     await expect(page.getByText(/Updating agents across your machines/)).toBeVisible();
     await expect(page.getByRole('button',{name:'Check for updates',exact:true})).toBeDisabled();
-    await page.getByRole('button',{name:'Close preferences'}).click();await open();
+    await page.getByRole('button',{name:'Close Settings'}).click();await expect(page.locator('.settings-view')).toHaveCount(0);await open();
     await expect(page.locator('.updates-table')).toContainText('Verified: 1.1.0');
     await expect(page.locator('.updates-table')).toContainText('SSH unavailable');
     await expect(page.getByRole('button',{name:'Update all (1)',exact:true})).toBeEnabled();
