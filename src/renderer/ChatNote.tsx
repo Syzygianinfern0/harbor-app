@@ -52,23 +52,28 @@ export function ChatNoteMarker({item,kind='chat',onEdit}:{item:Noted;kind?:NoteK
   </span>;
 }
 
-/** The note editor: a Markdown source view and a rendered view where tasks can be checked, reordered and prioritized.
+/** The note editor: a Markdown source view and a rendered view that works as a checklist (add, edit, tick, delete,
+ *  reorder and prioritize items).
  *  Saving is explicit (⌘↩, Save) or by clicking away; Esc discards. `inline` sizes it for a page instead of a popover. */
 export function NoteEditor({item,kind,onClose,inline=false,style}:{item:Noted;kind:NoteKind;onClose:()=>void;inline?:boolean;style?:CSSProperties}) {
   const [text,setText]=useState(item.note??'');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [mode,setModeState]=useState<Mode>(savedMode);
   const box=useRef<HTMLDivElement>(null);const field=useRef<HTMLTextAreaElement>(null);const userHeight=useRef(0);const setHeight=useRef(0);
   const latest=useRef({text,busy});latest.current={text,busy};
+  // The Formatted view reports edits through `edit`, so a save right after one (⌘↩, clicking away) already has it.
+  const edit=(next:string)=>{latest.current.text=next;setText(next);};
+  /** Finish an item being edited in the Formatted view first: its blur drops an item left empty. */
+  const settle=()=>{const active=document.activeElement as HTMLElement|null;if(active?.classList.contains('note-item-input')&&box.current?.contains(active))active.blur();return latest.current.text;};
   const setMode=(next:Mode)=>{setModeState(next);try{localStorage.setItem(MODE_KEY,next);}catch{/* per-viewer convenience only */}};
   const save=async(value:string)=>{
     if(value.trim()===(item.note??'')){onClose();return;}
     setBusy(true);setError('');
     try{await saveNote(kind,item.id,value);onClose();}catch(err){setError((err as Error).message.replace(/^Error invoking remote method '[^']+': Error: /,''));setBusy(false);}
   };
-  const saveRef=useRef(save);saveRef.current=save;
+  const saveRef=useRef(save);saveRef.current=save;const settleRef=useRef(settle);settleRef.current=settle;
   useEffect(()=>{if(mode==='view'){box.current?.focus();return;}field.current?.focus();const end=field.current?.value.length??0;field.current?.setSelectionRange(end,end);},[mode]);
   useEffect(()=>{
     // Clicking away keeps what was written, like a sticky note.
-    const away=(event:globalThis.MouseEvent)=>{if(!box.current?.contains(event.target as Node)&&!(event.target as Element).closest?.('.note-priority-menu')&&!latest.current.busy)void saveRef.current(latest.current.text);};
+    const away=(event:globalThis.MouseEvent)=>{if(!box.current?.contains(event.target as Node)&&!(event.target as Element).closest?.('.note-priority-menu')&&!latest.current.busy)void saveRef.current(settleRef.current());};
     document.addEventListener('mousedown',away);return()=>document.removeEventListener('mousedown',away);
   },[]);
   // The source grows with the note up to the space available; a height the user dragged it to is kept as a minimum.
@@ -80,7 +85,7 @@ export function NoteEditor({item,kind,onClose,inline=false,style}:{item:Noted;ki
   const keys=(event:KeyboardEvent)=>{
     event.stopPropagation();
     if(event.key==='Escape'){event.preventDefault();onClose();}
-    if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();void save(text);}
+    if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();void save(settle());}
     if(event.key.toLowerCase()==='e'&&(event.metaKey||event.ctrlKey)&&!event.shiftKey){event.preventDefault();setMode(mode==='edit'?'view':'edit');}
   };
   const over=text.length>NOTE_LIMIT;
@@ -96,9 +101,9 @@ export function NoteEditor({item,kind,onClose,inline=false,style}:{item:Noted;ki
       ?<textarea ref={field} value={text} maxLength={NOTE_LIMIT} placeholder={'Write a note… Markdown works: # heading, **bold**, - [ ] to-do !p1'} aria-label="Note" disabled={busy} spellCheck
         onMouseUp={event=>{const h=event.currentTarget.offsetHeight;if(Math.abs(h-setHeight.current)>2)userHeight.current=h;}}
         onChange={e=>setText(e.target.value.replace(/\r\n?/g,'\n'))}/>
-      :<div className="chat-note-rendered" aria-label="Formatted note">{text.trim()?<NoteMarkdown text={text} onChange={setText}/>:<p className="chat-note-empty">Nothing yet. Switch to Markdown to write.</p>}</div>}
+      :<div className="chat-note-rendered" aria-label="Formatted note">{!text.trim()&&<p className="chat-note-empty">Nothing yet. Add a to-do, or switch to Markdown to write.</p>}<NoteMarkdown text={text} onChange={edit} id={`${kind}:${item.id}`}/></div>}
     {error&&<p role="alert" className="form-error">{error}</p>}
-    <footer><small>⌘↩ to save{text.length>NOTE_LIMIT*.8&&<span className={over?'note-count over':'note-count'}> · {text.length.toLocaleString()}/{NOTE_LIMIT.toLocaleString()}</span>}</small>{item.note&&<button type="button" className="chat-note-remove" disabled={busy} onClick={()=>void save('')}>Remove</button>}<button type="button" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className="chat-note-save" disabled={busy||over} onClick={()=>void save(text)}>Save</button></footer>
+    <footer><small>⌘↩ to save{text.length>NOTE_LIMIT*.8&&<span className={over?'note-count over':'note-count'}> · {text.length.toLocaleString()}/{NOTE_LIMIT.toLocaleString()}</span>}</small>{item.note&&<button type="button" className="chat-note-remove" disabled={busy} onClick={()=>void save('')}>Remove</button>}<button type="button" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className="chat-note-save" disabled={busy||over} onClick={()=>void save(settle())}>Save</button></footer>
   </div>;
 }
 

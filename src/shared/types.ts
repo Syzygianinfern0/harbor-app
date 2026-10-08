@@ -1,3 +1,4 @@
+import type { OpenAppId, OpenInPreferences } from './openIn';
 export type Launcher = 'shell' | 'codex' | 'claude' | 'custom';
 export type PermissionMode = 'standard' | 'read-only' | 'accept-edits' | 'plan' | 'full-access';
 export type TabShortcut = number | 'next' | 'previous';
@@ -34,7 +35,7 @@ export interface Host { id: string; label: string; source: 'local' | 'ssh-config
 export interface SshConnection { target: string; hostname?: string; user?: string; port?: number; identityFile?: string }
 export type Connection = string | SshConnection;
 export interface SavedHost extends Host { enabled: boolean; connection?: SshConnection; defaultDirectory: string }
-export interface Preferences { agents: {codex:PermissionMode;claude:PermissionMode}; notifications: { enabled: boolean; sound: boolean; whenFocused: boolean; onComplete: boolean }; sidebar: { expandOnHover: boolean }; hosts: SavedHost[]; terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean }; updates: { channel: UpdateChannel } }
+export interface Preferences { agents: {codex:PermissionMode;claude:PermissionMode}; notifications: { enabled: boolean; sound: boolean; whenFocused: boolean; onComplete: boolean }; sidebar: { expandOnHover: boolean }; hosts: SavedHost[]; terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean }; updates: { channel: UpdateChannel }; openIn: OpenInPreferences }
 /** Stable gets releases marked latest; beta also gets prereleases. */
 export type UpdateChannel = 'stable' | 'beta';
 export interface Session {
@@ -66,6 +67,8 @@ export interface AppUpdateState { current: string; status: 'disabled' | 'idle' |
 export interface HarborApi {
   snapshot(): Promise<Snapshot>;
   savePreferences(preferences: Preferences): Promise<void>;
+  /** Saves only these sections, merged with the latest saved preferences. */
+  updatePreferences(patch: Partial<Preferences>): Promise<void>;
   sshCandidates(): Promise<Host[]>;
   resolveSsh(alias: string): Promise<SshConnection>;
   create(input: CreateSession): Promise<Session>;
@@ -80,7 +83,10 @@ export interface HarborApi {
   importHistory(projectId: string): Promise<void>;
   resume(id: string, restart?: boolean): Promise<Session>;
   fork(id: string): Promise<Session>;
-  openProjectInCursor(id: string): Promise<void>;
+  /** Installed apps that can open folders (the custom command is not included). */
+  openInApps(): Promise<OpenAppId[]>;
+  /** Opens a project's or chat's folder in an app, or in the default app from preferences. */
+  openIn(target: {kind: 'project' | 'chat'; id: string}, app?: OpenAppId): Promise<void>;
   updateAllAgents(): Promise<void>;
   checkUpdates(force?: boolean): Promise<AgentUpdate[]>;
   updateAgent(hostId: string, agent: AgentUpdate['agent']): Promise<{update: AgentUpdate; output: string}>;

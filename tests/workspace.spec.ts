@@ -55,8 +55,8 @@ test('browser shortcuts, reorder, nested splits, sidebar and pane resizing persi
 test('agent defaults populate new chats, explicit mode overrides, fresh empty chats stay visible',async()=>{
  const fixtureData=await fixture();const app=await fixtureData.launch();const page=await app.firstWindow();
  try {
-  await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Agent defaults',exact:true}).click();
-  await page.getByLabel('Codex permission mode',{exact:true}).selectOption('full-access');await page.getByLabel('Claude Code permission mode',{exact:true}).selectOption('accept-edits');await page.getByRole('button',{name:'Save preferences'}).click();
+  await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Agents',exact:true}).click();
+  await page.getByLabel('Codex permission mode',{exact:true}).selectOption('full-access');await page.getByLabel('Claude Code permission mode',{exact:true}).selectOption('accept-edits');await expect.poll(async()=>(await page.evaluate(()=>window.harbor.snapshot())).preferences.agents).toEqual({codex:'full-access',claude:'accept-edits'});
   await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('harbor:create');ipcMain.handle('harbor:create',async(_event,input)=>{(globalThis as any).createdInput=input;return {id:'fresh',name:'Fresh chat',status:'running',hasMessages:false,launcher:input.launcher,projectId:input.projectId,cwd:input.cwd};});});
   await page.getByRole('button',{name:'New chat in Workspace test',exact:true}).click();await expect(page.getByLabel('Permission mode',{exact:true})).toHaveValue('full-access');
   await page.getByRole('button',{name:'Claude Code',exact:true}).click();await expect(page.getByLabel('Permission mode',{exact:true})).toHaveValue('accept-edits');
@@ -107,10 +107,9 @@ test('refresh, keyboard creation, middle close, and dialog project management',a
   await page.keyboard.press('Enter');await expect(page.getByRole('dialog')).toHaveCount(0);expect(await app.evaluate(()=>(globalThis as any).createdInput.launcher)).toBe('shell');
   await page.locator('.sidebar .chat-row').first().click();await expect(page.locator('[data-tab-id="chat-0"]')).toBeVisible();await page.locator('[data-tab-id="chat-0"] button').first().click({button:'middle'});await expect(page.locator('[data-tab-id="chat-0"]')).toHaveCount(0);
   await page.getByRole('button',{name:'Refresh all chats and status'}).click();await expect(page.getByRole('alert')).toContainText('up to date');
-  await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Projects',exact:true}).click();await expect(page.getByRole('button',{name:'Terminal',exact:true})).toHaveCount(0);
-  const bounds=await page.locator('.preferences-modal').boundingBox();const size=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));expect(bounds!.x).toBeGreaterThan(0);expect(bounds!.y).toBeGreaterThan(0);expect(bounds!.width).toBeLessThan(size.width);expect(bounds!.height).toBeLessThan(size.height);
-  await page.getByRole('checkbox',{name:'Visible',exact:true}).uncheck();await page.getByRole('button',{name:'Save preferences'}).click();await expect(page.locator('.sidebar .project-section')).toHaveCount(0);
-  await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Projects',exact:true}).click();await expect(page.getByRole('checkbox',{name:'Visible'})).not.toBeChecked();await page.screenshot({path:'test-results/screenshots/16-project-manager.png'});await page.getByRole('button',{name:'Delete project Workspace test'}).click();await page.getByRole('button',{name:'Save preferences'}).click();expect((await page.evaluate(()=>window.harbor.snapshot())).projects).toHaveLength(0);
+  await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Projects',exact:true}).click();await expect(page.getByRole('button',{name:'Terminal',exact:true})).toHaveCount(0);
+  await page.getByRole('checkbox',{name:'Visible',exact:true}).uncheck();await expect(page.locator('.sidebar .project-section')).toHaveCount(0);
+  await page.keyboard.press('Meta+w');await page.getByRole('button',{name:'Settings',exact:true}).click();await expect(page.getByRole('checkbox',{name:'Visible'})).not.toBeChecked();await page.screenshot({path:'test-results/screenshots/16-project-manager.png'});await page.getByRole('button',{name:'Delete project Workspace test'}).click();await page.getByRole('button',{name:'Delete project',exact:true}).click();await expect.poll(async()=>(await page.evaluate(()=>window.harbor.snapshot())).projects).toHaveLength(0);
  }finally{await app.close();}
 });
 
@@ -140,10 +139,10 @@ test('saved preview is readable without resuming and projects drag into a persis
   await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('harbor:chatPreview');ipcMain.handle('harbor:chatPreview',()=>({messageCount:12,messages:[{role:'user',text:'Please review the project changes.'},{role:'assistant',text:'The changes are ready for review.\nAll checks passed.'}]}));});
   await page.locator('.sidebar .chat-row').first().click();await expect(page.getByRole('region',{name:'Conversation preview'})).toContainText('12 messages');await expect(page.getByRole('region',{name:'Conversation preview'})).toContainText('All checks passed.');await page.screenshot({animations:'disabled',path:'test-results/screenshots/17-chat-preview.png'});
   await page.evaluate(cwd=>window.harbor.addProject({name:'Second project',host:'local',cwd}),path.join(data.dir,'second'));
-  await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Projects',exact:true}).click();await expect(page.getByRole('button',{name:'Projects',exact:true})).toHaveClass('active');
+  await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Projects',exact:true}).click();await expect(page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Projects',exact:true})).toHaveAttribute('aria-current','page');
   const transfer=await page.evaluateHandle(()=>new DataTransfer());const rows=page.locator('.managed-project');await rows.nth(1).dispatchEvent('dragstart',{dataTransfer:transfer});await rows.first().dispatchEvent('dragover',{dataTransfer:transfer});await rows.first().dispatchEvent('drop',{dataTransfer:transfer});await transfer.dispose();await expect(rows.first()).toContainText('Second project');await page.screenshot({animations:'disabled',path:'test-results/screenshots/16-project-manager.png'});
-  await page.getByRole('button',{name:'Save preferences'}).click();await expect(page.locator('.sidebar .project-name').first()).toHaveText('Second project');
-  await expect(page.getByRole('dialog')).toHaveCount(0);await page.keyboard.press('Meta+r');await expect(page.getByRole('button',{name:'Refresh all chats and status'})).toBeDisabled();await expect(page.getByRole('alert')).toContainText('up to date',{timeout:30000});
+  await expect(page.locator('.sidebar .project-name').first()).toHaveText('Second project');
+  await page.keyboard.press('Meta+w');await expect(page.locator('.settings-view')).toHaveCount(0);await page.keyboard.press('Meta+r');await expect(page.getByRole('button',{name:'Refresh all chats and status'})).toBeDisabled();await expect(page.getByRole('alert')).toContainText('up to date',{timeout:30000});
  }finally{await app.close();}
 });
 
@@ -196,7 +195,7 @@ test('cost views show compact sidebar, rolling host and model totals, and lifeti
   await page.getByRole('button',{name:'Last month',exact:true}).last().click();await expect(page.locator('.cost-total')).toContainText('$200.00');await expect(page.locator('.usage-panel')).toContainText('Rolling 30 days');await expect(disclosure).toContainText('last month');
   await page.getByLabel('Group usage by').selectOption('model');await expect(page.locator('.cost-group')).toHaveCount(1);await expect(page.locator('.cost-group')).toContainText('gpt-6-astra');
   await page.getByLabel('Group usage by').selectOption('day');await expect(page.locator('.cost-group')).toContainText('2026-09-17');await expect(page.locator('.cost-unavailable')).toContainText('SSH connection timed out');
-  const bounds=await page.getByRole('dialog',{name:'Preferences',exact:true}).boundingBox();const viewport=page.viewportSize()??await page.evaluate(()=>({width:innerWidth,height:innerHeight}));expect(bounds!.height).toBeLessThan(viewport.height);expect(bounds!.width).toBeLessThan(viewport.width);
+  await expect(page.locator('.settings-page')).toHaveAttribute('data-category','usage');
   await page.screenshot({path:'test-results/screenshots/18-usage.png'});
   // The open state, range and grouping are remembered for this viewer; Space toggles like a click.
   await page.getByLabel('Group usage by').selectOption('host');
@@ -349,11 +348,11 @@ test('agent status icons distinguish working, attention, completion and errors; 
   await expect(page.locator('[data-tab-id="chat-6"] .chat-activity.closed')).toHaveCount(1);await expect(page.locator('[data-tab-id="chat-6"] .chat-activity svg')).toHaveCount(0);
   await expect(page.locator('[data-tab-id="chat-5"] .chat-activity.error svg')).toHaveCount(1);
   await page.screenshot({path:'test-results/screenshots/22b-closed-chat-no-icon.png'});
-  await page.getByRole('button',{name:'Preferences',exact:true}).first().click();await page.getByRole('button',{name:'Icon guide',exact:true}).click();
+  await page.getByRole('button',{name:'Settings',exact:true}).first().click();await page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Status icons',exact:true}).click();
   const closedGuide=page.locator('.icon-guide-row').filter({hasText:'Closed'});await expect(closedGuide.locator('svg')).toHaveCount(0);await expect(closedGuide).toContainText('No icon.');
   await expect(page.locator('.icon-guide-row svg')).toHaveCount(9);
   await page.screenshot({path:'test-results/screenshots/22c-icon-guide-closed.png'});
-  await page.keyboard.press('Escape');await expect(page.locator('.icon-guide')).toHaveCount(0);
+  await page.keyboard.press('Meta+w');await expect(page.locator('.icon-guide')).toHaveCount(0);
   const toggle=page.getByRole('switch',{name:'Hide all closed chats'});await toggle.focus();await page.keyboard.press('Space');await expect(toggle).toBeChecked();
   await expect(page.locator('.sidebar .chat-row')).toHaveCount(8);await expect(page.locator('.sidebar').getByRole('img',{name:'Running elsewhere',exact:true})).toBeVisible();
   await expect(page.locator('.toggle-track').first()).toHaveCSS('border-radius','12px');await expect(page.locator('.toggle-track > span').first()).toHaveCSS('transform','matrix(1, 0, 0, 1, 14, 0)');

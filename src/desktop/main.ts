@@ -1,12 +1,14 @@
 import { app, clipboard, BrowserWindow, dialog, ipcMain, Menu, net, Notification, powerMonitor, shell } from 'electron';
 import path from 'node:path';
-import { openProjectInCursor } from './cursor';
+import { installedApps, openIn } from './openIn';
+import { defaultApp, isOpenApp } from '../shared/openIn';
 import { AppUpdater } from './appUpdater';
 import { HarborEngine } from '../engine/engine';
 import { Transport } from '../engine/transport';
 import { usageSourceFromEnv } from '../engine/usageSource';
 import type { Preferences } from '../shared/types';
 import { dockBadge, NO_VIEW, shouldMarkUnread, unreadCount, validView, viewedChat } from '../shared/unread';
+import { tracksActivity } from '../shared/chatStatus';
 
 // Pull request previews get their own name, so their own profile, single-instance lock and tmux socket: they run beside
 // an installed Harbor without seeing its chats.
@@ -47,11 +49,14 @@ else {
       });
     }
     handle('snapshot', () => engine.snapshot());
-    handle('savePreferences', async (preferences: Preferences) => {
+    // A different update channel triggers a check right away.
+    const checkIfChannelChanged = async (save: () => Promise<void>) => {
       const channel = engine.snapshot().preferences.updates.channel;
-      await engine.savePreferences(preferences);
+      await save();
       if (engine.snapshot().preferences.updates.channel !== channel) void updater?.check().catch(() => undefined);
-    });
+    };
+    handle('savePreferences', (preferences: Preferences) => checkIfChannelChanged(() => engine.savePreferences(preferences)));
+    handle('updatePreferences', (patch: Partial<Preferences>) => checkIfChannelChanged(() => engine.updatePreferences(patch)));
     handle('sshCandidates', () => engine.sshCandidates());
     handle('resolveSsh', alias => engine.resolveSsh(alias));
     handle('addProject', input => engine.addProject(input));
@@ -67,7 +72,15 @@ else {
     handle('fork', id => engine.fork(id));
     handle('checkUpdates', force => engine.checkUpdates(force));
     handle('updateAllAgents', () => engine.updateAllAgents());
-    handle('openProjectInCursor', async id => openProjectInCursor(await engine.projectForEditor(id)));
+    handle('openInApps', async () => Object.keys(await installedApps(true)));
+    handle('openIn', async (target: {kind: 'project' | 'chat'; id: string}, requested?: unknown) => {
+      if (!target || typeof target.id !== 'string' || (target.kind !== 'project' && target.kind !== 'chat') || (requested !== undefined && !isOpenApp(requested))) throw new Error('Invalid open request.');
+      const folder = await engine.folderForOpen(target.kind, target.id);
+      const preferences = engine.snapshot().preferences.openIn;
+      const app = requested ?? defaultApp(preferences, Object.keys(await installedApps()) as never, folder.connection);
+      if (!app) throw new Error('No app can open this folder. Choose apps in Settings → Open in.');
+      await openIn(app, folder, preferences);
+    });
     handle('updateAgent', (hostId,agent) => engine.updateAgent(hostId,agent));
     handle('checkReachability', () => engine.checkReachability());
     handle('appUpdate', () => updater!.snapshot);
@@ -129,6 +142,7 @@ else {
     handle('openDataDir', () => shell.openPath(app.getPath('userData')));
     handle('openExternal', (url: string) => { const parsed = new URL(url); if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('Only web links can be opened.'); return shell.openExternal(parsed.toString()); });
     engine.on('attention', ({session,completed}) => {
+      if(!tracksActivity(session)) return; // Terminals have no agent status, so they never notify.
       const settings=engine.snapshot().preferences.notifications;
       if(shouldMarkUnread(session.id,completed,settings,!!window?.isFocused(),chatView))void engine.setUnread(session.id,true).catch(error=>console.error('Harbor unread:',error));
       if(!settings.enabled || (completed && !settings.onComplete) || (window?.isFocused() && !settings.whenFocused) || !Notification.isSupported()) return;
@@ -146,7 +160,7 @@ else {
     if(process.env.HARBOR_TEST_HOOKS==='1')(globalThis as any).harborTest={engine};
     engine.on('terminal', event => window?.webContents.send('harbor:terminal', event));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: appName, submenu: [{ role: 'about' }, { label: 'Check for Updates…', click: () => void checkForUpdatesFromMenu() }, { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+      { label: appName, submenu: [{ role: 'about' }, { label: 'Check for Updates…', click: () => void checkForUpdatesFromMenu() }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
       { label: 'Session', submenu: [{label:'Close Chat',accelerator:'CmdOrCtrl+W',click:()=>window?.webContents.send('harbor:close-session')}, { label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => window?.webContents.send('harbor:new-session') }, {label:'New Tab',accelerator:'CmdOrCtrl+T',click:()=>window?.webContents.send('harbor:new-session')}, {label:'Next Tab',accelerator:'Ctrl+Tab',click:()=>window?.webContents.send('harbor:tab-shortcut','next')}, {label:'Previous Tab',accelerator:'Ctrl+Shift+Tab',click:()=>window?.webContents.send('harbor:tab-shortcut','previous')}, ...Array.from({length:9},(_,i)=>({label:i===8?'Select Last Tab':`Select Tab ${i+1}`,accelerator:`CmdOrCtrl+${i+1}`,click:()=>window?.webContents.send('harbor:tab-shortcut',i+1)})), { label: 'Refresh Chats and Status', accelerator: 'CmdOrCtrl+R', click: () => window?.webContents.send('harbor:refresh-all') }] },
       { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'togglefullscreen' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const }] : [])] }, { role: 'windowMenu' }
     ]));

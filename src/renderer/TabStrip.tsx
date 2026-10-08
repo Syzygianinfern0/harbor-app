@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent } from 'react';
-import { Bell, ChevronLeft, ChevronRight, Columns2, Plus, X } from 'lucide-react';
+import { Bell, ChevronLeft, ChevronRight, Columns2, Plus, Settings2, X } from 'lucide-react';
 import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon, UnreadDot } from './ChatStatusIcon';
 import { LimitRing } from './UsagePanel';
-import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
+import { activityLabel, chatActivity, tracksActivity, type ChatStatus } from '../shared/chatStatus';
+import { terminalCommand } from '../shared/terminalName';
 import { dropSide, planStripDrop, type StripSource } from '../shared/dropCue';
 import { splitRuns } from '../shared/splits';
 import { useDropCue } from './useDropCue';
-import { useTabMotion } from './useTabMotion';
-import { groupEntry, isCollapsed, layoutTabs, rollup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
+import { reducedMotion, useTabMotion } from './useTabMotion';
+import { InlineRename } from './InlineRename';
+import { groupEntry, isCollapsed, layoutTabs, rollup, GROUP_COLORS, SETTINGS_TAB, type TabGroups } from '../shared/tabGroups';
 
 export interface GroupInfo { key:string; name:string; color:string; kind:'project'|'custom'; detail?:string }
 export function groupInfo(key:string,groups:TabGroups,projects:Project[]):GroupInfo {
@@ -36,17 +38,24 @@ export interface TabStripProps {
   setTabs:(update:(tabs:string[])=>string[])=>void; setGroups:(update:(groups:TabGroups)=>TabGroups)=>void;
   onDragStart:(event:DragEvent,id:string)=>void; onDragEnd:()=>void; onNewChat:()=>void;
   onToggleGroup:(key:string)=>void; onTabMenu:(id:string,x:number,y:number)=>void; onGroupMenu:(key:string,x:number,y:number)=>void; onMoveProject:(source:string,target:string,after:boolean)=>void;
+  /** The tab whose name is being edited in place (double-click a tab to start). */ renaming?:string; onStartRename?:(id:string)=>void; onRename?:(session:Session,name?:string)=>void;
+  /** The Settings tab (`SETTINGS_TAB` in `tabs`): whether it is showing, and a counter bumped to flash it when asked for while already showing. */
+  settings?:{active:boolean;pulse:number;onSelect:()=>void;onClose:()=>void};
 }
 
 export function TabStrip(props:TabStripProps) {
   const {groups,selected,selection}=props;
   const byId=new Map(props.sessions.map(s=>[s.id,s]));
-  const tabs=props.tabs.filter(id=>byId.has(id));
+  const tabs=props.tabs.filter(id=>byId.has(id)||id===SETTINGS_TAB&&!!props.settings);
+  // The tab drawn as active: Settings when it is showing, else the selected chat.
+  const focused=props.settings?.active?SETTINGS_TAB:selected;
   const splits=props.splits??[];
   const {segments,keyOf}=layoutTabs(tabs,groups,id=>byId.get(id)?.projectId,props.projects.map(p=>p.id),splits);
   const selectedKey=selected?keyOf.get(selected):undefined;
   const stripState={tabs,groups,projectOf:(id:string)=>byId.get(id)?.projectId,projectOrder:props.projects.map(p=>p.id),splits};
   const strip=useRef<HTMLDivElement>(null);
+  const settingsRef=useRef<HTMLDivElement>(null);const pulse=props.settings?.pulse??0;
+  useEffect(()=>{if(pulse&&!reducedMotion())settingsRef.current?.animate([{boxShadow:'inset 0 0 0 1px #9be1c4'},{boxShadow:'inset 0 0 0 1px #9be1c400'}],{duration:700,easing:'ease-out'});},[pulse]);
   useTabMotion(strip);
   const [width,setWidth]=useState(0);
   const [shrink,setShrink]=useState(0);
@@ -55,12 +64,12 @@ export function TabStrip(props:TabStripProps) {
   // Inactive tabs keep their names and flex down to fill the strip; while that still overflows,
   // they become icons one at a time: other groups before the current one, farthest from the active tab first. The split in view keeps full width, like the active tab.
   const shown=segments.flatMap(s=>s.kind==='tab'?[s.id]:isCollapsed(groups,s.key,selectedKey)?(selected&&s.tabs.includes(selected)?[selected]:[]):s.tabs);
-  const at=selected?shown.indexOf(selected):-1;
+  const at=focused?shown.indexOf(focused):-1;
   // A split's tabs share one outline; the one in view is lit as a unit, its focused pane brightest.
   const runs=splitRuns(segments.flatMap(s=>s.kind==='tab'?[s.id]:[undefined,...shown.filter(id=>keyOf.get(id)===s.key),undefined]),splits);
   const inView=new Set((props.view?.length??0)>1?props.view:[]);
-  const iconOrder=shown.filter(id=>id!==selected&&!inView.has(id)).sort((a,b)=>Number(keyOf.get(b)!==selectedKey)-Number(keyOf.get(a)!==selectedKey)||Math.abs(shown.indexOf(b)-at)-Math.abs(shown.indexOf(a)-at));
-  const fitKey=JSON.stringify([width,groups.shrink,selected,splits,props.view,segments.map(s=>s.kind==='tab'?s.id:[s.key,isCollapsed(groups,s.key,selectedKey),s.tabs.map(id=>byId.get(id)?.name)]),tabs.map(id=>byId.get(id)?.name)]);
+  const iconOrder=shown.filter(id=>id!==focused&&!inView.has(id)).sort((a,b)=>Number(keyOf.get(b)!==selectedKey)-Number(keyOf.get(a)!==selectedKey)||Math.abs(shown.indexOf(b)-at)-Math.abs(shown.indexOf(a)-at));
+  const fitKey=JSON.stringify([width,groups.shrink,focused,splits,props.view,segments.map(s=>s.kind==='tab'?s.id:[s.key,isCollapsed(groups,s.key,selectedKey),s.tabs.map(id=>byId.get(id)?.name)]),tabs.map(id=>byId.get(id)?.name)]);
   const fitted=useRef('');
   useLayoutEffect(()=>{
     const el=strip.current;if(!el)return;
@@ -83,7 +92,7 @@ export function TabStrip(props:TabStripProps) {
     setEdges(v=>JSON.stringify(v)===JSON.stringify(next)?v:next);
   };
   useLayoutEffect(measure);
-  useEffect(()=>{document.querySelector('.session-toolbar .tab.active')?.scrollIntoView({block:'nearest',inline:'nearest'});},[selected,shrink]);
+  useEffect(()=>{document.querySelector('.session-toolbar .tab-strip .tab.active')?.scrollIntoView({block:'nearest',inline:'nearest'});},[focused,shrink]);
   const reveal=(side:'left'|'right')=>{
     const el=strip.current!;const target=edges[side].target;
     const item=target&&el.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(target)}"],[data-group-key="${CSS.escape(target)}"]`);
@@ -96,9 +105,9 @@ export function TabStrip(props:TabStripProps) {
   const members=(key:string)=>Array.from(strip.current?.querySelectorAll<HTMLElement>('[data-tab-id],[data-group-key]')??[]).filter(el=>el.dataset.groupKey===key||!!el.dataset.tabId&&keyOf.get(el.dataset.tabId)===key);
   const resolve=(event:DragEvent,target:Target,source:StripSource|undefined)=>{
     if(!source)return;
-    if('chat' in source&&'key' in target){const plan=planStripDrop(stripState,source,target,'into');return plan&&{plan,place:'into' as const};}
+    if('chat' in source&&source.chat!==SETTINGS_TAB&&'key' in target){const plan=planStripDrop(stripState,source,target,'into');return plan&&{plan,place:'into' as const};}
     // A tab lands beside a tab; a group lands beside the whole target group (or an ungrouped tab).
-    const key='group' in source?('key' in target?target.key:keyOf.get(target.tab)):undefined;
+    const key='group' in source||'chat' in source&&source.chat===SETTINGS_TAB?('key' in target?target.key:keyOf.get(target.tab)):undefined;
     const run='tab' in target&&!key?runs.get(target.tab):undefined;
     const els=key?members(key):run?run.flatMap(id=>strip.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(id)}"]`)??[]):[event.currentTarget as HTMLElement];if(!els.length)return;
     const first=els[0],last=els.at(-1)!,left=first.getBoundingClientRect().left,right=last.getBoundingClientRect().right;
@@ -137,18 +146,31 @@ export function TabStrip(props:TabStripProps) {
     }
     if(selection.size)props.onSelection(new Set());props.onOpen(session);
   };
+  const settingsTab=()=>{
+    const t=props.settings!,active=t.active,size=active||!groups.shrink?'':icons.has(SETTINGS_TAB)?'compact':'narrow';
+    return <div key={SETTINGS_TAB} ref={settingsRef} data-tab-id={SETTINGS_TAB} data-pulse={t.pulse} title={size==='compact'?'Settings':undefined}
+      onMouseDown={event=>{if(event.button===1)event.preventDefault();}} onAuxClick={event=>{if(event.button===1){event.preventDefault();t.onClose();}}} onContextMenu={event=>{event.preventDefault();event.stopPropagation();}}
+      draggable onDragStart={event=>props.onDragStart(event,SETTINGS_TAB)} onDragEnd={props.onDragEnd} {...targetProps({tab:SETTINGS_TAB},SETTINGS_TAB)}
+      className={`tab settings-tab ${active?'active':''} ${props.dragging===SETTINGS_TAB?'dragging':''} ${size}`}>
+      <button aria-label="Settings tab" aria-current={active?'page':undefined} onClick={()=>{if(selection.size)props.onSelection(new Set());t.onSelect();}}><Settings2 size={14}/><span className="tab-name">Settings</span></button>
+      <button className="tab-close" aria-label="Close Settings" title="Close Settings (⌘ W)" onClick={t.onClose}><X size={12}/></button>
+      {active&&<><span className="tab-flare left" aria-hidden="true"/><span className="tab-flare right" aria-hidden="true"/></>}
+    </div>;
+  };
   const tab=(id:string,color?:string,end=false)=>{
-    const s=byId.get(id)!;const active=id===selected;const activity=chatActivity(s);
-    const size=active||inView.has(id)||!groups.shrink?'':icons.has(id)?'compact':'narrow';
+    if(id===SETTINGS_TAB)return settingsTab();
+    const s=byId.get(id)!;const active=id===focused;const activity=chatActivity(s),command=terminalCommand(s);const editing=props.renaming===id;
+    const size=active||editing||inView.has(id)||!groups.shrink?'':icons.has(id)?'compact':'narrow';
     const run=runs.get(id),partners=run?.filter(v=>v!==id).map(v=>byId.get(v)?.name).join(', ');
     const split=run?`split ${run[0]===id?'split-start':''} ${run.at(-1)===id?'split-end':''} ${inView.has(id)?'split-view':''}`:'';
-    return <div key={id} data-tab-id={id} data-attention={activity==='attention'?id:undefined} title={size==='compact'?`${s.name}\n${activityLabel[activity]}`:undefined}
+    return <div key={id} data-tab-id={id} data-attention={activity==='attention'?id:undefined} title={size==='compact'?(tracksActivity(s)?`${s.name}\n${activityLabel[activity]}`:command?`${s.name} · ${command}`:s.name):undefined}
       style={{'--tab-color':color??(s.projectId&&groups.projectColors[s.projectId])??GROUP_COLORS[0].value,...(color?{'--group-color':color}:{})} as CSSProperties}
       onMouseDown={event=>{if(event.button===1)event.preventDefault();}} onAuxClick={event=>{if(event.button===1){event.preventDefault();props.onClose(s);}}}
       onContextMenu={event=>{event.preventDefault();event.stopPropagation();props.onTabMenu(id,event.clientX,event.clientY);}}
-      draggable onDragStart={event=>props.onDragStart(event,id)} onDragEnd={props.onDragEnd} {...targetProps({tab:id},id)}
-      data-split={run?.join(' ')} className={`tab ${split} ${active?'active':''} ${props.dragging===id||!!props.dragging&&!!run?.includes(props.dragging)?'dragging':''} ${color?'grouped':''} ${end?'group-end':''} ${size} ${selection.has(id)?'multi-selected':''}`}>
-      <button onClick={event=>click(event,s)} aria-pressed={selection.size?selection.has(id):undefined} aria-description={run?`Split view with ${partners}`:undefined}>{run?.[0]===id&&<Columns2 className="split-mark" size={11} aria-hidden="true"/>}<AgentIcon launcher={s.launcher} size={14}/><span className="tab-name">{s.name}</span><ChatStatusIcon session={s}/><LimitRing session={s}/></button>
+      draggable={!editing} onDragStart={event=>props.onDragStart(event,id)} onDragEnd={props.onDragEnd} {...targetProps({tab:id},id)}
+      data-split={run?.join(' ')} className={`tab ${split} ${active?'active':''} ${props.dragging===id||!!props.dragging&&!!run?.includes(props.dragging)?'dragging':''} ${color?'grouped':''} ${end?'group-end':''} ${size} ${selection.has(id)?'multi-selected':''} ${editing?'renaming':''}`}>
+      {editing?<div className="tab-rename"><AgentIcon launcher={s.launcher} size={14}/><InlineRename initial={s.name} label={`Rename chat ${s.name}`} onDone={name=>props.onRename?.(s,name)}/></div>:
+      <button onClick={event=>click(event,s)} onDoubleClick={event=>{if(!event.metaKey&&!event.shiftKey)props.onStartRename?.(id);}} aria-pressed={selection.size?selection.has(id):undefined} aria-description={run?`Split view with ${partners}`:undefined}>{run?.[0]===id&&<Columns2 className="split-mark" size={11} aria-hidden="true"/>}<AgentIcon launcher={s.launcher} size={14}/><span className="tab-name">{s.name}{command&&<span className="terminal-command"> · {command}</span>}</span><ChatStatusIcon session={s}/><LimitRing session={s}/></button>}
       <button className="tab-close" disabled={props.busy===s.id} aria-label={`Close chat ${s.name}`} title="Close chat and stop its tmux session" onClick={()=>props.onClose(s)}><X size={12}/></button>
       {active&&<><span className="tab-flare left" aria-hidden="true"/><span className="tab-flare right" aria-hidden="true"/></>}
     </div>;

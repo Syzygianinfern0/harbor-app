@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-test('refresh is aligned and clickable, and local/remote project menus hand off to Cursor',async()=>{
+test('refresh is aligned and clickable, and local/remote project menus hand off to the default Open in app',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'harbor-project-actions-'));
   const createdAt=new Date().toISOString();
   const projects=[{id:'local-project',name:'Local project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt},{id:'remote-project',name:'Remote project',cwd:'/data/Project #1',connection:{target:'research',port:2222},hostLabel:'Research server',createdAt}];
@@ -14,17 +14,18 @@ test('refresh is aligned and clickable, and local/remote project menus hand off 
     const page=await app.firstWindow();
     await app.evaluate(({ipcMain})=>{
       (globalThis as any).openedProjects=[];(globalThis as any).refreshClicks=0;
-      ipcMain.removeHandler('harbor:openProjectInCursor');ipcMain.handle('harbor:openProjectInCursor',(_e,id)=>{(globalThis as any).openedProjects.push(id);});
+      ipcMain.removeHandler('harbor:openInApps');ipcMain.handle('harbor:openInApps',()=>['finder','cursor']);
+      ipcMain.removeHandler('harbor:openIn');ipcMain.handle('harbor:openIn',(_e,target,app)=>{(globalThis as any).openedProjects.push([target.id,app]);});
       ipcMain.removeHandler('harbor:refresh');ipcMain.handle('harbor:refresh',()=>{(globalThis as any).refreshClicks++;});
       ipcMain.removeHandler('harbor:checkReachability');ipcMain.handle('harbor:checkReachability',()=>({}));
       ipcMain.removeHandler('harbor:importHistory');ipcMain.handle('harbor:importHistory',()=>{});
     });
-    for(const name of ['Local project','Remote project']){
+    for(const [name,item] of [['Local project','Open in Finder'],['Remote project','Open in Cursor']]){
       await page.getByRole('button',{name,exact:true}).click({button:'right'});
-      await page.getByRole('menuitem',{name:'Open in Cursor',exact:true}).click();
+      await page.getByRole('menuitem',{name:item,exact:true}).click();
       await expect(page.getByRole('menu',{name:'Project actions'})).toHaveCount(0);
     }
-    expect(await app.evaluate(()=>(globalThis as any).openedProjects)).toEqual(['local-project','remote-project']);
+    expect(await app.evaluate(()=>(globalThis as any).openedProjects)).toEqual([['local-project','finder'],['remote-project','cursor']]);
     const refresh=page.getByRole('button',{name:'Refresh all chats and status'});
     await expect(refresh).toHaveAttribute('title',/⌘ R/);
     await refresh.click();await expect.poll(()=>app.evaluate(()=>(globalThis as any).refreshClicks)).toBe(1);
@@ -40,12 +41,12 @@ test('refresh is aligned and clickable, and local/remote project menus hand off 
   }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
 
-test('update settings show cached automatic results and bulk progress survives closing preferences',async()=>{
+test('update settings show cached automatic results and bulk progress survives closing Settings',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'harbor-bulk-ui-'));
   const app=await electron.launch({args:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
   try {
     const page=await app.firstWindow();
-    await expect(page.getByRole('button',{name:'Preferences',exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeVisible();
     await app.evaluate(async ({ipcMain,BrowserWindow})=>{
       const original=await new Promise<any>(resolve=>{const window=BrowserWindow.getAllWindows()[0];window.webContents.executeJavaScript('window.harbor.snapshot()').then(resolve);});
       const row=(hostId:string,agent:string)=>({hostId,hostLabel:hostId,agent,status:'available',installed:'1.0.0',latest:'1.1.0',checkedAt:new Date().toISOString()});
@@ -62,16 +63,22 @@ test('update settings show cached automatic results and bulk progress survives c
         state.results={'This Mac:codex':{message:'Verified: 1.1.0 is up to date.'},'Research server:claude':{message:'Update failed: SSH unavailable'}};publish();
       });
     });
-    const open=async()=>{await page.getByRole('button',{name:'Preferences',exact:true}).click();await page.getByRole('button',{name:'Updates',exact:true}).click();};
+    const open=async()=>{await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('button',{name:'Updates',exact:true}).click();};
     await open();await expect(page.locator('.update-host')).toHaveCount(2);
     await page.getByRole('button',{name:'Update all (2)',exact:true}).click();
     await expect(page.getByText(/Updating agents across your machines/)).toBeVisible();
     await expect(page.getByRole('button',{name:'Check for updates',exact:true})).toBeDisabled();
-    await page.getByRole('button',{name:'Close preferences'}).click();await open();
+    await page.getByRole('button',{name:'Close Settings'}).click();await expect(page.locator('.settings-view')).toHaveCount(0);await open();
     await expect(page.locator('.updates-table')).toContainText('Verified: 1.1.0');
     await expect(page.locator('.updates-table')).toContainText('SSH unavailable');
     await expect(page.getByRole('button',{name:'Update all (1)',exact:true})).toBeEnabled();
     await page.screenshot({path:'test-results/screenshots/bulk-agent-updates.png'});
+    // Narrow window: each row keeps its status and Update button on one line.
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(950,640));await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThanOrEqual(950);
+    const line=page.locator('.update-status-line').filter({has:page.getByRole('button',{name:'Update Claude Code'})});
+    const [status,button]=await Promise.all([line.locator('.update-status').boundingBox(),line.getByRole('button').boundingBox()]);
+    expect(Math.abs((status!.y+status!.height/2)-(button!.y+button!.height/2))).toBeLessThan(3);
+    await page.screenshot({path:'test-results/screenshots/bulk-agent-updates-narrow.png'});
   }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
 

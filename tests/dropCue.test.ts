@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dropSide, moveItem, planStripDrop, type StripState } from '../src/shared/dropCue';
-import { arrangeTabs, createGroup, defaultTabGroups, groupKeys, layoutTabs } from '../src/shared/tabGroups';
+import { arrangeTabs, createGroup, defaultTabGroups, groupKeys, layoutTabs, SETTINGS_TAB } from '../src/shared/tabGroups';
 
 const project:Record<string,string>={a1:'a',a2:'a',a3:'a',b1:'b',b2:'b',c1:'c'};
 const projectOf=(id:string)=>project[id];
@@ -78,4 +78,29 @@ test('a group lands as a block beside the target group, or has no plan',()=>{
   assert.deepEqual(shown({...custom,...block}).tabs,['c1','a1','a2','b1']);
   // Project groups keep sidebar order among themselves, so one cannot move past a custom group: no cue.
   assert.equal(planStripDrop(custom,{group:'p:a'},{key:`g:${id}`},'after'),undefined);
+});
+
+test('the Settings tab moves beside whole groups and ungrouped tabs, and never joins a group',()=>{
+  const S=SETTINGS_TAB,{state:custom,id}=createGroup(defaultTabGroups(),['b1','b2']);
+  const state=base(['a1','a2','b1','b2',S],custom);
+  assert.deepEqual(shown(state).tabs,['a1','a2','b1','b2',S]);
+  // Onto a project group's tab or chip: it lands beside the whole group, ungrouped.
+  for(const target of [{tab:'a2'},{tab:'a1'},{key:'p:a'}] as const){
+    const plan=planStripDrop(state,{chat:S},target,'before')!;const laid=layoutTabs(plan.tabs,plan.groups,projectOf,plan.projectOrder);
+    assert.deepEqual(arrangeTabs(laid.segments),[S,'a1','a2','b1','b2']);assert.equal(laid.keyOf.get(S),undefined);assert.equal(plan.groups,custom);
+  }
+  // Beside a custom group member it lands beside the group without joining it.
+  const between=planStripDrop(state,{chat:S},{tab:'b1'},'before')!;
+  assert.deepEqual(shown({...state,...between}).tabs,['a1','a2',S,'b1','b2']);assert.deepEqual(between.groups.custom.find(g=>g.id===id)!.members,['b1','b2']);
+  // Never into a chip, and no plan where it already is.
+  assert.equal(planStripDrop(state,{chat:S},{key:`g:${id}`},'into'),undefined);
+  assert.equal(planStripDrop(state,{chat:S},{tab:'b2'},'after'),undefined);
+  // A chat dropped beside Settings leaves its custom group, like beside any ungrouped tab.
+  const moved=planStripDrop(base(['a1',S,'b1','b2'],custom),{chat:'b1'},{tab:S},'before')!;
+  assert.deepEqual(moved.groups.custom.find(g=>g.id===id)!.members,['b2']);
+});
+
+test('Settings beside one project\'s tabs does not make that project\'s label appear',()=>{
+  const {segments,keyOf}=layoutTabs(['a1','a2',SETTINGS_TAB],defaultTabGroups(),projectOf,['a']);
+  assert.deepEqual(segments.map(s=>s.kind),['tab','tab','tab']);assert.equal(keyOf.get('a1'),undefined);
 });

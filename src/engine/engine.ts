@@ -8,7 +8,8 @@ import { discoverHosts } from './hosts';
 import { checkAgentUpdates, updateMachines, installAgentUpdate } from './updates';
 import { validateMode } from '../shared/agentModes';
 import { forkBlocker, forkName } from '../shared/fork';
-import { onlyArtifactWatches } from '../shared/chatStatus';
+import { onlyArtifactWatches, tracksActivity } from '../shared/chatStatus';
+import { defaultTerminalName, legacyTerminalName, needsTerminalNumber, nextTerminalNumber, terminalName } from '../shared/terminalName';
 import { UpdateManager } from './updateManager';
 import { AgentBridge } from './bridge';
 import { PricingStore } from './pricing';
@@ -87,6 +88,11 @@ export class HarborEngine extends EventEmitter {
       if (defaultName) session.name = session.launcher === 'shell' ? 'Terminal' : 'Untitled chat';
       migrated = true;
     }
+    // Open terminals saved under the old "New terminal" default get a number, oldest first.
+    for (const session of [...this.sessions].sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))) {
+      if (session.status === 'closed' || !legacyTerminalName(session)) continue;
+      session.name = terminalName(nextTerminalNumber(this.sessions, session.projectId, session.id)); migrated = true;
+    }
     if (migrated) await this.persist();
     await this.updates.load();
     if (poll) { void this.refresh(); this.polling = setInterval(() => { void this.refresh(); }, 2500); this.polling.unref(); }
@@ -97,6 +103,7 @@ export class HarborEngine extends EventEmitter {
     return { agentUpdates: this.updates.snapshot(), projects: structuredClone(this.projects), sessions: structuredClone(this.sessions), hosts: preferences.hosts.filter(host => host.enabled), preferences, home: homedir(), dataDir: this.dataDir };
   }
   async savePreferences(preferences: Preferences) { await this.preferencesStore.save(preferences); this.changed(); }
+  async updatePreferences(patch: Partial<Preferences>) { await this.preferencesStore.update(patch); this.changed(); }
   async sshCandidates() { return (await discoverHosts()).filter(host => host.source !== 'local'); }
   async resolveSsh(alias: string): Promise<SshConnection> {
     validateHost(alias);
@@ -135,6 +142,17 @@ export class HarborEngine extends EventEmitter {
     if (project.cwd.startsWith('/')) return structuredClone(project);
     const cwd = (await this.transport.run(project.connection, this.transport.setup()+`cd -- ${directory(project.cwd)} && pwd -P`)).trim();
     return {...structuredClone(project), cwd};
+  }
+  /** A project's or chat's folder as an absolute path on its host, for opening in another app. */
+  async folderForOpen(kind: 'project' | 'chat', id: string): Promise<{cwd: string; connection: Connection}> {
+    if (kind === 'project') { const project = await this.projectForEditor(id); return {cwd: project.cwd, connection: project.connection}; }
+    if (kind !== 'chat') throw new Error('Invalid folder target.');
+    const session = this.sessions.find(s => s.id === id);
+    if (!session) throw new Error('Chat not found.');
+    const connection = structuredClone(this.connection(session));
+    if (session.cwd.startsWith('/')) return {cwd: session.cwd, connection};
+    const cwd = (await this.transport.run(connection, this.transport.setup()+`cd -- ${directory(session.cwd)} && pwd -P`)).trim();
+    return {cwd, connection};
   }
   async listDirectories(host: string, input: string, showHidden: boolean) {
     bounded(input, 'folder', 4096);
@@ -367,6 +385,8 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
       if (!inferred) { inferred = { id: randomUUID(), name: input.cwd === '~' ? 'Home' : path.basename(input.cwd), cwd: input.cwd, hostId: profile?.id, hostLabel: profile?.label || 'This Mac', connection, createdAt: now }; this.projects.push(inferred); }
       session.projectId = inferred.id;
     }
+    // Numbered here, after the last await, so terminals created at the same time never pick the same number.
+    if (defaultTerminalName(session)) session.name = terminalName(nextTerminalNumber(this.sessions, session.projectId));
     this.sessions.push(session);
     try { await this.persist(); } catch (error) { this.changed(); throw new Error(`Session ${tmuxName} is running, but its index could not be saved: ${String(error)}`); }
     this.changed(); return structuredClone(session);
@@ -384,7 +404,7 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
   }
   /** The unread marker (see shared/unread.ts); only a real change is persisted. */
   async setUnread(id: string, unread: boolean) {
-    const session = this.sessions.find(s => s.id === id); if (!session || !!session.unread === unread) return;
+    const session = this.sessions.find(s => s.id === id); if (!session || !!session.unread === unread || (unread && !tracksActivity(session))) return;
     if (unread) session.unread = true; else delete session.unread;
     await this.persist(); this.changed();
   }
@@ -544,7 +564,9 @@ ${this.transport.tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', 'HARB
       const result = await this.transport.run(connection, this.transport.setup() + `set -e\ncd -- ${directory(session.cwd)}\n${this.transport.tmux(['-f','/dev/null','new-session','-d','-P','-F','HARBOR_PANE=#{pane_id}','-s',tmuxName,'-x','120','-y','32',command,';','set-option','-w','-t',`=${tmuxName}:`,'remain-on-exit','on',';','set-option','-t',tmuxName,'status','off'])}`);
       const paneId = result.match(/^HARBOR_PANE=(%\d+)$/m)?.[1];
       if (!paneId) throw new Error(`The session may have started as ${tmuxName}; do not automatically retry.`);
-      Object.assign(session, { completedAt: undefined, attentionAt: undefined, activityAt: undefined, activityDetail: undefined, latestLaunchCommand: command, permissionMode, paneId, tmuxName, generation, status:'running', activity: agent ? 'starting' : 'idle', archived:false, updatedAt:new Date().toISOString() });
+      Object.assign(session, { completedAt: undefined, attentionAt: undefined, activityAt: undefined, activityDetail: undefined, latestLaunchCommand: command, permissionMode, paneId, tmuxName, generation, status:'running', detail: undefined, activity: agent ? 'starting' : 'idle', archived:false, updatedAt:new Date().toISOString() });
+      // A reopened terminal keeps its number unless another open terminal took it meanwhile.
+      if (needsTerminalNumber(this.sessions, session)) session.name = terminalName(nextTerminalNumber(this.sessions, session.projectId, session.id));
       await this.persist(); this.changed(); return structuredClone(session);
     } finally { this.operations.delete(id); }
   }
