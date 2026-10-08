@@ -2,7 +2,7 @@ import { DirectoryPicker } from './DirectoryPicker';
 import { AgentIcon } from './AgentIcon';
 import { agentModes } from '../shared/agentModes';
 import { useState, type RefObject } from 'react';
-import { Check, LoaderCircle, Plus, X } from 'lucide-react';
+import { Check, LoaderCircle, Plus, Trash2, X } from 'lucide-react';
 import type { Launcher, Project, Session, Snapshot, Preferences } from '../shared/types';
 
 export function ProjectDialog({snapshot,onClose,onCreated,onPreferences}:{snapshot:Snapshot;onClose:()=>void;onCreated:(p:Project)=>void;onPreferences:()=>void}) {
@@ -18,4 +18,21 @@ export function ChatDialog({project,defaults,shortcut,onClose,onCreated}:{projec
 export function RenameDialog({initial,kind,onClose,onSave}:{initial:string;kind:'chat'|'project';onClose:()=>void;onSave:(name:string)=>Promise<void>}){
  const [name,setName]=useState(initial);const [busy,setBusy]=useState(false);const [error,setError]=useState('');
  return <div className="modal-backdrop"><form className="modal rename-modal" role="dialog" aria-modal="true" aria-label={`Rename ${kind}`} onSubmit={async e=>{e.preventDefault();setBusy(true);try{await onSave(name);}catch(err){setError((err as Error).message);}finally{setBusy(false);}}}><div className="modal-heading"><h2>Rename {kind}</h2><button type="button" className="icon-button" aria-label="Close dialog" disabled={busy} onClick={onClose}><X size={18}/></button></div><label>Name<input value={name} required maxLength={100} onChange={e=>setName(e.target.value)}/></label>{error&&<p role="alert" className="form-error">{error}</p>}<div className="modal-footer"><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy}>Save name</button></div></form></div>;
+}
+// Deleting a project only removes Harbor's entry for it. Running chats are named so nothing keeps running unseen by surprise; hiding is offered as the reversible option.
+export function DeleteProjectDialog({project,running,onClose,onHide,onDelete}:{project:Project;running:Session[];onClose:()=>void;onHide:()=>Promise<void>;onDelete:()=>Promise<void>}){
+ const [busy,setBusy]=useState(false);const [error,setError]=useState('');
+ const act=async(action:()=>Promise<void>)=>{setBusy(true);setError('');try{await action();}catch(err){setError((err as Error).message.replace(/^Error invoking remote method '[^']+': Error: /,''));setBusy(false);}};
+ return <div className="modal-backdrop"><form className="modal delete-project-modal" role="alertdialog" aria-modal="true" aria-label={`Delete project ${project.name}`} onSubmit={e=>{e.preventDefault();void act(onDelete);}}>
+  <div className="modal-heading"><h2>Delete “{project.name}”?</h2><button type="button" className="icon-button" aria-label="Close dialog" disabled={busy} onClick={onClose}><X size={18}/></button></div>
+  <p>This removes the project from Harbor's sidebar. Only Harbor's project entry is deleted:</p>
+  <ul className="delete-project-facts">
+   <li>The folder <code>{project.hostLabel} · {project.cwd}</code> and its files are not touched.</li>
+   <li>Saved Codex and Claude conversations are kept. Add the folder as a project again to bring them back.</li>
+   {running.length?<li className="attention-text">{running.length} running {running.length===1?'chat keeps':'chats keep'} running in tmux: {running.map(s=>s.name).join(', ')}. Open tabs stay open, but these chats leave the sidebar. Close them first if you want to stop them.</li>:<li>No chats in this project are running, and no tmux session is closed.</li>}
+  </ul>
+  <p className="delete-project-hint">To just get it out of the way, hide it instead. Hidden projects come back from the sidebar or Preferences → Projects.</p>
+  {error&&<p role="alert" className="form-error">{error}</p>}
+  <div className="modal-footer"><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className="secondary-button" disabled={busy} onClick={()=>void act(onHide)}>Hide instead</button><button className="primary-button danger-button" disabled={busy}>{busy?<LoaderCircle size={15} className="spin"/>:<Trash2 size={15}/>}Delete project</button></div>
+ </form></div>;
 }

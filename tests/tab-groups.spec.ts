@@ -25,6 +25,8 @@ async function setActivity(app:ElectronApplication,page:Page,activity:Record<str
   },snapshot);
 }
 
+// Hovering the collapsed rail peeks the sidebar open over it, so park the pointer elsewhere before clicking a rail button.
+const clearRail=async(page:Page)=>{await page.mouse.move(900,500);await expect(page.locator('.sidebar-dock.is-peeking')).toHaveCount(0);};
 test('project and custom tab groups fold, report status, persist, and link to the sidebar',async()=>{
   const data=await fixture();let app=await data.launch();let page=await app.firstWindow();
   try {
@@ -95,7 +97,7 @@ test('project and custom tab groups fold, report status, persist, and link to th
     // The collapsed rail switches groups in focus mode and shows project status.
     await page.keyboard.press('Meta+b');
     await expect(page.locator('.rail-session .rail-badge')).toHaveCount(2);
-    await page.getByRole('button',{name:'Open project tessera-api',exact:true}).click();await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
+    await clearRail(page);await page.getByRole('button',{name:'Open project tessera-api',exact:true}).click();await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
     await page.screenshot({path:'test-results/screenshots/32-tab-groups-rail.png'});
     await page.keyboard.press('Meta+b');
     await page.getByRole('button',{name:'Tab groups',exact:true}).click();
@@ -222,9 +224,9 @@ test('clicking a project name shows its project page in focus mode and with ever
     await name('tessera-api').click();await expect(heading).toHaveText('tessera-api');await expect(overview).toHaveCount(0);
     // Collapsed rail in focus mode: another project's button switches to its group; the open group's button, or a project without tabs, shows the page.
     await openChat(page,'Tab groups design');await page.keyboard.press('Meta+b');
-    await page.getByRole('button',{name:'Open project tessera-api',exact:true}).click();await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
-    await page.getByRole('button',{name:'Open project tessera-api',exact:true}).click();await expect(heading).toHaveText('tessera-api');await expect(overview).toHaveCount(0);
-    await page.getByRole('button',{name:'Open project neurips-paper',exact:true}).click();await expect(heading).toHaveText('neurips-paper');
+    await clearRail(page);await page.getByRole('button',{name:'Open project tessera-api',exact:true}).click();await expect(page.locator('.tab.active')).toHaveAttribute('data-tab-id','b1');
+    await clearRail(page);await page.getByRole('button',{name:'Open project tessera-api',exact:true}).click();await expect(heading).toHaveText('tessera-api');await expect(overview).toHaveCount(0);
+    await clearRail(page);await page.getByRole('button',{name:'Open project neurips-paper',exact:true}).click();await expect(heading).toHaveText('neurips-paper');
     await page.keyboard.press('Meta+b');
     // Without focus mode, a project name also shows the page when every group is folded.
     await openChat(page,'Rate limiter');await page.getByRole('button',{name:'Tab groups',exact:true}).click();await page.locator('.groups-menu label',{hasText:'Focus mode'}).click();

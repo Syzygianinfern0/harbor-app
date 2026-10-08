@@ -52,7 +52,7 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
       try {
         await window.harbor.attach(session.id, terminal.cols, terminal.rows);
         if (disposed) return;
-        connected = true; attempts = 0; setState('Connected'); if(activeRef.current)terminal.focus();
+        connected = true; attempts = 0; setState('Connected'); if(activeRef.current&&!document.activeElement?.closest('.inline-rename'))terminal.focus();
       } catch (err) {
         if (!disposed) { setState('Disconnected'); setError((err as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, '')); retry(); }
       } finally { connecting = false; }

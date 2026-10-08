@@ -1,9 +1,11 @@
 import { Bell, Circle, CircleCheck, CircleHelp, ExternalLink, Hourglass, LoaderCircle, TriangleAlert } from 'lucide-react';
 import type { Session } from '../shared/types';
-import { activityLabel, chatActivity, type ChatStatus } from '../shared/chatStatus';
+import { activityLabel, chatActivity, tracksActivity, type ChatStatus } from '../shared/chatStatus';
 import { isUnread, unreadCount } from '../shared/unread';
 
 export function ChatStatusIcon({ session }: { session: Session }) {
+  // Terminals carry no status: an empty slot keeps sidebar rows aligned.
+  if (!tracksActivity(session)) return <span className="chat-activity no-status" aria-hidden="true"/>;
   const activity = chatActivity(session);
   const detail = activity === 'completed' ? 'The agent is idle after its last turn. Task success is not verified.' : session.activityDetail;
   return <>{isUnread(session)&&<UnreadDot sessions={[session]}/>}<StatusIcon activity={activity} detail={detail}/></>;
