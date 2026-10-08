@@ -15,7 +15,7 @@ export function RemotesOverview({ hosts, saved, onOpen, onAdd, onImport, error }
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
-  const discover = async () => { setBusy(true); setFailure(''); try { setCandidates(await window.harbor.sshCandidates()); setPicked([]); } catch (err) { setFailure(cleanError(err)); } finally { setBusy(false); } };
+  const discover = async () => { setBusy(true); setFailure(''); try { setCandidates(await window.harbor.sshCandidates()); setPicked([]); setQuery(''); } catch (err) { setFailure(cleanError(err)); } finally { setBusy(false); } };
   const importPicked = async () => {
     setBusy(true); setFailure('');
     try {
@@ -23,15 +23,20 @@ export function RemotesOverview({ hosts, saved, onOpen, onAdd, onImport, error }
       if (await onImport(imported)) setCandidates(null);
     } catch (err) { setFailure(cleanError(err)); } finally { setBusy(false); }
   };
+  const isAdded = (host: Host) => hosts.some(saved => saved.connection?.target === host.id);
+  const shown = (candidates ?? []).filter(host => host.label.toLowerCase().includes(query.trim().toLowerCase()));
+  const selectable = shown.filter(host => !isAdded(host)).map(host => host.id);
+  const allPicked = selectable.length > 0 && selectable.every(id => picked.includes(id));
   return <>
     <PageHeading title="Remotes" description="Machines available when you start a chat. Harbor uses your SSH config, including jump hosts and keys, and never edits it." saved={saved}/>
     <div className="settings-actions"><button className="secondary-button" data-setting="import" onClick={() => void discover()} disabled={busy}><Download size={14}/>Import from SSH config</button><button className="secondary-button" data-setting="add" onClick={onAdd} disabled={busy}><Plus size={14}/>Add manually</button></div>
     {candidates ? <div className="ssh-import"><div className="import-heading"><h3>Select aliases to import</h3><button className="text-button" onClick={() => setCandidates(null)}>Back to remotes</button></div>
-      <div className="search-box"><Search size={14}/><input aria-label="Search SSH aliases" placeholder="Search aliases…" value={query} onChange={event => setQuery(event.target.value)}/></div>
-      <div className="import-options">{candidates.filter(host => host.label.toLowerCase().includes(query.toLowerCase())).map(host => {
-        const added = hosts.some(saved => saved.connection?.target === host.id);
-        return <label key={host.id} className="import-option"><input type="checkbox" checked={added || picked.includes(host.id)} disabled={added || busy} onChange={event => setPicked(values => event.target.checked ? [...values, host.id] : values.filter(id => id !== host.id))}/><span>{host.label}</span>{added && <small>Already added</small>}</label>;
-      })}{!candidates.length && <p>No literal Host aliases were found in ~/.ssh/config. You can add a remote manually.</p>}</div>
+      {candidates.length > 0 && <div className="import-toolbar"><label className="import-search"><Search size={14}/><input aria-label="Search SSH aliases" placeholder="Search aliases…" value={query} onChange={event => setQuery(event.target.value)}/></label>
+        <button className="text-button" disabled={busy || !selectable.length} onClick={() => setPicked(values => allPicked ? values.filter(id => !selectable.includes(id)) : [...new Set([...values, ...selectable])])}>{allPicked ? 'Clear' : 'Select all'}</button></div>}
+      <div className="import-options" role="group" aria-label="SSH aliases">{shown.map(host => {
+        const added = isAdded(host);
+        return <label key={host.id} className={`import-option ${added ? 'added' : ''}`} title={host.label}><input type="checkbox" checked={added || picked.includes(host.id)} disabled={added || busy} onChange={event => setPicked(values => event.target.checked ? [...values, host.id] : values.filter(id => id !== host.id))}/><span>{host.label}</span>{added && <small>Added</small>}</label>;
+      })}{!candidates.length ? <p>No literal Host aliases were found in ~/.ssh/config. You can add a remote manually.</p> : !shown.length && <p>No aliases match “{query}”.</p>}</div>
       <div className="import-footer"><small>Only selected aliases are imported. Your SSH config is never edited.</small><button className="primary-button" disabled={!picked.length || busy} onClick={() => void importPicked()}>{busy ? <LoaderCircle className="spin" size={14}/> : <Download size={14}/>}Import selected ({picked.length})</button></div>
     </div> : <SettingsGroup title={`${hosts.length} ${hosts.length === 1 ? 'machine' : 'machines'}`}>{hosts.map(host => <button key={host.id} className="settings-row settings-link" onClick={() => onOpen(host.id)}>
       {host.id === 'local' ? <HardDrive size={16}/> : <Server size={16}/>}<span className="settings-row-text"><strong>{host.label}</strong><small>{host.id === 'local' ? 'Local machine' : host.connection?.target || 'Not configured yet'}{host.enabled ? '' : ' · hidden from the launcher'}</small></span><ChevronRight size={15}/>

@@ -2,7 +2,7 @@
 // so the insertion line always marks the real landing spot; a drop that would change nothing (or land
 // somewhere other than the line) has no plan and shows no cue.
 import { splitRuns } from './splits';
-import { addToGroup, arrangeTabs, groupTabs, layoutTabs, removeFromGroups, type ProjectOf, type Segment, type TabGroups } from './tabGroups';
+import { addToGroup, arrangeTabs, groupTabs, layoutTabs, removeFromGroups, SETTINGS_TAB, type ProjectOf, type Segment, type TabGroups } from './tabGroups';
 
 export type DropPlace='before'|'after'|'into';
 export interface Box {left:number;top:number;width:number;height:number}
@@ -25,6 +25,21 @@ export const stripRuns=(segments:Segment[],splits:string[][]=[])=>splitRuns(segm
 /** The tab strip's drops: a tab moves beside a tab (joining or leaving a custom group with it), a tab drops into a
  *  group chip, and a group moves as a block beside a tab or another group. A split's tabs move (and join groups) together,
  *  and nothing lands between them. */
+/** Settings never joins a group: like a group, it lands beside a whole group (its chip or any of its tabs) or beside an ungrouped tab. */
+function placeSettings(state:StripState,target:StripTarget,place:DropPlace):StripPlan|undefined {
+  const {groups,projectOf,projectOrder}=state;if(place==='into')return;
+  const now=layoutTabs(state.tabs,groups,projectOf,projectOrder,state.splits),arranged=arrangeTabs(now.segments);if(!arranged.includes(SETTINGS_TAB))return;
+  const runs=stripRuns(now.segments,state.splits);
+  const targetKey='key' in target?target.key:now.keyOf.get(target.tab),after=place==='after';
+  const anchor=targetKey?groupTabs(now.segments,targetKey):runs.get((target as {tab:string}).tab)??[(target as {tab:string}).tab];
+  if(!anchor.length||anchor.includes(SETTINGS_TAB))return;
+  const anchorSeg=targetKey??`t:${after?anchor.at(-1):anchor[0]}`;
+  const rest=arranged.filter(id=>id!==SETTINGS_TAB);if(!anchor.every(id=>rest.includes(id)))return;
+  rest.splice(after?rest.indexOf(anchor.at(-1)!)+1:rest.indexOf(anchor[0]),0,SETTINGS_TAB);
+  const plan={tabs:rest,groups,projectOrder};
+  const keys=layoutTabs(rest,groups,projectOf,projectOrder,state.splits).segments.map(segKey),was=now.segments.map(segKey);
+  return keys[keys.indexOf(anchorSeg)+(after?1:-1)]===`t:${SETTINGS_TAB}`&&keys.some((v,i)=>v!==was[i])?plan:undefined;
+}
 export function planStripDrop(state:StripState,source:StripSource,target:StripTarget,place:DropPlace):StripPlan|undefined {
   const {groups,projectOf,projectOrder}=state;
   const now=layoutTabs(state.tabs,groups,projectOf,projectOrder,state.splits),arranged=arrangeTabs(now.segments);
@@ -32,6 +47,7 @@ export function planStripDrop(state:StripState,source:StripSource,target:StripTa
   const runs=stripRuns(now.segments,state.splits),runOf=(id:string)=>runs.get(id)??[id];
   if('chat' in source){
     const chat=source.chat,block=runOf(chat);
+    if(chat===SETTINGS_TAB)return placeSettings(state,target,place);
     if('key' in target){
       if(place!=='into')return;const key=target.key,open=state.tabs.includes(chat),moving=open?block:[chat],own=moving.filter(id=>projectOf(id)===key.slice(2));
       const next=key.startsWith('g:')?addToGroup(groups,key.slice(2),moving):own.length?removeFromGroups(groups,own):undefined;if(!next)return;

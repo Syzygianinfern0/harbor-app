@@ -52,14 +52,21 @@
 .ssh-import{border:1px solid #333c48;border-radius:8px;padding:17px}
 .import-heading{display:flex;align-items:center;justify-content:space-between}
 .preferences-modal h3{margin:0;font-size:14px;font-weight:500;letter-spacing:-.2px}
-.ssh-import .search-box{margin:14px 0}
-.ssh-import .search-box input{border:1px solid #333c48;padding:8px}
-.import-options{height:270px;overflow:auto;background:#161b22;border:1px solid #293340;border-radius:6px;padding:7px}
-.modal .import-option{display:flex;flex-direction:row;align-items:center;gap:10px;padding:9px;margin:0;border-radius:4px;font-size:12px;cursor:default}
-.import-option:hover{background:#222d36}
-.import-option small{margin-left:auto}
-.import-footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-top:16px}
-.import-footer small{max-width:320px}
+/* SSH import: a search row, then aliases as a grid of checkbox rows (one column when narrow); the whole row is clickable. */
+.import-toolbar{display:flex;align-items:center;gap:12px;margin:14px 0 10px}
+.import-search{flex:1;min-width:0;display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #333b47;border-radius:6px;background:#12161c;color:#6f7b8b}
+.import-search:focus-within{border-color:#4f6e61}
+.settings-view .import-search input:not([type=checkbox]):not([type=radio]){flex:1;min-width:0;border:0;outline:0;padding:0;background:none;border-radius:0;font-size:12px}
+.import-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));align-content:start;gap:2px;max-height:300px;overflow:auto;background:#151a20;border:1px solid var(--border);border-radius:8px;padding:6px}
+.import-options>p{grid-column:1/-1;margin:8px;font-size:12px;color:#8b97a6}
+.import-option{display:flex;flex-direction:row;align-items:center;gap:10px;min-width:0;padding:8px 10px;margin:0;border-radius:5px;font-size:12px;color:#d6dde6;cursor:default}
+.import-option>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.import-option:hover{background:#ffffff08}
+.import-option.added{color:#7d8899}
+.import-option small{margin-left:auto;flex-shrink:0;font-size:10px;color:#7d8899}
+.import-footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-top:14px}
+.import-footer small{max-width:320px;font-size:11px;line-height:1.5;color:#8b97a6}
+.ssh-import h3{margin:0;font-size:13px;font-weight:550}
 .terminal-preferences{min-height:380px;padding:5px 0}
 .terminal-preferences>p{font-size:12px;margin-top:9px;margin-bottom:22px}
 .terminal-preferences .form-row{max-width:420px}
@@ -547,9 +554,6 @@ button.note-check:hover{color:#8d98a6}
 .open-in-preferences code{font-family:Menlo,monospace;font-size:9.5px;color:#b9c6d4}
 
 /* Settings tab: a page beside the chats. The category list is fixed at 220px and the content column at most 760px, so nothing resizes or moves between categories. */
-.session-toolbar .tab.page-tab{flex-shrink:0;min-width:0;max-width:none;border-left:1px solid #272d36;-webkit-app-region:no-drag}
-.tab.page-tab>button:first-child{padding-left:13px}
-.tab.page-tab.active{--tab-fill:#1f2a28;background:var(--tab-fill);border-top-color:var(--mint);color:#eef3f1}
 .preferences-button.active,.rail-preferences.active{color:var(--mint)}
 .settings-view{flex:1;min-height:0;min-width:0;display:flex;container-type:inline-size;background:var(--bg)}
 .settings-shell{flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:220px minmax(0,1fr)}
@@ -623,6 +627,27 @@ button.note-check:hover{color:#8d98a6}
 .settings-view .update-channel label,.settings-view .open-in-custom label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:#b7c1cf}
 .settings-view .update-channel small{font-size:10px;color:#7f8d9e;line-height:1.5}
 .settings-view .open-in-app .toggle-field{flex:1;font-size:11px}.settings-view .open-in-app small{font-size:10px;color:#7f8d9e}
+/* Updates: each section is a heading with its actions on the right, then its content; an agent row keeps its status and Update button on one line. */
+.settings-view .updates-heading{flex-wrap:nowrap;align-items:flex-start}
+.settings-view .updates-heading h3{margin:0;font-size:14px;font-weight:550}
+.settings-view .updates-heading p{margin:6px 0 0;font-size:11px;line-height:1.5;color:#93a0b0;max-width:none}
+.settings-view .updates-actions{flex-wrap:nowrap;flex-shrink:0}
+.settings-view .updates-actions button{min-height:30px}
+.updates-progress{margin:12px 0 0;font-size:11px;color:#93a0b0}
+.settings-view .updates-preferences .settings-rows{margin-top:14px}
+.settings-view .updates-table{margin:0;table-layout:fixed}
+.settings-view .updates-table th:nth-child(1){width:26%}.settings-view .updates-table th:nth-child(2),.settings-view .updates-table th:nth-child(3){width:17%}
+.settings-view .updates-table th,.settings-view .updates-table td{padding:0 15px;height:44px;vertical-align:middle}
+.settings-view .updates-table thead th{height:34px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:#7d8899}
+.settings-view .updates-table td{border-top:1px solid var(--border);max-width:none;font-size:12px;color:#c9d2dd}
+.settings-view .updates-table .update-host th{height:34px;padding-top:0;background:#1a2027;border-top:1px solid var(--border);font-size:11px;font-weight:600;color:#c9d6e0}
+.settings-view .update-result{max-width:none}
+.settings-view .update-result>small,.settings-view .update-result>details{display:block;margin:-4px 0 10px;font-size:10px;line-height:1.5;color:#8b97a6}
+.update-status-line{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px}
+.update-status{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settings-view .update-result .update-one{margin:0;padding:3px 9px;min-height:24px;font-size:11px;display:inline-flex;align-items:center;gap:5px;flex-shrink:0}
+.settings-view .updates-preferences>.preferences-note{margin-top:12px!important}
+@container (max-width:620px){.settings-view .updates-heading{flex-wrap:wrap}}
 .settings-view .open-in-default{display:flex;align-items:center;gap:6px;font-size:10px;color:#93a0b0;white-space:nowrap}
 .managed-project.confirm-delete{border-color:#6b4a40;background:#2a1d1a66}.managed-project.confirm-delete>svg{color:#e1a597}
 .host-editor{padding:0;overflow:visible}

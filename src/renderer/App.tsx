@@ -15,7 +15,7 @@ import { PaneLayout } from './PaneLayout';
 import { ResizeHandle } from './ResizeHandle';
 import { dropPane, leaf, paneIds, removePane, resizePane, restorePanes, type DropSide, type PaneNode } from '../shared/panes';
 import { groupShortcut, tabShortcut, type GroupShortcut } from '../shared/shortcuts';
-import { addToGroup, assignProjectColors, createGroup, groupEntry, groupKeys, groupTabs, isCollapsed, layoutTabs, pruneGroups, removeFromGroups, restoreTabGroups, rollup, setCollapsed as setGroupCollapsed, stripTabs, ungroup, updateGroup, GROUP_COLORS, type TabGroups } from '../shared/tabGroups';
+import { addToGroup, assignProjectColors, createGroup, groupEntry, groupKeys, groupTabs, isCollapsed, layoutTabs, pruneGroups, removeFromGroups, restoreTabGroups, rollup, setCollapsed as setGroupCollapsed, stripTabs, ungroup, updateGroup, GROUP_COLORS, SETTINGS_TAB, type TabGroups } from '../shared/tabGroups';
 import { TabStrip, groupInfo } from './TabStrip';
 import { GroupsOverview } from './GroupsOverview';
 import { foldView, splitFor } from '../shared/folding';
@@ -68,19 +68,20 @@ export function App() {
   const [refreshVersion,setRefreshVersion]=useState(0);
   const usage=useHostUsage(refreshVersion,JSON.stringify(snapshot?.preferences.hosts??[]));
   const appUpdate=useAppUpdate();
-  // Settings is a tab beside the chats, kept out of `tabs` (chat IDs only). It is a singleton; `page` says whether it or the chats are showing.
-  const [settings,setSettings]=useState<SettingsLocation&{open:boolean}>(()=>{const v=saved<Partial<SettingsLocation&{open:boolean}>>('harbor.settings',{});return {open:v.open===true,category:isSettingsCategory(v.category)?v.category:'general',host:typeof v.host==='string'?v.host:undefined};});
-  const [page,setPage]=useState<'chats'|'settings'>('chats');const pageRef=useRef(page);pageRef.current=page;
+  // Settings is one tab among the chats: `SETTINGS_TAB` in `tabs` (at most once; never grouped, split or sent to the engine).
+  // `page` says whether it or the chats are showing; `harbor.settings` keeps its last page and whether it was showing.
+  const [settings,setSettings]=useState<SettingsLocation>(()=>{const v=saved<Partial<SettingsLocation>>('harbor.settings',{});return {category:isSettingsCategory(v.category)?v.category:'general',host:typeof v.host==='string'?v.host:undefined};});
+  const [page,setPage]=useState<'chats'|'settings'>(()=>saved<{showing?:boolean}>('harbor.settings',{}).showing===true&&saved<string[]>('harbor.tabs',[]).includes(SETTINGS_TAB)?'settings':'chats');const pageRef=useRef(page);pageRef.current=page;
   const [settingsPulse,setSettingsPulse]=useState(0);const settingsSearch=useRef<HTMLInputElement>(null);
-  useEffect(()=>{localStorage.setItem('harbor.settings',JSON.stringify(settings));},[settings]);
-  const showSettings=settings.open&&page==='settings';const showSettingsRef=useRef(showSettings);showSettingsRef.current=showSettings;
-  /** Opens Settings, or focuses it (with a pulse) when it is already showing. A category jumps there; otherwise the last page is kept. */
+  const settingsOpen=tabs.includes(SETTINGS_TAB);
+  const showSettings=settingsOpen&&page==='settings';const showSettingsRef=useRef(showSettings);showSettingsRef.current=showSettings;
+  useEffect(()=>{localStorage.setItem('harbor.settings',JSON.stringify({...settings,showing:showSettings}));},[settings,showSettings]);
+  /** Opens Settings as a new tab at the end (like a new chat), or focuses it (with a pulse) when it is already showing. A category jumps there; otherwise the last page is kept. */
   const openSettings=useCallback((category?:SettingsCategory,host?:string)=>{
     if(pageRef.current==='settings'&&!category)setSettingsPulse(v=>v+1);
-    setDialog(null);setSettings(v=>({open:true,category:category??v.category,host:category?host:v.host}));setPage('settings');
+    setDialog(null);setSettings(v=>({category:category??v.category,host:category?host:v.host}));setTabs(v=>v.includes(SETTINGS_TAB)?v:[...v,SETTINGS_TAB]);setPage('settings');
     requestAnimationFrame(()=>settingsSearch.current?.focus());
   },[]);
-  const closeSettings=()=>{setSettings(v=>({...v,open:false}));setPage('chats');};
   const showUsage=()=>openSettings('usage');
   const refreshAll=async()=>{if(refreshLock.current)return;refreshLock.current=true;setRefreshing(true);try{await window.harbor.refresh();const data=await window.harbor.snapshot();await Promise.all(data.projects.map(p=>window.harbor.importHistory(p.id)));setReachability(await window.harbor.checkReachability());const latest=await window.harbor.snapshot();setSnapshot(latest);setRefreshVersion(v=>v+1);const failures=latest.projects.filter(p=>p.historyError);setToast(failures.length?`Refreshed with errors: ${failures.map(p=>p.name+': '+p.historyError).join('; ')}`:'Chats and status are up to date.');}catch(error){report((error as Error).message);}finally{refreshLock.current=false;setRefreshing(false);}};
   refreshAction.current=()=>void refreshAll();
@@ -128,20 +129,20 @@ export function App() {
   useEffect(()=>{if(hydrated&&!projects.some(p=>p.id===projectId))setProjectId(projects[0]?.id||'');},[snapshot?.projects,hydrated,projectId]);
   const current=sessions.find(s=>s.id===selected);
   const project=projects.find(p=>p.id===projectId);
-  const openTabs=tabs.filter(id=>sessions.some(s=>s.id===id));
+  const openTabs=tabs.filter(id=>id===SETTINGS_TAB||sessions.some(s=>s.id===id));const openChats=openTabs.filter(id=>id!==SETTINGS_TAB);
   const projectOf=(id:string)=>sessions.find(s=>s.id===id)?.projectId;
   const tabSplits=splitSets(layout,parked);const tabLayout=layoutTabs(openTabs,groups,projectOf,projects.map(p=>p.id),tabSplits);
   const arrangedTabs=tabLayout.segments.flatMap(s=>s.kind==='tab'?[s.id]:s.tabs);
-  const visibleTabs=stripTabs(tabLayout.segments,groups,selected);
+  const visibleTabs=stripTabs(tabLayout.segments,groups,selected);const visibleChats=visibleTabs.filter(id=>id!==SETTINGS_TAB);
   const selectedKey=selected?tabLayout.keyOf.get(selected):undefined;
-  const showOverview=!current&&!projectPage&&openTabs.length>0&&visibleTabs.length===0;
+  const showOverview=!current&&!projectPage&&openChats.length>0&&visibleChats.length===0;
   const projectColor=(id?:string)=>(id&&groups.projectColors[id])||GROUP_COLORS[0].value;
   const colorSwatches=(label:string,current:string,pick:(value:string)=>void)=><div className="group-colors" role="group" aria-label={label}>{GROUP_COLORS.map(c=><button key={c.value} role="menuitemradio" aria-checked={current===c.value} aria-label={c.name} title={c.name} className={current===c.value?'current':''} style={{'--swatch':c.value} as CSSProperties} onClick={()=>pick(c.value)}/>)}</div>;
   const liveChats=(id:string)=>sessions.filter(s=>s.projectId===id&&!s.archived&&s.launcher!=='shell'&&!['closed','external'].includes(chatActivity(s)));
   const open=useCallback((session:Session)=>{setPage('chats');const w=workspaceRef.current,view=showTab(w.layout,w.parked,session.id);setLayout(view.layout);if(view.parked!==w.parked)setParked(view.parked);setSelected(session.id);if(session.projectId)setProjectId(session.projectId);setTabs(v=>v.includes(session.id)?v:[...v,session.id]);setMenu(false);setContext(undefined);},[]);
   const refreshHistory=async(id:string)=>{setBusy(id);try{await window.harbor.importHistory(id);}catch(error){report((error as Error).message);}finally{setBusy(undefined);}};
   useEffect(()=>{
-    window.harbor.snapshot().then(data=>{setSnapshot(data);const restored=saved<string[]>('harbor.tabs',[]).filter(id=>data.sessions.some(s=>s.id===id));setTabs(restored);const tree=restorePanes(saved('harbor.layout',null),restored)??(restored[0]?leaf(restored[0]):null);setLayout(tree);setParked(restoreParked(saved('harbor.splits',[]),restored,new Set(paneIds(tree))));const active=saved('harbor.selected','');setSelected(paneIds(tree).includes(active)?active:paneIds(tree)[0]);setHydrated(true);setProjectId(saved('harbor.project','')||data.sessions.find(s=>s.id===restored[0])?.projectId||data.projects[0]?.id||'');}).catch(e=>report(e.message));
+    window.harbor.snapshot().then(data=>{setSnapshot(data);const restoredTabs=[...new Set(saved<string[]>('harbor.tabs',[]))].filter(id=>id===SETTINGS_TAB||data.sessions.some(s=>s.id===id)),restored=restoredTabs.filter(id=>id!==SETTINGS_TAB);setTabs(restoredTabs);const tree=restorePanes(saved('harbor.layout',null),restored)??(restored[0]?leaf(restored[0]):null);setLayout(tree);setParked(restoreParked(saved('harbor.splits',[]),restored,new Set(paneIds(tree))));const active=saved('harbor.selected','');setSelected(paneIds(tree).includes(active)?active:paneIds(tree)[0]);setHydrated(true);setProjectId(saved('harbor.project','')||data.sessions.find(s=>s.id===restored[0])?.projectId||data.projects[0]?.id||'');}).catch(e=>report(e.message));
     const off=window.harbor.onSnapshot(setSnapshot); const offNew=window.harbor.onNewSession(()=>newChat());
     const offPrefs=window.harbor.onPreferences(()=>openSettings());
     const offOpen=window.harbor.onOpenSession(id=>{void window.harbor.snapshot().then(data=>{const session=data.sessions.find(s=>s.id===id);if(session)open(session);});});
@@ -190,24 +191,28 @@ export function App() {
     const remaining=closeTab?state.tabs.filter(tab=>tab!==id):state.tabs;
     let tree=removePane(state.layout,id);
     let active=state.selected===id?paneIds(tree)[0]:state.selected;
-    const shown=visibleTabs.filter(tab=>tab!==id&&remaining.includes(tab));
-    if(!tree&&closeTab&&shown.length){const at=Math.max(0,visibleTabs.indexOf(id));active=shown[Math.min(at,shown.length-1)];tree=leaf(active);}
+    const shown=visibleChats.filter(tab=>tab!==id&&remaining.includes(tab));
+    if(!tree&&closeTab&&shown.length){const at=Math.max(0,visibleChats.indexOf(id));active=shown[Math.min(at,shown.length-1)];tree=leaf(active);}
     if(closeTab)setTabs(remaining);setLayout(tree);setSelected(active);
   };
   const closeChat=async(session:Session)=>{setBusy(session.id);setMenu(false);setContext(undefined);try{if(!await window.harbor.terminate(session.id))return;removeFromWorkspace(session.id,true);setFreshChats(v=>{const next=new Set(v);next.delete(session.id);return next;});}catch(error){report((error as Error).message);}finally{setBusy(undefined);}};
   openSettingsRef.current=()=>openSettings();
+  /** Closes the Settings tab. When it was showing, its neighbor in the strip takes over, as when closing a chat. */
+  const closeSettings=()=>{
+    setTabs(v=>v.filter(id=>id!==SETTINGS_TAB));if(!showSettings)return;
+    const at=visibleTabs.indexOf(SETTINGS_TAB),rest=visibleTabs.filter(id=>id!==SETTINGS_TAB),next=sessions.find(s=>s.id===rest[Math.min(Math.max(at,0),rest.length-1)]);
+    if(next)open(next);else setPage('chats');
+  };
   openFolder.current=()=>{if(!dialog&&!rename&&!commandSession&&current&&snapshot&&!showSettings)openChatFolder(current,report);};
   // ⌘W closes Settings when it is showing, without asking: nothing is lost.
   closeSelected.current=()=>{if(dialog||rename||commandSession)return;if(showSettings){closeSettings();return;}if(current&&!busy)void closeChat(current);};
   navigateTabs.current=action=>{
     if(dialog==='chat'&&typeof action==='number'){chatShortcut.current(action);return;}
-    const shown=visibleTabs;if(dialog||rename||commandSession)return;
-    // ⌘1–9 pick chats only; Control-Tab and ⌘⇧[ ] also stop at Settings, after the last chat.
-    if(typeof action==='number'){const session=sessions.find(s=>s.id===shown[action===9?shown.length-1:action-1]);if(session)open(session);return;}
-    const stops=settings.open?[...shown,'']:shown;if(!stops.length)return;
-    const index=showSettings?shown.length:shown.indexOf(selected??'');
-    const target=stops[(index+(action==='next'?1:-1)+stops.length)%stops.length];
-    if(target==='')openSettings();else{const session=sessions.find(s=>s.id===target);if(session)open(session);}
+    const shown=visibleTabs;if(dialog||rename||commandSession||!shown.length)return;
+    const index=shown.indexOf((showSettings?SETTINGS_TAB:selected)??'');
+    const target=typeof action==='number'?shown[action===9?shown.length-1:action-1]:shown[(index+(action==='next'?1:-1)+shown.length)%shown.length];
+    if(target===SETTINGS_TAB){openSettings();return;}
+    const session=sessions.find(s=>s.id===target);if(session)open(session);
   };
   // Folding puts a group away: its panes leave the view, which moves to the most recently used chat still shown.
   const recent=useRef<string[]>([]);
@@ -221,7 +226,7 @@ export function App() {
     const next=groups.focus?groups:keys.reduce((g,k)=>setGroupCollapsed(g,k,true),groups);
     const hidden=keys.flatMap(k=>groupTabs(tabLayout.segments,k));
     for(const k of keys){const split=splitFor(layout,groupTabs(tabLayout.segments,k));if(split)savedSplits.current[k]=split;}
-    const shown=stripTabs(layoutTabs(openTabs,next,projectOf,projects.map(p=>p.id)).segments,next,undefined);
+    const shown=stripTabs(layoutTabs(openChats,next,projectOf,projects.map(p=>p.id)).segments,next,undefined);
     let view=foldView(layout,selected,hidden,shown,recent.current);
     // A folded group's split is parked with it, so its tabs stay linked and bring it back; a chat shown in its place brings its own split.
     const kept=keys.map(k=>splitFor(layout,groupTabs(tabLayout.segments,k))).filter((s):s is PaneNode=>paneIds(s).length>1);
@@ -253,7 +258,7 @@ export function App() {
   };
   groupAction.current=action=>{
     if(dialog||rename||commandSession)return;
-    if(action==='group-selected'){makeGroup(selection.size?[...selection]:selected&&tabs.includes(selected)?[selected]:[]);return;}
+    if(action==='group-selected'){if(showSettings&&!selection.size)return;makeGroup(selection.size?[...selection]:selected&&tabs.includes(selected)?[selected]:[]);return;}
     if(action==='toggle-project-groups'){setToast(groups.byProject?'Project groups off. Custom groups are unchanged.':'Tabs grouped by project.');setGroups(v=>({...v,byProject:!v.byProject}));return;}
     if(action==='next-attention'){
       const waiting=(s:Session)=>chatActivity(s)==='attention';const ordered=[...arrangedTabs.map(id=>sessions.find(s=>s.id===id)!),...sessions.filter(s=>!tabs.includes(s.id)&&!s.archived)].filter(s=>s&&waiting(s));
@@ -339,7 +344,7 @@ export function App() {
     </div>
 
     <main className={`workspace ${current?'has-terminal':''}`}>
-      {current||showOverview||settings.open?<><div className="session-toolbar"><TabStrip tabs={tabs} splits={tabSplits} view={paneIds(layout)} sessions={sessions} projects={projects} groups={groups} selected={selected} selection={selection} busy={busy} dragging={dragging} onOpen={open} onClose={session=>void closeChat(session)} onSelection={setSelection} setTabs={setTabs} setGroups={setGroups} onDragStart={beginDrag} onDragEnd={()=>setDragging(undefined)} onToggleGroup={toggleGroup} onNewChat={()=>newChat(current?.projectId)} onTabMenu={(id,x,y)=>setContext({kind:'tab',id,x:Math.min(x,innerWidth-250),y:Math.min(y,innerHeight-420)})} onGroupMenu={(key,x,y)=>setContext({kind:'group',id:key,x:Math.min(x,innerWidth-250),y:Math.min(y,innerHeight-260)})} onMoveProject={moveProject} renaming={renaming?.place==='tab'?renaming.id:undefined} onStartRename={id=>setRenaming({id,place:'tab'})} onRename={finishRename} pageTab={settings.open?{label:'Settings',active:showSettings,pulse:settingsPulse,onSelect:()=>openSettings(),onClose:closeSettings}:undefined}/><div className="session-actions"><div className="popover-anchor"><button className={`icon-button ${groupsMenu?'active':''}`} aria-label="Tab groups" title="Tab groups" aria-expanded={groupsMenu} onClick={event=>{event.stopPropagation();setGroupsMenu(v=>!v);setMenu(false);setSplitMenu(false);}}><Layers size={16}/></button>{groupsMenu&&<div className="popover groups-menu" role="menu" aria-label="Tab groups" onClick={event=>event.stopPropagation()}>
+      {current||showOverview||settingsOpen?<><div className="session-toolbar"><TabStrip tabs={tabs} splits={tabSplits} view={paneIds(layout)} sessions={sessions} projects={projects} groups={groups} selected={selected} selection={selection} busy={busy} dragging={dragging} onOpen={open} onClose={session=>void closeChat(session)} onSelection={setSelection} setTabs={setTabs} setGroups={setGroups} onDragStart={beginDrag} onDragEnd={()=>setDragging(undefined)} onToggleGroup={toggleGroup} onNewChat={()=>newChat(current?.projectId)} onTabMenu={(id,x,y)=>setContext({kind:'tab',id,x:Math.min(x,innerWidth-250),y:Math.min(y,innerHeight-420)})} onGroupMenu={(key,x,y)=>setContext({kind:'group',id:key,x:Math.min(x,innerWidth-250),y:Math.min(y,innerHeight-260)})} onMoveProject={moveProject} renaming={renaming?.place==='tab'?renaming.id:undefined} onStartRename={id=>setRenaming({id,place:'tab'})} onRename={finishRename} settings={settingsOpen?{active:showSettings,pulse:settingsPulse,onSelect:()=>openSettings(),onClose:closeSettings}:undefined}/><div className="session-actions"><div className="popover-anchor"><button className={`icon-button ${groupsMenu?'active':''}`} aria-label="Tab groups" title="Tab groups" aria-expanded={groupsMenu} onClick={event=>{event.stopPropagation();setGroupsMenu(v=>!v);setMenu(false);setSplitMenu(false);}}><Layers size={16}/></button>{groupsMenu&&<div className="popover groups-menu" role="menu" aria-label="Tab groups" onClick={event=>event.stopPropagation()}>
           <div className="popover-title">TAB GROUPS</div>
           {([['byProject','Group tabs by project','⌘ ⇧ G'],['focus','Focus mode: one group open',''],['shrink','Shrink tabs before scrolling','']] as const).map(([key,label,keys])=><label key={key} className="hide-closed-toggle menu-toggle"><span>{label}{keys&&<kbd>{keys}</kbd>}</span><input type="checkbox" role="switch" checked={groups[key]} onChange={event=>setGroups(v=>({...v,[key]:event.target.checked}))}/><span className="toggle-track" aria-hidden="true"><span/></span></label>)}
           <hr/>
@@ -347,8 +352,8 @@ export function App() {
           <button role="menuitem" disabled={groups.focus||!groupKeys(tabLayout.segments).length} onClick={()=>{unfoldGroups(groupKeys(tabLayout.segments));setGroupsMenu(false);}}>Expand all groups</button>
           <button role="menuitem" disabled={!selection.size&&!selected} onClick={()=>{setGroupsMenu(false);makeGroup(selection.size?[...selection]:[selected!]);}}><span>{selection.size>1?`Group ${selection.size} selected tabs`:'Group current tab'}</span><kbd>⌘ G</kbd></button>
         </div>}</div>{current&&!showSettings&&<><OpenInButton session={current} preferences={snapshot!.preferences.openIn} report={report}/><div className="popover-anchor"><button className="icon-button" aria-label="Split view" title="Split view" onClick={()=>setSplitMenu(v=>!v)}><Columns2 size={16}/></button>{splitMenu&&<div className="popover split-picker">{sessions.filter(s=>s.id!==current.id&&visibleChat(s)).map(s=><button key={s.id} onClick={()=>drop(current.id,s.id,'right')}><AgentIcon launcher={s.launcher}/>{s.name}</button>)}</div>}</div><div className="popover-anchor"><button className="icon-button" aria-label="Chat actions" onClick={()=>setMenu(v=>!v)}><MoreHorizontal size={19}/></button>{menu&&<div className="popover actions-menu" role="menu">{chatMenu(current)}</div>}</div></>}{refreshButton}</div></div><h1 className="sr-only">{showSettings?'Settings':current?.name??'Open chats'}</h1>
-        {showOverview&&!showSettings&&<GroupsOverview segments={tabLayout.segments} groups={groups} sessions={sessions} projects={projects} onOpen={open} onUnfold={key=>unfoldGroups([key])}/>}<div className="pane-workspace" hidden={showOverview||showSettings||!current}>{layout&&<PaneLayout node={layout} sessions={sessions} selected={selected} dragging={dragging} multiple={paneIds(layout).length>1} onFocus={id=>{setSelected(id);const p=sessions.find(s=>s.id===id)?.projectId;if(p)setProjectId(p);}} onDrop={drop} onResize={(id,ratio)=>setLayout(v=>v?resizePane(v,id,ratio):v)} onRemove={id=>removeFromWorkspace(id,false)} onDragStart={beginDrag} onDragEnd={()=>setDragging(undefined)} render={session=><div className="chat-slot" data-chat-slot={session.id}/>}/>}</div>
-      {settings.open&&snapshot&&<SettingsView snapshot={snapshot} usage={usage} location={settings} hidden={!showSettings} search={settingsSearch} onNavigate={location=>setSettings(v=>({...v,...location,host:location.host}))}/>}
+        {showOverview&&!showSettings&&<GroupsOverview segments={tabLayout.segments} groups={groups} sessions={sessions} projects={projects} onOpen={open} onUnfold={key=>unfoldGroups([key])}/>}<div className="pane-workspace" hidden={showOverview||showSettings||!current}>{layout&&<PaneLayout node={layout} sessions={sessions} selected={selected} dragging={dragging===SETTINGS_TAB?undefined:dragging} multiple={paneIds(layout).length>1} onFocus={id=>{setSelected(id);const p=sessions.find(s=>s.id===id)?.projectId;if(p)setProjectId(p);}} onDrop={drop} onResize={(id,ratio)=>setLayout(v=>v?resizePane(v,id,ratio):v)} onRemove={id=>removeFromWorkspace(id,false)} onDragStart={beginDrag} onDragEnd={()=>setDragging(undefined)} render={session=><div className="chat-slot" data-chat-slot={session.id}/>}/>}</div>
+      {settingsOpen&&snapshot&&<SettingsView snapshot={snapshot} usage={usage} location={settings} hidden={!showSettings} search={settingsSearch} onNavigate={location=>setSettings(v=>({...v,...location,host:location.host}))}/>}
         {!current&&!showOverview&&!showSettings&&projectOverview}
       </>:<><div className="overview-toolbar">{refreshButton}</div>{projectOverview}</>}
       {tabs.map(id=>sessions.find(s=>s.id===id)).filter((session):session is Session=>!!session).map(session=><PersistentChat key={session.id} id={session.id} onFocus={()=>{setSelected(session.id);if(session.projectId)setProjectId(session.projectId);}} placement={current?layout:null}><ChatUsageBar session={session} active={!!current&&paneIds(layout).includes(session.id)} version={refreshVersion}/>{session.status==='closed'?<div className="closed-chat-panel"><AgentIcon launcher={session.launcher} size={30}/><h2>{session.name}</h2><p>{session.externalActive?'This conversation is running outside Harbor. Close it there and refresh this project to resume here.':session.launcher==='shell'?'This terminal is closed. Reopening starts a new shell in the project directory.':'This chat is closed. Resume to continue its saved conversation in a new terminal.'}</p><button className="primary-button" disabled={busy===session.id||session.externalActive} onClick={()=>void resumeChat(session)}>{busy===session.id?<LoaderCircle className="spin" size={16}/>:<RefreshCw size={16}/>} {session.launcher==='shell'?'Reopen terminal':'Resume chat'}</button><ChatPreviewPanel session={session} version={refreshVersion}/>{session.imported&&<small>Imported from {launcherName[session.launcher]} history</small>}</div>:<TerminalPane active={selected===session.id} session={session} preferences={snapshot!.preferences.terminal} onReconnect={()=>void resumeChat(session,true)} report={report}/>}</PersistentChat>)}
