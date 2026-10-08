@@ -7,6 +7,7 @@ import { HarborEngine } from '../engine/engine';
 import { Transport } from '../engine/transport';
 import type { Preferences } from '../shared/types';
 import { dockBadge, NO_VIEW, shouldMarkUnread, unreadCount, validView, viewedChat } from '../shared/unread';
+import { tracksActivity } from '../shared/chatStatus';
 
 // Pull request previews get their own name, so their own profile, single-instance lock and tmux socket: they run beside
 // an installed Harbor without seeing its chats.
@@ -135,6 +136,7 @@ else {
     handle('openDataDir', () => shell.openPath(app.getPath('userData')));
     handle('openExternal', (url: string) => { const parsed = new URL(url); if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('Only web links can be opened.'); return shell.openExternal(parsed.toString()); });
     engine.on('attention', ({session,completed}) => {
+      if(!tracksActivity(session)) return; // Terminals have no agent status, so they never notify.
       const settings=engine.snapshot().preferences.notifications;
       if(shouldMarkUnread(session.id,completed,settings,!!window?.isFocused(),chatView))void engine.setUnread(session.id,true).catch(error=>console.error('Harbor unread:',error));
       if(!settings.enabled || (completed && !settings.onComplete) || (window?.isFocused() && !settings.whenFocused) || !Notification.isSupported()) return;

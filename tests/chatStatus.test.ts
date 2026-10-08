@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarborEngine } from '../src/engine/engine';
 import { Transport } from '../src/engine/transport';
-import { onlyArtifactWatches } from '../src/shared/chatStatus';
+import { onlyArtifactWatches, tracksActivity } from '../src/shared/chatStatus';
 
 const watch=(id:string)=>`live updates for artifact https://claude.ai/artifact/${id} (auto-reply on)`;
 test('only artifact watches are recognised as a finished turn',()=>{
@@ -36,4 +36,7 @@ test('engine settles a watch-only wait from an older bridge without a spurious n
  meta={...meta,attentionAt:8.6,updatedAt:8.6};await poll();assert.deepEqual(events,[true,false],'real attention still notifies');
  meta={...meta,activity:'background',reason:'1 background task running: Run the test suite',updatedAt:9};await poll();
  assert.equal(engine.snapshot().sessions[0].activity,'background');await engine.dispose();
+});
+test('only agent chats carry a status; terminals and custom commands never do',()=>{
+ assert.deepEqual((['codex','claude','shell','custom'] as const).map(launcher=>tracksActivity({launcher})),[true,true,false,false]);
 });
