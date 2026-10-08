@@ -100,6 +100,8 @@
 .project-add{padding:4px!important;opacity:.65}.project-heading:hover .project-add{opacity:1}
 .chat-row{width:100%;margin:2px 0;padding:9px 10px;min-height:35px;gap:8px;color:#b2becb}
 .chat-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+/* A terminal's running command ("Terminal 1 · python"), quieter than its name. */
+.terminal-command{color:#7d8996;font-weight:400}
 .chat-row>svg{color:#81958b}.chat-row.closed-chat{color:#697481}.chat-row.closed-chat>svg{color:#5c6875}
 .chat-activity{width:13px;min-width:13px;display:flex;align-items:center;justify-content:center}
 .chat-activity.attention,.chat-activity.error{color:#e8c282}.chat-activity.working{color:#a9e4cc}.chat-activity.unknown{opacity:.3}
