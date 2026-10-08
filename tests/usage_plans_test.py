@@ -1,5 +1,5 @@
 """Plan detection, remaining limits and the Claude status line wrapper. Fake homes only."""
-import importlib.util, io, json, os, pathlib, sys, tempfile, time, unittest
+import fcntl, importlib.util, io, json, os, pathlib, signal, sys, tempfile, time, unittest
 from unittest.mock import patch
 spec = importlib.util.spec_from_file_location('bridge', pathlib.Path(__file__).parents[1] / 'src/bridge/harbor_bridge.py')
 bridge = importlib.util.module_from_spec(spec); spec.loader.exec_module(bridge)
@@ -13,7 +13,7 @@ class Homes:
         self.temp = tempfile.TemporaryDirectory(); d = pathlib.Path(self.temp.name)
         self.home, self.codex, self.claude, self.root = d / 'home', d / 'codex', d / 'claude', d / 'harbor'
         for folder in (self.home, self.codex, self.claude): folder.mkdir()
-        self.patches = [patch.dict(os.environ, {'HOME': str(self.home), 'CODEX_HOME': str(self.codex), 'CLAUDE_CONFIG_DIR': str(self.claude)}), patch.object(bridge, 'ROOT', self.root)]
+        self.patches = [patch.dict(os.environ, {'HOME': str(self.home), 'CODEX_HOME': str(self.codex), 'CLAUDE_CONFIG_DIR': str(self.claude)}), patch.object(bridge, 'ROOT', self.root), patch.object(bridge.shutil, 'which', return_value=None)]  # never a real Codex
         for item in self.patches: item.start()
         for key in (*bridge.API_ENV, *bridge.CLOUD_ENV): os.environ.pop(key, None)
         return self
@@ -114,6 +114,84 @@ class CodexLimits(unittest.TestCase):
             stored = json.loads((h.root / 'limits/codex.json').read_text())[str(h.codex)]
             self.assertEqual(stored['limits']['windows'][0]['usedPercent'], 31.0)
             self.assertNotIn('alice', json.dumps(stored) + json.dumps(records)); self.assertNotIn('raw-account', json.dumps(stored))
+
+# A stand-in `codex app-server` on stdio. It counts its launches, can leave a grandchild behind
+# or hang, and answers the way a ChatGPT-plan account would, email and raw account ID included.
+FAKE_CODEX = r"""#!%s
+import json, os, subprocess, sys, time
+here = os.path.dirname(os.path.abspath(__file__)); mode = open(os.path.join(here, 'mode')).read().strip()
+with open(os.path.join(here, 'launches'), 'a') as f: f.write(' '.join(sys.argv[1:]) + '\n')
+if mode in ('hang', 'orphan'):
+    child = subprocess.Popen(['sleep', '60']); open(os.path.join(here, 'grandchild'), 'w').write(str(child.pid))
+for line in sys.stdin:
+    message = json.loads(line); method = message.get('method'); result = None
+    if mode == 'hang': time.sleep(60)
+    if method == 'initialize': result = {'userAgent': 'fake'}
+    elif method == 'account/read': result = {'account': {'type': 'chatgpt', 'email': 'alice@example.invalid', 'planType': 'pro'}}
+    elif method == 'account/rateLimits/read': result = {'accountId': 'raw-acct-id', 'rateLimits': {'primary': {'usedPercent': 37, 'windowDurationMins': 300, 'resetsAt': 1900000000}, 'secondary': None}}
+    if 'id' in message: print(json.dumps({'id': message['id'], 'result': result}), flush=True)
+""" % sys.executable
+
+class CodexProbe(unittest.TestCase):
+    def fake(self, h, mode='ok'):
+        folder = h.root.parent / 'bin'; folder.mkdir(exist_ok=True)
+        script = h.write(folder / 'codex', FAKE_CODEX); script.chmod(0o755); h.write(folder / 'mode', mode)
+        h.patches.append(patch.object(bridge.shutil, 'which', return_value=str(script))); h.patches[-1].start()
+        return folder
+    def launches(self, folder):
+        file = folder / 'launches'; return len(file.read_text().splitlines()) if file.exists() else 0
+    def subscription(self, h):
+        h.write(h.codex / 'auth.json', {'auth_mode': 'chatgpt', 'tokens': {'account_id': 'raw-account', 'access_token': 'secret-token'}})
+
+    def test_reads_live_limits_from_a_short_lived_app_server_without_identifiers(self):
+        with Homes() as h:
+            self.subscription(h); folder = self.fake(h)
+            result = bridge.codex_host_limits()
+            self.assertEqual((result['mode'], result['plan'], result['limits']['source'], result['limits']['windows'][0]['usedPercent']), ('subscription', 'Pro', 'live', 37.0))
+            self.assertEqual(result['account'], bridge.account_key('codex', 'raw-acct-id'))
+            self.assertEqual((folder / 'launches').read_text().split(), ['app-server'])
+            stored = (h.root / 'limits/codex.json').read_text() + json.dumps(bridge.host_limits())
+            for secret in ('alice', 'raw-acct-id', 'raw-account', 'secret-token'): self.assertNotIn(secret, stored)
+            # Fresh live data (a running chat or the last read) means no new app-server.
+            bridge.codex_host_limits(); self.assertEqual(self.launches(folder), 1)
+
+    def test_throttled_per_codex_home_and_never_concurrent(self):
+        with Homes() as h:
+            self.subscription(h); folder = self.fake(h); auth = bridge.codex_auth(); now = time.time()
+            self.assertTrue(bridge.codex_probe(auth, now)); self.assertEqual(self.launches(folder), 1)
+            later = now + bridge.CODEX_LIVE_FRESH + 1  # live data is stale, but the last read was recent
+            self.assertFalse(bridge.codex_probe(auth, later)); self.assertEqual(self.launches(folder), 1)
+            self.assertTrue(bridge.codex_probe(auth, now + bridge.CODEX_PROBE_INTERVAL + 1)); self.assertEqual(self.launches(folder), 2)
+            with open(h.root / 'limits/codex-probe.lock', 'a') as guard:
+                fcntl.flock(guard, fcntl.LOCK_EX)  # another limits call is mid-read
+                self.assertFalse(bridge.codex_probe(auth, now + 10 * bridge.CODEX_PROBE_INTERVAL)); self.assertEqual(self.launches(folder), 2)
+
+    def test_skipped_without_codex_login_or_on_an_api_key(self):
+        with Homes() as h:
+            folder = self.fake(h)
+            bridge.codex_host_limits()  # no auth.json: no login
+            h.write(h.codex / 'auth.json', {'auth_mode': 'apikey', 'OPENAI_API_KEY': 'sk-test-not-real'}); bridge.codex_host_limits()
+            self.assertEqual(self.launches(folder), 0)
+        with Homes() as h:
+            self.subscription(h); self.assertNotIn('limits', bridge.codex_host_limits())  # Codex not installed
+
+    def test_children_left_behind_by_the_app_server_are_stopped(self):
+        with Homes() as h:
+            self.subscription(h); folder = self.fake(h, 'orphan')
+            self.assertTrue(bridge.codex_probe(bridge.codex_auth()))
+            time.sleep(0.2)
+            with self.assertRaises(ProcessLookupError): os.kill(int((folder / 'grandchild').read_text()), 0)
+
+    def test_a_hanging_app_server_and_its_children_are_stopped_in_time(self):
+        with Homes() as h:
+            self.subscription(h); folder = self.fake(h, 'hang'); started = time.monotonic()
+            self.assertFalse(bridge.codex_probe(bridge.codex_auth()))
+            self.assertLess(time.monotonic() - started, bridge.CODEX_PROBE_DEADLINE + 4)
+            grandchild = int((folder / 'grandchild').read_text())
+            time.sleep(0.2)
+            with self.assertRaises(ProcessLookupError): os.kill(grandchild, 0)
+            # The failed attempt still counts toward the throttle.
+            self.assertFalse(bridge.codex_probe(bridge.codex_auth())); self.assertEqual(self.launches(folder), 1)
 
 class ClaudePlans(unittest.TestCase):
     def test_subscription_profile_and_overrides(self):

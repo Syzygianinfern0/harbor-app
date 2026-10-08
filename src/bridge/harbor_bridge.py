@@ -2,7 +2,7 @@
 """Host-local Harbor adapter. No dependencies, no credential/config edits, no prompt logging."""
 import fcntl
 import math
-import argparse, base64, hashlib, json, os, pathlib, re, signal, socket, sqlite3, struct, subprocess, sys, threading, time, uuid
+import argparse, base64, hashlib, json, os, pathlib, re, shutil, signal, socket, sqlite3, struct, subprocess, sys, threading, time, uuid
 
 ROOT = pathlib.Path.home() / '.local/share/harbor'
 UUID = re.compile(r'^[0-9a-fA-F-]{36}$')
@@ -722,8 +722,115 @@ def codex_log_limits(since=0):
             if parsed: return {'limits': {**parsed[0], 'at': at, 'source': 'log'}, 'plan': parsed[1]}
     return None
 
+CODEX_PROBE_INTERVAL = 300  # at most one short-lived app-server read per Codex home every 5 minutes
+CODEX_LIVE_FRESH = 120      # a running chat's monitor refreshes about every minute
+CODEX_PROBE_DEADLINE = 8    # seconds for the whole read, including start-up and shutdown
+
+class StdioRPC:
+    """JSON-RPC over a child's stdin/stdout (newline-delimited), with the same rpc() as WS."""
+    def __init__(self, process, deadline):
+        self.process = process; self.deadline = deadline; self.buffer = b''; self.counter = 0
+    def line(self):
+        import select
+        while b'\n' not in self.buffer:
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0: raise TimeoutError('Agent request timed out')
+            if not select.select([self.process.stdout], [], [], remaining)[0]: continue
+            chunk = os.read(self.process.stdout.fileno(), 65536)
+            if not chunk: raise EOFError()
+            self.buffer += chunk
+            if len(self.buffer) > 8000000: raise RuntimeError('Oversized agent message')
+        line, self.buffer = self.buffer.split(b'\n', 1); return line
+    def send(self, message):
+        self.process.stdin.write((json.dumps(message) + '\n').encode()); self.process.stdin.flush()
+    def rpc(self, method, params):
+        self.counter += 1; number = self.counter; self.send({'id': number, 'method': method, 'params': params})
+        while True:
+            try: message = json.loads(self.line())
+            except ValueError: continue
+            if isinstance(message, dict) and message.get('id') == number:
+                if 'error' in message: raise RuntimeError((message['error'] or {}).get('message', 'Agent request failed'))
+                return message.get('result', {})
+
+def codex_probe(auth, now=None):
+    """With no running Codex chat feeding codex_limits_monitor, read the account and its limits from a
+    short-lived `codex app-server` (stdio, no thread, so no session file and no model call), at most every
+    CODEX_PROBE_INTERVAL per Codex home and never twice at once. Skipped without Codex, without a login,
+    or on an API key. Stores the result where the live monitor does; returns True when it stored one."""
+    now = time.time() if now is None else now; home = str(home_for('codex'))
+    if auth.get('mode') != 'subscription': return False
+    executable = shutil.which('codex')
+    if not executable: return False
+    live = (read(limits_dir() / 'codex.json', {}) or {}).get(home) or {}
+    if isinstance(live, dict) and now - live.get('at', 0) < CODEX_LIVE_FRESH and live.get('at', 0) >= auth.get('changedAt', 0): return False
+    limits_dir().mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(limits_dir() / 'codex-probe.lock', 'a') as guard:
+        os.chmod(guard.name, 0o600)
+        try: fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError: return False  # another limits call is already reading
+        try:
+            stamps = read(limits_dir() / 'codex-probe.json', {}) or {}
+            if not isinstance(stamps, dict): stamps = {}
+            if now - stamps.get(home, 0) < CODEX_PROBE_INTERVAL: return False
+            # Stamp before starting, so a failing or hanging Codex is also retried only every interval.
+            stamps[home] = now; atomic(limits_dir() / 'codex-probe.json', stamps)
+            state = codex_probe_read(executable)
+            if not state.get('limits'): return False
+            def save(value):
+                value[home] = {**{key: state[key] for key in ('mode', 'plan', 'account', 'limits') if state.get(key)}, 'at': state['limits']['at']}; return value
+            locked_json(limits_dir() / 'codex.json', save); return True
+        finally: fcntl.flock(guard, fcntl.LOCK_UN)
+
+def codex_probe_read(executable):
+    """account/read and account/rateLimits/read on a private app-server, then stop it and its process group."""
+    deadline = time.monotonic() + CODEX_PROBE_DEADLINE - 2; state = {}
+    try: process = subprocess.Popen([executable, 'app-server'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError: return state
+    try:
+        client = StdioRPC(process, deadline)
+        client.rpc('initialize', {'clientInfo': {'name': 'harbor_limits', 'version': '0.3.0'}, 'capabilities': {'experimentalApi': True}}); client.send({'method': 'initialized'})
+        state.update(codex_account(client))
+        if state.get('mode') == 'subscription':
+            response = client.rpc('account/rateLimits/read', {'excludeResetCreditDetails': True}) or {}
+            parsed = codex_limits(response.get('rateLimits'))
+            account = account_key('codex', response.get('accountId'))
+            if account: state['account'] = account
+            if parsed:
+                state['limits'] = {**parsed[0], 'at': time.time(), 'source': 'live'}
+                if parsed[1] and not state.get('plan'): state['plan'] = parsed[1]
+    except (OSError, ValueError, EOFError, RuntimeError, TimeoutError): pass
+    finally: stop_child(process)
+    return state
+
+def stop_child(process, grace=1.5):
+    """Close stdin and let the child exit, then SIGTERM and SIGKILL its own process group, which
+    start_new_session made (group ID = the child's PID, so never a name match or anyone else's process)."""
+    def group_gone(wait):
+        end = time.monotonic() + wait
+        while True:
+            process.poll()  # reap the child itself so it doesn't linger as a zombie group member
+            try: os.killpg(process.pid, 0)
+            except (ProcessLookupError, PermissionError): return True
+            if time.monotonic() >= end: return False
+            time.sleep(0.05)
+    try: process.stdin.close()
+    except OSError: pass
+    try: process.wait(grace)
+    except subprocess.TimeoutExpired: pass
+    for signum in (signal.SIGTERM, signal.SIGKILL):
+        if group_gone(0): break
+        try: os.killpg(process.pid, signum)
+        except (ProcessLookupError, PermissionError): break
+        if group_gone(grace): break
+    try: process.wait(grace)
+    except subprocess.TimeoutExpired: pass
+    try: process.stdout.close()
+    except OSError: pass
+
 def codex_host_limits():
     auth = codex_auth()
+    try: codex_probe(auth)
+    except OSError: pass
     live = (read(limits_dir() / 'codex.json', {}) or {}).get(str(home_for('codex'))) or {}
     if not isinstance(live, dict) or live.get('at', 0) < auth.get('changedAt', 0): live = {}
     result = {'agent': 'codex', 'mode': live.get('mode') or auth.get('mode') or 'unknown'}
