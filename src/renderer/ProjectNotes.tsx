@@ -20,8 +20,9 @@ function NoteCard({item,kind,label,title,actions,onError}:{item:Noted;kind:NoteK
   useEffect(()=>()=>flush.current(),[]);
   useEffect(()=>setPending(v=>v!==undefined&&unsaved.current===undefined&&v.trim()===(item.note??'')?undefined:v),[item.note]);
   const shown=pending??item.note??'';
-  // Long notes start folded so one note cannot bury the rest of the page.
-  useLayoutEffect(()=>{const el=body.current;setClipped(!!el&&el.scrollHeight>el.clientHeight+1);},[shown,editing,expanded]);
+  // Long notes start folded so one note cannot bury the rest of the page. Measured by the note's layout height, which
+  // (unlike scrollHeight) ignores rows still sliding into place after a move.
+  useLayoutEffect(()=>{const el=body.current,content=el?.firstElementChild as HTMLElement|null|undefined;setClipped(!!el&&!!content&&content.offsetHeight>el.clientHeight+1);},[shown,editing,expanded]);
   const change=(text:string)=>{setPending(text);unsaved.current=text;clearTimeout(timer.current);timer.current=setTimeout(()=>flush.current(),400);};
   return <article className={`project-note-card ${kind}`} aria-label={label}>
     <header>{title}<span className="spacer"/>{actions}{!editing&&shown&&<button type="button" className="icon-button" aria-label={`Edit ${label.toLowerCase()}`} title="Edit note" onClick={()=>{flush.current();setEditing(true);}}><Pencil size={13}/></button>}</header>

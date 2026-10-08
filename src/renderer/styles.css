@@ -332,9 +332,11 @@ button.note-check:hover{color:#8d98a6}
 .note-priority-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:7px 8px;border-radius:5px;font-size:11px;color:#b5c1ce;text-align:left}
 .note-priority-menu button:hover{background:#303a47}
 .note-priority-menu .p4 svg{color:#7e8a99}.note-priority-current{margin-left:auto;color:var(--mint)!important}
-.note-item.drop-before::before{top:-2px;left:-16px}.note-item.drop-after::after{bottom:-2px;left:-16px}
-.note-item.task.drop-before::before,.note-item.task.drop-after::after{left:-20px}
-.note-markdown.interactive:focus{outline:none}
+/* Reordering items looks like dragging a tab: the source dims (.drag-source) and a mint line with round ends marks the gap it lands in. */
+.note-markdown.interactive{position:relative}.note-markdown.interactive:focus{outline:none}
+.note-item-row[draggable=true]>.note-grip{cursor:grab}
+.note-drop-caret{position:absolute;height:2px;margin-top:-1px;border-radius:1px;background:var(--mint);box-shadow:0 0 0 1px #191d24;z-index:4;pointer-events:none;animation:drop-cue-in .09s ease-out}
+.note-drop-caret::before,.note-drop-caret::after{content:"";position:absolute;top:-2px;width:6px;height:6px;border-radius:50%;background:inherit}.note-drop-caret::before{left:-3px}.note-drop-caret::after{right:-3px}
 .note-item-text[tabindex]{cursor:text;border-radius:3px}.note-item-text[tabindex]:focus-visible{outline:none;background:#232a33;box-shadow:0 0 0 2px #232a33}
 .note-markdown .note-item-input:focus-visible{outline:none}
 .note-item.editing>.note-item-row{background:#1d232b;box-shadow:0 0 0 3px #1d232b}
@@ -486,7 +488,7 @@ button.note-check:hover{color:#8d98a6}
 .pane-drop-preview.left{left:6px;top:6px;bottom:6px;width:calc(50% - 9px)}.pane-drop-preview.right{right:6px;top:6px;bottom:6px;width:calc(50% - 9px)}
 .pane-drop-preview.top{left:6px;right:6px;top:6px;height:calc(50% - 9px)}.pane-drop-preview.bottom{left:6px;right:6px;bottom:6px;height:calc(50% - 9px)}
 .pane-drop-preview.center{inset:6px;background:#9be1c438;border-style:dashed}
-@media (prefers-reduced-motion:reduce){.groups-overview,.pane-workspace,.tab-drop-caret,.drop-before::before,.drop-after::after,.pane-drop-preview{animation:none}}
+@media (prefers-reduced-motion:reduce){.groups-overview,.pane-workspace,.tab-drop-caret,.note-drop-caret,.drop-before::before,.drop-after::after,.pane-drop-preview{animation:none}}
 /* Unread: a chat raised a notification-worthy event while off screen. A small blue dot beside the status icon, brighter title; rollups on chips, headings and the rail. */
 :root{--unread:#6fa8ff}
 .unread-dot{flex-shrink:0;width:7px;height:7px;border-radius:50%;background:var(--unread);box-shadow:0 0 0 2px #6fa8ff26}
