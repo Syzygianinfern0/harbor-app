@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Code2, ExternalLink, FolderOpen, SquareTerminal, Terminal } from 'lucide-react';
+import { ChevronDown, ChevronRight, Code2, ExternalLink, FolderOpen, SquareTerminal } from 'lucide-react';
 import type { Connection, Session } from '../shared/types';
 import { appLabel, defaultApp, menuApps, type OpenAppId, type OpenInPreferences } from '../shared/openIn';
 
@@ -19,7 +19,7 @@ export const sessionConnection = (session: Session): Connection => session.conne
 export function AppIcon({ app, size = 14 }: { app: OpenAppId; size?: number }) {
   if (app === 'finder') return <FolderOpen size={size} />;
   if (app === 'terminal') return <SquareTerminal size={size} />;
-  if (app === 'iterm') return <Terminal size={size} />;
+  if (app === 'iterm') return <SquareTerminal size={size} />;
   if (app === 'custom') return <ExternalLink size={size} />;
   return <Code2 size={size} />;
 }
