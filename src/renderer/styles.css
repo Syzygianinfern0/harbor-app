@@ -515,8 +515,11 @@ button.note-check:hover{color:#8d98a6}
 .projects-list>.section-label{position:sticky;top:0;z-index:4;background:#191c23;height:var(--projects-label-height,37px)}
 .project-section>.project-heading{position:sticky;top:calc(var(--projects-label-height,37px) - 1px);z-index:3;background:#191c23;border-radius:0;box-shadow:0 4px 0 #191c23}
 .hidden-projects-toggle{display:inline-flex;align-items:center;gap:3px;color:#707c8d}.hidden-projects-toggle span{font-size:10px;letter-spacing:0}.hidden-projects-toggle.active{color:#9be1c4}
-.hidden-projects{margin-top:6px;padding-top:8px;border-top:1px solid #262c35}
-.hidden-projects-label{color:#5e6878;font-size:9px;font-weight:650;letter-spacing:1.4px;padding:4px 6px 6px}
+/* Hidden projects open in a panel pinned right under the PROJECTS heading, above the list however far it is scrolled */
+.hidden-projects{position:sticky;top:calc(var(--projects-label-height,37px) - 1px);z-index:4;margin:0 2px 8px;padding:2px 4px 4px;background:#20252e;border:1px solid #2e3541;border-radius:8px;box-shadow:0 6px 14px rgba(0,0,0,.35)}
+.hidden-projects-label{display:flex;align-items:center;justify-content:space-between;color:#7f8a99;font-size:9px;font-weight:650;letter-spacing:1.4px;padding:2px 0 2px 6px}
+.hidden-projects-label .icon-button{width:22px;height:22px}
+.hidden-projects-rows{max-height:min(40vh,240px);overflow-y:auto}
 .project-heading.hidden-project{gap:7px;padding:0 6px;color:#6d7887}
 .hidden-project-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 .hidden-project .project-host{font-size:10px}
