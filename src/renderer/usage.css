@@ -44,3 +44,20 @@
 .limit-ring .bg{stroke:var(--limit-track)}
 .limit-ring .fg{stroke:var(--limit-fill);stroke-linecap:round}
 .limit-ring.warn .fg{stroke:var(--limit-warn)}.limit-ring.danger .fg{stroke:var(--limit-danger)}
+/* Token cost at API rates: a disclosure under the plan cards, with tokens beside each cost. */
+.cost-disclosure{margin-top:20px;border-top:1px solid rgba(128,128,128,.18)}
+.cost-disclosure-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:100%;border:0;background:transparent;color:inherit;font:inherit;padding:12px 4px;cursor:default;text-align:left;border-radius:6px}
+.cost-disclosure-head:hover{background:rgba(128,128,128,.07)}
+.cost-disclosure-head:focus-visible{outline:2px solid var(--mint);outline-offset:-2px}
+.cost-disclosure-chevron{flex-shrink:0;color:var(--muted);transition:transform .15s ease}
+.cost-disclosure-head[aria-expanded=true] .cost-disclosure-chevron{transform:rotate(90deg)}
+.cost-disclosure-title{font-size:9px;font-weight:650;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;white-space:nowrap}
+.cost-disclosure-summary{margin-left:auto;font-size:11px;color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cost-disclosure-summary .cost-amount{color:var(--text,#e1e4e9)}
+.cost-disclosure-body{padding-top:4px}
+.cost-figures{display:inline-flex;align-items:baseline;justify-content:flex-end;gap:14px;flex-shrink:0}
+.cost-figures .cost-amount{min-width:68px;text-align:right}
+.cost-tokens{font-size:10px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.cost-total small.cost-total-tokens{font-size:11px;opacity:1;color:var(--muted);font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){.cost-disclosure-chevron{transition:none}}
+.cost-total>span{white-space:nowrap}

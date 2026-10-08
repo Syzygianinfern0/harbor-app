@@ -3,8 +3,10 @@ export type PermissionMode = 'standard' | 'read-only' | 'accept-edits' | 'plan' 
 export type TabShortcut = number | 'next' | 'previous';
 export type Activity = 'starting' | 'working' | 'attention' | 'background' | 'idle' | 'closed' | 'error' | 'unknown';
 export interface Project { id: string; name: string; cwd: string; hostId?: string; hostLabel: string; connection: Connection; createdAt: string; hidden?: boolean; historyError?: string; note?: string }
-export interface TokenUsage { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; totalTokens: number }
-export interface CostAmount { usd: number; estimated: number; recorded: number; unpriced: number }
+/** inputTokens includes cache reads and writes; outputTokens includes reasoning (Codex only). */
+export interface TokenUsage { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens?: number; totalTokens: number }
+/** `tokens` are the tokens behind the cost; older bridges omit them. */
+export interface CostAmount { usd: number; estimated: number; recorded: number; unpriced: number; tokens?: TokenUsage }
 export interface CostModel extends CostAmount { model: string }
 export interface CostDay extends CostModel { day: string }
 export interface CostSummary extends CostAmount { models: CostModel[]; days: CostDay[] }

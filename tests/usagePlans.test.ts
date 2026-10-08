@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildAccounts, chatPlan, cleanBilling, cleanPlans, currentWindows, footerSummary, leftText, resetText, tightest, windowLabel } from '../src/shared/usagePlans';
 import { usageSourceFromEnv, fixtureLimits } from '../src/engine/usageSource';
+import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../src/shared/usageTokens';
 import type { AgentUsage, HostUsage, UsageLimits } from '../src/shared/types';
 
 const now = 1_900_000_000_000; const sec = now / 1000;
@@ -88,4 +89,14 @@ test('test and sandbox profiles never read real usage', () => {
   assert.equal(usageSourceFromEnv({}).kind, 'live');
   const fixture = fixtureLimits({ limits: { chats: { 'Fix tab folding': { mode: 'api' } } } }, [{ id: 's1', name: 'Fix tab folding' } as any]);
   assert.deepEqual(fixture.chats, { s1: { mode: 'api' } });
+});
+
+test('token counts sum across cost rows and format compactly with an exact breakdown', () => {
+  const row = { inputTokens: 1_200_000, outputTokens: 34_000, cacheReadTokens: 900_000, cacheWriteTokens: 50_000, reasoningTokens: 12_000, totalTokens: 1_234_000 };
+  assert.equal(addTokens([undefined]), undefined);
+  assert.deepEqual(addTokens([row, undefined, { ...row, reasoningTokens: undefined }]), { inputTokens: 2_400_000, outputTokens: 68_000, cacheReadTokens: 1_800_000, cacheWriteTokens: 100_000, reasoningTokens: 12_000, totalTokens: 2_468_000 });
+  assert.deepEqual([0, 940, 1234, 9950, 12_345, 950_000, 999_950, 1_234_567, 2_100_000_000].map(compactTokens), ['0', '940', '1.2k', '10k', '12k', '950k', '1M', '1.2M', '2.1B']);
+  assert.equal(tokenBreakdown(row), '1,234,000 tokens · Input 1,200,000 (cache read 900,000 · cache write 50,000) · Output 34,000 (reasoning 12,000)');
+  assert.equal(tokenBreakdown({ ...row, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 }), '1,234,000 tokens · Input 1,200,000 · Output 34,000');
+  assert.equal(tokenLine(row), '1.2M input · 950k cached · 34k output · 12k reasoning');
 });

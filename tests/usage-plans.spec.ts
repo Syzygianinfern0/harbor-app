@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -24,6 +25,8 @@ const SCENARIOS: Record<string, object> = {
       { hostId: buildbox, hostLabel: 'buildbox', agents: [], unreachable: true, error: 'Host is not answering. Retrying with backoff.' }] }, chat },
   near: { usage: [{ hostId: local, hostLabel: 'This Mac', agents: [spend('claude', 8.24), spend('codex', 1.92)] }],
     limits: { hosts: [{ hostId: local, hostLabel: 'This Mac', agents: [{ agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: windows(94, 71) }, { agent: 'codex', mode: 'subscription', plan: 'Plus', account: 'bbbbbbbbbbbbbbbb', limits: windows(40, 100) }] }] }, chat },
+  // The sandbox's own fixture (npm run dev:sandbox), so its token counts stay renderable.
+  sandbox: JSON.parse(readFileSync(path.resolve('tests/fixtures/usage-mixed.json'), 'utf8')),
 };
 
 async function launch(scenario?: string) {
@@ -139,5 +142,20 @@ test('near the limit: warnings, a paused account and the tab ring', async () => 
     await expect(page.getByRole('img', { name: 'Codex weekly: Limit reached' })).toBeVisible();
     await expect(page.getByLabel('Plan usage')).toContainText('Limit reached');
     await shot(page, 'usage-near-tabs');
+  } finally { await app.close(); }
+});
+
+test('token cost at API rates folds away under the plan cards and shows tokens per row', async () => {
+  const { app, page } = await launch('sandbox');
+  try {
+    await footer(page).click(); await page.getByRole('button', { name: 'View detailed usage' }).click();
+    const head = page.locator('.cost-disclosure-head');
+    await expect(head).toHaveAttribute('aria-expanded', 'false'); await expect(head).toContainText('≈ $3.92'); await expect(head).toContainText('248k tokens');
+    await shot(page, 'usage-cost-collapsed');
+    await head.click(); await page.getByLabel('Group usage by').selectOption('day');
+    await expect(page.locator('.cost-total')).toContainText('248k tokens · 239k input');
+    await expect(page.locator('.cost-group .cost-tokens').first()).toHaveText('248k tokens');
+    await expect(page.locator('.cost-model .cost-tokens')).toHaveCount(3);
+    await page.locator('.cost-total').scrollIntoViewIfNeeded(); await shot(page, 'usage-cost-expanded');
   } finally { await app.close(); }
 });

@@ -160,6 +160,23 @@ class CostTests(unittest.TestCase):
   del event['recordedCost'];event['tier']='priority';self.assertIsNone(bridge.event_cost(event,self.catalog())[0])
   event['model']='missing';self.assertIsNone(bridge.event_cost(event,self.catalog())[0])
   result=bridge.cost_summary([self.event(),event],self.catalog());self.assertEqual(result['unpriced'],1);self.assertEqual(result['estimated'],1);self.assertEqual(len(result['models']),2)
+ def test_cost_rows_carry_their_tokens(self):
+  a=self.event();b={**self.event(),'at':1800000000-86400};c={**self.event(),'model':'model-b','tokens':{**self.event()['tokens'],'reasoningTokens':40}}
+  result=bridge.cost_summary([a,b,c],self.catalog())
+  self.assertEqual(result['tokens'],{'inputTokens':3000,'outputTokens':300,'cacheReadTokens':1500,'cacheWriteTokens':600,'reasoningTokens':40,'totalTokens':3300})
+  model_a=next(row for row in result['models'] if row['model']=='model-a');self.assertEqual(model_a['tokens']['totalTokens'],2200);self.assertEqual(model_a['tokens']['reasoningTokens'],0)
+  self.assertEqual([(row['day'],row['model'],row['tokens']['inputTokens']) for row in result['days']],[('2027-01-15','model-b',1000),('2027-01-15','model-a',1000),('2027-01-14','model-a',1000)])
+  self.assertEqual(bridge.cost_summary([],self.catalog())['tokens']['totalTokens'],0)
+ def test_codex_reasoning_and_claude_cache_tokens_reach_cost_rows(self):
+  with tempfile.TemporaryDirectory() as d:
+   p=pathlib.Path(d)/'a.jsonl'
+   def row(total,reasoning):return {'timestamp':'2026-09-17T00:00:00Z','type':'event_msg','payload':{'type':'token_count','info':{'total_token_usage':{'input_tokens':total,'cached_input_tokens':total//2,'output_tokens':20,'reasoning_output_tokens':reasoning,'total_tokens':total+20}}}}
+   self.write(p,[{'type':'turn_context','payload':{'model':'model-a'}},row(100,5),row(300,12)])
+   tokens=bridge.cost_summary(bridge.usage_record(p,'codex')['events'],self.catalog())['models'][0]['tokens']
+   self.assertEqual((tokens['inputTokens'],tokens['cacheReadTokens'],tokens['reasoningTokens']),(300,150,12))
+   claude={'timestamp':'2026-09-17T00:00:00Z','type':'assistant','uuid':'one','message':{'id':'m','model':'model-a','usage':{'input_tokens':10,'output_tokens':7,'cache_read_input_tokens':100,'cache_creation_input_tokens':20}}}
+   self.write(p,[claude]);tokens=bridge.cost_summary(bridge.usage_record(p,'claude')['events'],self.catalog())['days'][0]['tokens']
+   self.assertEqual(tokens,{'inputTokens':130,'outputTokens':7,'cacheReadTokens':100,'cacheWriteTokens':20,'reasoningTokens':0,'totalTokens':137})
  def test_long_context_uses_request_size_and_priority_rate(self):
   rates=self.catalog();a=rates['models']['model-a'];a.update(input_cost_per_token_priority=4e-6,output_cost_per_token_priority=20e-6,cache_read_input_token_cost_priority=.4e-6,cache_creation_input_token_cost_priority=5e-6,input_cost_per_token_above_200k_tokens=4e-6,input_cost_per_token_above_200k_tokens_priority=8e-6)
   event=self.event();event['tier']='priority';self.assertAlmostEqual(bridge.event_cost(event,rates)[0],.0044)

@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronRight, DollarSign, Gauge, Info, RefreshCw, X } from 'lucide-react';
-import type { ChatUsage, CostAmount, CostModel, HostUsage, LimitWindow, Session, UsageLimits, UsagePeriod } from '../shared/types';
+import type { ChatUsage, CostAmount, CostModel, HostUsage, LimitWindow, Session, TokenUsage, UsageLimits, UsagePeriod } from '../shared/types';
 import { AGENT_NAMES, SHORT_NAMES, agoText, buildAccounts, chatPlan, currentWindows, footerSummary, leftText, level, resetText, tightest, windowLabel, type AccountKind, type UsageAccount } from '../shared/usagePlans';
+import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../shared/usageTokens';
 import { AgentIcon } from './AgentIcon';
 import './usage.css';
 
 const count=(value:number)=>value.toLocaleString();
 const money=(value:number)=>value>0&&value<0.01?'<$0.01':value.toLocaleString('en-US',{style:'currency',currency:'USD'});
 const blank=():CostAmount=>({usd:0,estimated:0,recorded:0,unpriced:0});
-const sum=(rows:CostAmount[])=>rows.reduce((a,b)=>({usd:a.usd+b.usd,estimated:a.estimated+b.estimated,recorded:a.recorded+b.recorded,unpriced:a.unpriced+b.unpriced}),blank());
+const sum=(rows:CostAmount[]):CostAmount=>({...rows.reduce((a,b)=>({usd:a.usd+b.usd,estimated:a.estimated+b.estimated,recorded:a.recorded+b.recorded,unpriced:a.unpriced+b.unpriced}),blank()),tokens:addTokens(rows.map(row=>row.tokens))});
 const price=(cost:CostAmount,available=true)=>!available||(!cost.estimated&&!cost.recorded&&cost.unpriced)?'Unavailable':`${cost.estimated?'≈ ':''}${money(cost.usd)}`;
 const ranges=[['day','Last 24 hours'],['week','Last week'],['month','Last month']] as const;
 const rangeName:Record<UsagePeriod,string>={day:'last 24 hours',week:'last week',month:'last month'};
@@ -57,6 +58,9 @@ function summary(hosts:HostUsage[]|undefined,period:UsagePeriod) {
 function Ranges({period,onChange}:{period:UsagePeriod;onChange:(period:UsagePeriod)=>void}) {
   return <div className="cost-ranges" role="group" aria-label="Usage time range">{ranges.map(([key,label])=><button key={key} aria-pressed={period===key} onClick={()=>onChange(key)}>{label}</button>)}</div>;
 }
+function Tokens({tokens}:{tokens?:TokenUsage}) {return tokens?<span className="cost-tokens" title={tokenBreakdown(tokens)}>{compactTokens(tokens.totalTokens)} tokens</span>:null;}
+/** Tokens in muted text, then the right-aligned cost. */
+function Figures({cost,available}:{cost:CostAmount;available?:boolean}) {return <span className="cost-figures"><Tokens tokens={cost.tokens}/><Amount cost={cost} available={available}/></span>;}
 function Amount({cost,available=true}:{cost:CostAmount;available?:boolean}) {return <span className="cost-amount" title={cost.unpriced?`${cost.unpriced} usage records have no known price`:cost.estimated?'Estimated from saved usage and model API prices':'Recorded cost'}>{price(cost,available)}{cost.unpriced>0&&(cost.estimated+cost.recorded)>0?' + unknown':''}</span>;}
 
 export function PlanTag({kind,plan}:{kind:AccountKind;plan?:string}) {
@@ -93,7 +97,7 @@ export function AccountCard({account,now,period='day',compact=false}:{account:Us
 
 function CostNotes({state,partial}:{state:UsageState;partial:boolean}) {
   const dates=state.hosts?.map(h=>h.pricingUpdatedAt).filter((v):v is string=>!!v).sort();
-  return <div className="cost-notes">{state.error&&<p role="alert">{state.error}</p>}{partial&&<p className="cost-warning">Partial coverage · some usage or host data is unavailable.</p>}<p>USD · ≈ marks estimates at model API rates. Recorded costs are used when present. Subscription charges and credits are not included.</p><p>All saved chats and subagents on configured hosts. Copies on separate hosts count on each host.{dates?.length?` Prices updated ${new Date(dates[0]).toLocaleDateString()}.`:''}</p></div>;
+  return <div className="cost-notes">{partial&&<p className="cost-warning">Partial coverage · some usage or host data is unavailable.</p>}<p>USD · ≈ marks estimates at model API rates. Recorded costs are used when present. Subscription charges and credits are not included.</p><p>All saved chats and subagents on configured hosts. Copies on separate hosts count on each host.{dates?.length?` Prices updated ${new Date(dates[0]).toLocaleDateString()}.`:''}</p></div>;
 }
 
 function footerValue({state,now}:{state:UsageState;now:number}) {
@@ -115,8 +119,12 @@ export function SidebarCost({state,onDetails,collapsed=false}:{state:UsageState;
   return <><button ref={button} className={`sidebar-cost ${collapsed?'sidebar-cost-collapsed':''} ${footer.tone}`} aria-label="Usage and limits" aria-expanded={open} onClick={()=>setOpen(v=>!v)} title={footer.title}><Icon size={13}/>{!collapsed&&<><span>{footer.label}</span><span className="sidebar-cost-value">{footer.value}</span><ChevronRight size={12}/></>}</button>{open&&createPortal(<div ref={popup} tabIndex={-1} className="cost-popover usage-popover" role="dialog" aria-label="Usage" style={{left:Math.min(rect?.left??16,Math.max(8,window.innerWidth-396)),bottom:Math.max(12,window.innerHeight-(rect?.top??window.innerHeight)+8)}}><header><strong>Usage</strong><button className="icon-button" aria-label="Close usage" onClick={()=>{setOpen(false);button.current?.focus();}}><X size={15}/></button></header>{!state.hosts&&!state.limits&&<p role="status">{state.error||'Reading saved usage…'}</p>}{state.limits?.disabled&&!state.accounts.length&&<p className="cost-notes">{state.limits.disabled}</p>}<div className="account-list">{state.accounts.map(account=><AccountCard key={account.key} account={account} now={now} compact/>)}</div><div className="cost-notes"><p>Limits are per account, so a sign-in shared across hosts shows once. $ appears only for API-key accounts; ≈ marks estimates at model API rates.</p></div><button className="cost-details-button" onClick={()=>{setOpen(false);onDetails();}}>View detailed usage<ChevronRight size={14}/></button></div>,document.body)}</>;
 }
 
+// Collapsed by default so the plan cards come first; each viewer's choice is remembered.
+const COST_OPEN_KEY='harbor.usage.tokenCostOpen';
+const savedCostOpen=()=>{try{return localStorage.getItem(COST_OPEN_KEY)==='1';}catch{return false;}};
 export function UsagePanel({state}:{state:UsageState}) {
   const [period,setPeriod]=useState<UsagePeriod>('day');const [costPeriod,setCostPeriod]=useState<UsagePeriod>('day');const [group,setGroup]=useState('host');const data=summary(state.hosts,costPeriod);const now=useNow();
+  const [open,setOpenState]=useState(savedCostOpen);const toggle=()=>{const next=!open;setOpenState(next);try{localStorage.setItem(COST_OPEN_KEY,next?'1':'0');}catch{/* per-viewer convenience only */}};
   const groups=new Map<string,Row[]>();for(const row of group==='day'?data.days:data.rows){const key=group==='host'?row.hostId:group==='model'?row.model:row.day!;groups.set(key,[...(groups.get(key)??[]),row]);}
   const sorted=[...groups].sort((a,b)=>group==='day'?b[0].localeCompare(a[0]):sum(b[1]).usd-sum(a[1]).usd);
   const subscriptions=state.accounts.filter(a=>a.kind==='subscription');const paying=state.accounts.filter(a=>a.kind!=='subscription');
@@ -125,7 +133,14 @@ export function UsagePanel({state}:{state:UsageState}) {
     {!!subscriptions.length&&<><div className="usage-subhead">Subscriptions · usage left</div><div className="account-cards">{subscriptions.map(account=><AccountCard key={account.key} account={account} now={now}/>)}</div></>}
     {!!paying.length&&<><div className="usage-subhead">Pay as you go · spend</div><Ranges period={period} onChange={setPeriod}/><div className="account-cards">{paying.map(account=><AccountCard key={account.key} account={account} now={now} period={period}/>)}</div></>}
     <p className="preferences-note">One card per sign-in. A subscription used on several hosts appears once with every host listed. Subscription fees are never shown as spend. Reset times are local.</p>
-    <div className="usage-subhead">Token cost at API rates</div><Ranges period={costPeriod} onChange={setCostPeriod}/><div className="cost-total"><div><small>All available hosts{data.partial?' · partial coverage':''}</small><strong><Amount cost={data.total} available={data.available}/></strong></div><span>Rolling {costPeriod==='day'?'24 hours':costPeriod==='week'?'7 days':'30 days'}</span></div>{state.busy&&<p className="preferences-note" role="status">Updating usage…</p>}<label className="cost-group-control">Group by<select aria-label="Group usage by" value={group} onChange={e=>setGroup(e.target.value)}><option value="host">Host → Model</option><option value="model">Model → Host</option><option value="day">Day → Host → Model</option></select></label><div className="cost-table">{sorted.map(([key,rows])=><section key={key}><div className="cost-row cost-group"><strong>{group==='host'?rows[0].host:key}</strong><Amount cost={sum(rows)}/></div>{rows.sort((a,b)=>b.usd-a.usd).map((row,index)=><div className="cost-row cost-model" key={index}><span>{group==='host'?row.model:group==='model'?row.host:`${row.host} · ${row.model}`}<small>{row.agent==='codex'?'Codex':'Claude Code'}</small></span><Amount cost={row}/></div>)}</section>)}</div>{state.hosts?.filter(h=>h.error).map(h=><div className="cost-row cost-unavailable" key={h.hostId}><span>{h.hostLabel}<small>{h.error}</small></span><span>Unavailable</span></div>)}{data.available&&!data.rows.length&&<p className="preferences-note">No usage recorded in this time range.</p>}<CostNotes state={state} partial={data.partial}/><p className="preferences-note">Day groups use UTC. Time ranges are rolling windows. Unpriced records are excluded from the displayed subtotal. Subscription usage is priced here as if it were billed per token.</p></div>;
+    {state.error&&<p className="cost-warning" role="alert">{state.error}</p>}
+    <section className="cost-disclosure" aria-label="Token cost at API rates">
+      <button className="cost-disclosure-head" aria-expanded={open} aria-controls="token-cost-details" onClick={toggle}><ChevronRight size={14} className="cost-disclosure-chevron"/><span className="cost-disclosure-title">Token cost at API rates</span><span className="cost-disclosure-summary"><Amount cost={data.total} available={data.available}/>{data.total.tokens&&<> · {compactTokens(data.total.tokens.totalTokens)} tokens</>} · {rangeName[costPeriod]}</span></button>
+      {open&&<div id="token-cost-details" className="cost-disclosure-body">
+        <Ranges period={costPeriod} onChange={setCostPeriod}/><div className="cost-total"><div><small>All available hosts{data.partial?' · partial coverage':''}</small><strong><Amount cost={data.total} available={data.available}/></strong>{data.total.tokens&&<small className="cost-total-tokens" title={tokenBreakdown(data.total.tokens)}>{compactTokens(data.total.tokens.totalTokens)} tokens · {tokenLine(data.total.tokens)}</small>}</div><span>Rolling {costPeriod==='day'?'24 hours':costPeriod==='week'?'7 days':'30 days'}</span></div>{state.busy&&<p className="preferences-note" role="status">Updating usage…</p>}<label className="cost-group-control">Group by<select aria-label="Group usage by" value={group} onChange={e=>setGroup(e.target.value)}><option value="host">Host → Model</option><option value="model">Model → Host</option><option value="day">Day → Host → Model</option></select></label><div className="cost-table">{sorted.map(([key,rows])=><section key={key}><div className="cost-row cost-group"><strong>{group==='host'?rows[0].host:key}</strong><Figures cost={sum(rows)}/></div>{rows.sort((a,b)=>b.usd-a.usd).map((row,index)=><div className="cost-row cost-model" key={index}><span>{group==='host'?row.model:group==='model'?row.host:`${row.host} · ${row.model}`}<small>{row.agent==='codex'?'Codex':'Claude Code'}</small></span><Figures cost={row}/></div>)}</section>)}</div>{state.hosts?.filter(h=>h.error).map(h=><div className="cost-row cost-unavailable" key={h.hostId}><span>{h.hostLabel}<small>{h.error}</small></span><span>Unavailable</span></div>)}{data.available&&!data.rows.length&&<p className="preferences-note">No usage recorded in this time range.</p>}<CostNotes state={state} partial={data.partial}/><p className="preferences-note">Day groups use UTC. Time ranges are rolling windows. Unpriced records are excluded from the displayed subtotal. Subscription usage is priced here as if it were billed per token. Tokens: input includes cached input; output includes reasoning. Hover a count for the exact breakdown.</p>
+      </div>}
+    </section>
+  </div>;
 }
 
 function ChatCost({usage,active}:{usage:ChatUsage;active:boolean}) {

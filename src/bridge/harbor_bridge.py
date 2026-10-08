@@ -240,7 +240,8 @@ def preview(agent, cwd, identity):
     return transcript_preview(conversation['transcript'],agent) if conversation else {'messages':[], 'error':'Saved conversation could not be found.'}
 
 def empty_tokens():
-    return dict(inputTokens=0, outputTokens=0, cacheReadTokens=0, cacheWriteTokens=0, totalTokens=0)
+    # inputTokens includes cache reads and writes; outputTokens includes Codex reasoning.
+    return dict(inputTokens=0, outputTokens=0, cacheReadTokens=0, cacheWriteTokens=0, reasoningTokens=0, totalTokens=0)
 
 def inherited_snapshots(file):
     """Match a fork's leading snapshots against its parent, even when timestamps
@@ -311,7 +312,7 @@ def usage_record(file, agent):
                     seen_usage = True
                     delta = empty_tokens()
                     if usage != previous_snapshot or usage is None:
-                        for dest, source in [('inputTokens','input_tokens'),('outputTokens','output_tokens'),('cacheReadTokens','cached_input_tokens'),('cacheWriteTokens','cache_write_input_tokens'),('totalTokens','total_tokens')]:
+                        for dest, source in [('inputTokens','input_tokens'),('outputTokens','output_tokens'),('cacheReadTokens','cached_input_tokens'),('cacheWriteTokens','cache_write_input_tokens'),('reasoningTokens','reasoning_output_tokens'),('totalTokens','total_tokens')]:
                             delta[dest] = number(latest.get(source)) if isinstance(latest, dict) else max(0,number(usage.get(source))-number((previous_snapshot or {}).get(source)))
                     if isinstance(usage, dict): previous_snapshot = usage
                     delta['totalTokens'] = max(delta['totalTokens'], delta['inputTokens']+delta['outputTokens'])
@@ -493,24 +494,26 @@ def event_cost(event, catalog):
     return sum(count*(price or 0) for count,price in parts)*multiplier, 'estimated'
 
 def cost_summary(events, catalog):
+    """Cost and the tokens behind it, in total, per model and per UTC day and model."""
     from datetime import datetime, timezone
-    result = {'usd':0, 'estimated':0, 'recorded':0, 'unpriced':0, 'models':[], 'days':[]}
+    blank = lambda: {'usd':0, 'estimated':0, 'recorded':0, 'unpriced':0, 'tokens':empty_tokens()}
+    result = {**blank(), 'models':[], 'days':[]}
     models = {}; days = {}
     for event in events:
         cost, kind = event_cost(event, catalog)
         model = event.get('model') or 'Unknown model'
         day = datetime.fromtimestamp(event['at'], timezone.utc).strftime('%Y-%m-%d') if event.get('at') else 'Unknown date'
-        for row in (result, models.setdefault(model, {'model':model,'usd':0,'estimated':0,'recorded':0,'unpriced':0}),
-                    days.setdefault((day,model), {'day':day,'model':model,'usd':0,'estimated':0,'recorded':0,'unpriced':0})):
+        for row in (result, models.setdefault(model, {'model':model, **blank()}), days.setdefault((day,model), {'day':day, 'model':model, **blank()})):
             row['unpriced' if cost is None else kind] += 1
             if cost is not None: row['usd'] += cost
+            for field in row['tokens']: row['tokens'][field] += event['tokens'].get(field, 0)
     result['models'] = sorted(models.values(), key=lambda row:-row['usd'])
     result['days'] = sorted(days.values(), key=lambda row:(row['day'],row['model']), reverse=True)
     return result
 
 def host_usage(catalog=None):
     now = time.time(); catalog = catalog or {}
-    agents = []; cache_file = ROOT / 'usage-cache-v6.json'; old_cache = read(cache_file, {}); cache = {}
+    agents = []; cache_file = ROOT / 'usage-cache-v7.json'; old_cache = read(cache_file, {}); cache = {}
     for agent in ('codex', 'claude'):
         home = home_for(agent); roots = [home/'sessions', home/'archived_sessions'] if agent == 'codex' else [home/'projects']
         totals = empty_tokens(); groups = {}; errors = []; files = set()
@@ -556,7 +559,7 @@ def chat_usage(agent, cwd, identity, catalog=None):
     if not conversation: return {'error':'No saved conversation is available yet.'}
     file = pathlib.Path(conversation['transcript'])
     # Per-file caching keeps polling active, large transcripts inexpensive.
-    cache_file = ROOT / 'usage-chats-v6' / (agent+'-'+identity+'.json')
+    cache_file = ROOT / 'usage-chats-v7' / (agent+'-'+identity+'.json')
     try:
         old = read(cache_file, {}); cache = {}; entry = cached_usage(file, agent, old); cache[str(file.resolve())] = entry
         datas = [entry['data']]; partial = False
