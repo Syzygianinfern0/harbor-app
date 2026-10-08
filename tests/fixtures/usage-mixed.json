@@ -1,0 +1,28 @@
+{
+ "_comment": "Fake usage for npm run dev:sandbox and screenshots. Placeholder numbers only; resetsIn/ago are seconds relative to now.",
+ "usage": [
+  {"hostId": "\"local\"", "hostLabel": "This Mac", "agents": [
+   {"agent": "claude", "sessions": 4, "recordedSessions": 4, "periods": {
+    "day": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 1, "cost": {"usd": 1.4, "estimated": 3, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-model", "usd": 1.4, "estimated": 3, "recorded": 0, "unpriced": 0}], "days": []}},
+    "week": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 3, "cost": {"usd": 6.75, "estimated": 9, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-model", "usd": 6.75, "estimated": 9, "recorded": 0, "unpriced": 0}], "days": []}},
+    "month": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 4, "cost": {"usd": 22.1, "estimated": 20, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-model", "usd": 22.1, "estimated": 20, "recorded": 0, "unpriced": 0}], "days": []}}}},
+   {"agent": "codex", "sessions": 3, "recordedSessions": 3, "periods": {
+    "day": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 1, "cost": {"usd": 0.42, "estimated": 2, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-codex-model", "usd": 0.42, "estimated": 2, "recorded": 0, "unpriced": 0}], "days": []}},
+    "week": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 2, "cost": {"usd": 2.2, "estimated": 6, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-codex-model", "usd": 2.2, "estimated": 6, "recorded": 0, "unpriced": 0}], "days": []}},
+    "month": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 3, "cost": {"usd": 7.9, "estimated": 12, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-codex-model", "usd": 7.9, "estimated": 12, "recorded": 0, "unpriced": 0}], "days": []}}}}]},
+  {"hostId": "{\"target\":\"devbox\"}", "hostLabel": "devbox", "agents": [
+   {"agent": "claude", "sessions": 2, "recordedSessions": 2, "periods": {
+    "day": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 1, "cost": {"usd": 2.1, "estimated": 4, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-model", "usd": 2.1, "estimated": 4, "recorded": 0, "unpriced": 0}], "days": []}},
+    "week": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 2, "cost": {"usd": 9.85, "estimated": 8, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-model", "usd": 9.85, "estimated": 8, "recorded": 0, "unpriced": 0}], "days": []}},
+    "month": {"tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 0}, "sessions": 2, "cost": {"usd": 31.4, "estimated": 14, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-model", "usd": 31.4, "estimated": 14, "recorded": 0, "unpriced": 0}], "days": []}}}}]}
+ ],
+ "limits": {"hosts": [
+  {"hostId": "\"local\"", "hostLabel": "This Mac", "agents": [
+   {"agent": "claude", "mode": "subscription", "plan": "Pro", "account": "aaaaaaaaaaaaaaaa", "limits": {"windows": [{"usedPercent": 52, "windowMinutes": 300, "resetsIn": 6000}, {"usedPercent": 33, "windowMinutes": 10080, "resetsIn": 280000}], "ago": 120, "source": "statusline"}},
+   {"agent": "codex", "mode": "subscription", "plan": "Plus", "account": "bbbbbbbbbbbbbbbb", "limits": {"windows": [{"usedPercent": 27, "windowMinutes": 300, "resetsIn": 11400}, {"usedPercent": 69, "windowMinutes": 10080, "resetsIn": 190000}], "ago": 20, "source": "app-server"}}]},
+  {"hostId": "{\"target\":\"devbox\"}", "hostLabel": "devbox", "agents": [
+   {"agent": "claude", "mode": "api"},
+   {"agent": "codex", "mode": "subscription", "plan": "Plus", "account": "bbbbbbbbbbbbbbbb"}]}
+ ]},
+ "chat": {"tokens": {"inputTokens": 1200000, "outputTokens": 84511, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 1284511}, "compactionCount": 2, "cost": {"usd": 1.92, "estimated": 12, "recorded": 0, "unpriced": 0, "models": [{"model": "demo-model", "usd": 1.92, "estimated": 12, "recorded": 0, "unpriced": 0}], "days": []}}
+}

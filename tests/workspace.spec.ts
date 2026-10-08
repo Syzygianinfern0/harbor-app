@@ -173,16 +173,17 @@ test('cost views show compact sidebar, rolling host and model totals, and lifeti
    ipcMain.removeHandler('harbor:chatUsage');ipcMain.handle('harbor:chatUsage',()=>({tokens:tokens(900),compactionCount:3,subagents:2,cost:cost(8.42)}));
   });
   await page.reload();
-  const sidebar=page.getByRole('button',{name:'Usage cost in the last 24 hours',exact:true});
+  const sidebar=page.getByRole('button',{name:'Usage and limits',exact:true});
   await expect(sidebar).toContainText('$24.68');expect((await sidebar.boundingBox())!.height).toBeLessThan(32);
-  await page.locator('.sidebar .chat-row').first().click();const chat=page.getByLabel('Chat usage',{exact:true});await expect(chat).toContainText('3 recorded compactions');await expect(chat).toContainText('900 tokens');await expect(chat).toContainText('incl. 2 subagents');await expect(chat).toContainText('$8.42');await expect(chat.locator('select')).toHaveCount(0);
+  await page.locator('.sidebar .chat-row').first().click();const chat=page.getByLabel('Chat usage',{exact:true});await expect(chat).toContainText('3 recorded compactions');await expect(chat).toContainText('900 tokens');await expect(chat).toContainText('incl. 2 subagents');await expect(chat).toContainText('$8.42');await expect(chat).toContainText('Plan unknown');await expect(chat.locator('select')).toHaveCount(0);
   await chat.getByRole('button',{name:'Chat total cost',exact:true}).click();await expect(page.getByRole('dialog',{name:'Chat total cost',exact:true})).toContainText('gpt-6-astra');await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'Chat total cost',exact:true})).toHaveCount(0);
   await page.screenshot({animations:'disabled',path:'test-results/screenshots/19-chat-usage.png'});
-  await sidebar.click();const popover=page.getByRole('dialog',{name:'Usage cost',exact:true});await expect(popover).toBeVisible();await expect(popover).toContainText('gpt-6-astra');await expect(popover).not.toContainText('tokens');
-  await popover.getByRole('button',{name:'Last week',exact:true}).click();await expect(popover.locator('.cost-popover-total')).toContainText('$100.00');await expect(sidebar).toContainText('$24.68');
+  await sidebar.click();const popover=page.getByRole('dialog',{name:'Usage',exact:true});await expect(popover).toBeVisible();await expect(popover).not.toContainText('tokens');
+  // Without plan data both hosts are unknown-plan accounts: estimates, labelled as such.
+  await expect(popover.getByRole('region',{name:'Codex usage'})).toContainText('$12.34');await expect(popover.getByRole('region',{name:'Codex usage'})).toContainText('if billed per token');await expect(popover.getByRole('region',{name:'Claude Code usage'})).toContainText('Research server');await expect(sidebar).toContainText('$24.68');
   await page.screenshot({animations:'disabled',path:'test-results/screenshots/20-cost-popover.png'});
   await popover.getByRole('button',{name:'View detailed usage'}).click();await expect(page.locator('.cost-total')).toContainText('$24.68');await expect(page.locator('.cost-total')).toContainText('partial coverage');
-  await page.getByRole('button',{name:'Last month',exact:true}).click();await expect(page.locator('.cost-total')).toContainText('$200.00');await expect(page.locator('.usage-panel')).toContainText('Rolling 30 days');await expect(page.locator('.usage-panel')).not.toContainText('tokens');
+  await page.getByRole('button',{name:'Last month',exact:true}).last().click();await expect(page.locator('.cost-total')).toContainText('$200.00');await expect(page.locator('.usage-panel')).toContainText('Rolling 30 days');await expect(page.locator('.usage-panel')).not.toContainText('tokens');
   await page.getByLabel('Group usage by').selectOption('model');await expect(page.locator('.cost-group')).toHaveCount(1);await expect(page.locator('.cost-group')).toContainText('gpt-6-astra');
   await page.getByLabel('Group usage by').selectOption('day');await expect(page.locator('.cost-group')).toContainText('2026-09-17');await expect(page.locator('.cost-unavailable')).toContainText('SSH connection timed out');
   const bounds=await page.getByRole('dialog',{name:'Preferences',exact:true}).boundingBox();const viewport=page.viewportSize()??await page.evaluate(()=>({width:innerWidth,height:innerHeight}));expect(bounds!.height).toBeLessThan(viewport.height);expect(bounds!.width).toBeLessThan(viewport.width);
