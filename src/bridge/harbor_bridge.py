@@ -578,10 +578,363 @@ def chat_usage(agent, cwd, identity, catalog=None):
                 'cost':cost_summary(merged['events'], catalog or {}) if merged['tokens'] is not None else None, 'pricingUpdatedAt':(catalog or {}).get('fetchedAt')}
     except OSError: return {'error':'Saved transcript is unavailable on this host.'}
 
+# ---- Plans and remaining limits ------------------------------------------------------------
+# Only plan names, billing modes, limit percentages, reset times and a salted hash of the account
+# ID ever leave this host. Tokens, emails and raw account IDs are never returned, logged or stored.
+
+API_ENV = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN')
+CLOUD_ENV = {'CLAUDE_CODE_USE_BEDROCK': 'Bedrock', 'CLAUDE_CODE_USE_VERTEX': 'Vertex', 'CLAUDE_CODE_USE_FOUNDRY': 'Foundry'}
+
+def limits_dir():
+    return ROOT / 'limits'
+
+def account_key(agent, *parts):
+    """Salted, truncated hash so one sign-in on several hosts shows as one account."""
+    parts = [part for part in parts if isinstance(part, str) and part]
+    if not parts: return None
+    return hashlib.sha256(('harbor-account-v1\n' + agent + '\n' + '\n'.join(parts)).encode()).hexdigest()[:16]
+
+def epoch(value):
+    """Seconds since the epoch from seconds, milliseconds or an ISO 8601 string."""
+    if isinstance(value, bool): return None
+    if isinstance(value, (int, float)) and math.isfinite(value) and value > 0: return value / 1000 if value > 1e11 else float(value)
+    if isinstance(value, str):
+        from datetime import datetime
+        try: return datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
+        except ValueError: return None
+    return None
+
+def limit_window(used, minutes=None, resets=None):
+    if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used): return None
+    window = {'usedPercent': max(0.0, min(100.0, float(used)))}
+    if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) and math.isfinite(minutes) and minutes > 0: window['windowMinutes'] = int(minutes)
+    reset = epoch(resets)
+    if reset: window['resetsAt'] = reset
+    return window
+
+def plan_name(value):
+    value = str(value or '').strip()
+    if not value or value.lower() in ('unknown', 'none', 'null'): return None
+    return re.sub(r'[^A-Za-z0-9 ._+-]', '', value.replace('_', ' ')).strip().title()[:30] or None
+
+def claude_plan_name(kind, tier=''):
+    kind = str(kind or '').lower().removeprefix('claude_')
+    match = re.search(r'max_(\d+x)', str(tier or '').lower())
+    return 'Max ' + match[1] if kind == 'max' and match else plan_name(kind)
+
+def codex_limits(snapshot, base=None):
+    """account/rateLimits/read (camelCase) or a session log's token_count.rate_limits (snake_case).
+    Returns (limits, plan name) or None."""
+    if not isinstance(snapshot, dict): return None
+    windows = []
+    for name in ('primary', 'secondary'):
+        raw = snapshot.get(name)
+        if not isinstance(raw, dict): continue
+        reset = raw.get('resetsAt', raw.get('resets_at'))
+        if reset is None and isinstance(raw.get('resets_in_seconds'), (int, float)) and base: reset = base + raw['resets_in_seconds']
+        window = limit_window(raw.get('usedPercent', raw.get('used_percent')), raw.get('windowDurationMins', raw.get('window_minutes')), reset)
+        if window: windows.append(window)
+    reached = snapshot.get('rateLimitReachedType', snapshot.get('rate_limit_reached_type'))
+    if not windows and not isinstance(reached, str): return None
+    result = {'windows': windows}
+    if isinstance(reached, str): result['reached'] = reached[:60]
+    return result, plan_name(snapshot.get('planType', snapshot.get('plan_type')))
+
+def locked_json(file, change):
+    """Read-modify-write a small host-local JSON file under an exclusive lock."""
+    file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(file.with_suffix('.lock'), 'a') as guard:
+        os.chmod(guard.name, 0o600); fcntl.flock(guard, fcntl.LOCK_EX)
+        try:
+            value = read(file, {})
+            value = change(value if isinstance(value, dict) else {})
+            if value is not None: atomic(file, value)
+        finally: fcntl.flock(guard, fcntl.LOCK_UN)
+
+def codex_auth():
+    """Billing mode from Codex's auth.json. Only auth_mode and the account ID's hash are kept."""
+    file = home_for('codex') / 'auth.json'
+    try: changed = file.stat().st_mtime
+    except OSError: return {}
+    data = read(file, {})
+    if not isinstance(data, dict): return {}
+    mode = str(data.get('auth_mode') or '').lower().replace('_', '')
+    tokens = data.get('tokens') if isinstance(data.get('tokens'), dict) else {}
+    result = {'mode': 'api' if mode in ('apikey', 'api') else 'subscription' if mode.startswith('chatgpt') else 'api' if data.get('OPENAI_API_KEY') and not tokens else 'subscription' if tokens else None,
+              'account': account_key('codex', tokens.get('account_id'))}
+    del data, tokens
+    # auth.json is rewritten on every token refresh; only a change of mode or account counts as an auth change.
+    seen = {}
+    def remember(state):
+        key = str(home_for('codex')); previous = state.get(key) or {}
+        if previous.get('mode') == result['mode'] and previous.get('account') == result['account']: seen.update(previous); return None
+        seen.update(mode=result['mode'], account=result['account'], changedAt=changed if not previous else max(changed, time.time()))
+        state[key] = dict(seen); return state
+    try: locked_json(limits_dir() / 'codex-auth.json', remember)
+    except OSError: seen['changedAt'] = changed
+    return {**result, 'changedAt': seen.get('changedAt', changed)}
+
+def recent_codex_logs(limit=12):
+    """Newest session logs first, walking only the latest YYYY/MM/DD folders."""
+    found = []
+    def walk(folder, depth):
+        if len(found) >= limit: return
+        try: entries = sorted(os.scandir(folder), key=lambda e: e.name, reverse=True)
+        except OSError: return
+        if depth == 3:
+            files = []
+            for entry in entries:
+                try:
+                    if entry.name.endswith('.jsonl') and entry.is_file(): files.append((entry.stat().st_mtime, pathlib.Path(entry.path)))
+                except OSError: pass
+            found.extend(sorted(files, reverse=True)); return
+        for entry in entries:
+            try:
+                if entry.is_dir() and entry.name.isdigit(): walk(entry.path, depth + 1)
+            except OSError: pass
+    walk(home_for('codex') / 'sessions', 0)
+    return sorted(found, reverse=True)[:limit]
+
+def codex_log_limits(since=0):
+    """Newest token_count.rate_limits in recent session logs, only when written after the last auth change.
+    API-key threads log null rate limits, so an older ChatGPT snapshot never outlives a switch to an API key."""
+    for mtime, file in recent_codex_logs():
+        if mtime <= since: break
+        try:
+            with open(file, 'rb') as stream:
+                stream.seek(0, 2); size = stream.tell(); stream.seek(max(0, size - 524288)); tail = stream.read()
+        except OSError: continue
+        for line in reversed(tail.splitlines()):
+            if b'"token_count"' not in line or b'rate_limits' not in line: continue
+            try: record = json.loads(line)
+            except (ValueError, UnicodeError): continue
+            payload = record.get('payload') if isinstance(record, dict) else None
+            if not isinstance(payload, dict) or payload.get('type') != 'token_count': continue
+            at = epoch(record.get('timestamp'))
+            if not at or at <= since: break
+            limits = payload.get('rate_limits')
+            if limits is None: return None
+            if isinstance(limits, dict) and limits.get('limit_id') not in (None, 'codex'): continue
+            parsed = codex_limits(limits, at)
+            if parsed: return {'limits': {**parsed[0], 'at': at, 'source': 'log'}, 'plan': parsed[1]}
+    return None
+
+def codex_host_limits():
+    auth = codex_auth()
+    live = (read(limits_dir() / 'codex.json', {}) or {}).get(str(home_for('codex'))) or {}
+    if not isinstance(live, dict) or live.get('at', 0) < auth.get('changedAt', 0): live = {}
+    result = {'agent': 'codex', 'mode': live.get('mode') or auth.get('mode') or 'unknown'}
+    plan = live.get('plan'); account = live.get('account') or auth.get('account'); limits = live.get('limits')
+    if result['mode'] != 'api' and not limits:
+        log = codex_log_limits(auth.get('changedAt', 0))
+        if log:
+            limits = log['limits']; plan = plan or log['plan']
+            if result['mode'] == 'unknown': result['mode'] = 'subscription'
+    if result['mode'] == 'subscription':
+        if plan: result['plan'] = plan
+        if limits: result['limits'] = limits
+    if account and result['mode'] != 'api': result['account'] = account
+    return result
+
+def claude_config():
+    base = os.environ.get('CLAUDE_CONFIG_DIR')
+    for file in ([pathlib.Path(base) / '.claude.json'] if base else [pathlib.Path.home() / '.claude.json']) + [home_for('claude') / '.config.json']:
+        data = read(file, None)
+        if isinstance(data, dict): return data
+    return {}
+
+def claude_settings(cwd=None):
+    """The settings files Claude loads, lowest precedence first."""
+    files = [home_for('claude') / 'settings.json']
+    if cwd: files += [pathlib.Path(cwd) / '.claude' / 'settings.json', pathlib.Path(cwd) / '.claude' / 'settings.local.json']
+    return [data for data in (read(file, None) for file in files) if isinstance(data, dict)]
+
+def truthy(value):
+    return str(value or '').strip().lower() not in ('', '0', 'false', 'no', 'off')
+
+def claude_plan(environ=None, cwd=None):
+    """Billing mode as Claude would decide it: cloud providers and API keys win over a claude.ai login.
+    Reads only plan keys of the cached profile; never the OAuth token (on macOS it lives in the Keychain)."""
+    environ = os.environ if environ is None else environ
+    env = {key: environ[key] for key in (*API_ENV, *CLOUD_ENV) if environ.get(key)}
+    helper = False
+    for settings in claude_settings(cwd):
+        helper = helper or bool(settings.get('apiKeyHelper'))
+        overrides = settings.get('env') if isinstance(settings.get('env'), dict) else {}
+        env.update({key: overrides[key] for key in (*API_ENV, *CLOUD_ENV) if key in overrides})
+    for key, label in CLOUD_ENV.items():
+        if truthy(env.get(key)): return {'mode': 'api', 'plan': label}
+    if any(env.get(key) for key in API_ENV) or helper: return {'mode': 'api'}
+    config = claude_config(); profile = config.get('oauthAccount')
+    if isinstance(profile, dict):
+        kind = str(profile.get('organizationType') or ''); billing = str(profile.get('billingType') or '')
+        account = account_key('claude', profile.get('accountUuid'), profile.get('organizationUuid'))
+        if kind.startswith('claude_') or 'subscription' in billing:
+            result = {'mode': 'subscription', 'plan': claude_plan_name(kind, profile.get('organizationRateLimitTier') or profile.get('userRateLimitTier')), 'account': account}
+            return {key: value for key, value in result.items() if value}
+        if config.get('primaryApiKey'): return {'mode': 'api'}
+        return {key: value for key, value in {'mode': 'unknown', 'account': account}.items() if value}
+    credentials = read(home_for('claude') / '.credentials.json', {})
+    oauth = credentials.get('claudeAiOauth') if isinstance(credentials, dict) else None
+    kind, tier = (oauth.get('subscriptionType'), oauth.get('rateLimitTier')) if isinstance(oauth, dict) else (None, None)
+    del credentials, oauth
+    if kind: return {key: value for key, value in {'mode': 'subscription', 'plan': claude_plan_name(kind, tier)}.items() if value}
+    if config.get('primaryApiKey'): return {'mode': 'api'}
+    return {'mode': 'unknown'}
+
+def claude_host_limits():
+    result = {'agent': 'claude', **claude_plan()}
+    if result['mode'] == 'api': return result
+    stored = read(limits_dir() / 'claude.json', {}) or {}
+    prefix = str(home_for('claude')) + '|'
+    candidates = [entry for key, entry in stored.items() if isinstance(entry, dict) and key.startswith(prefix) and (not result.get('account') or key in (prefix + result['account'], prefix))]
+    newest = max(candidates, key=lambda entry: entry.get('at', 0), default=None)
+    if newest and newest.get('limits'):
+        result['limits'] = newest['limits']
+        if result['mode'] == 'unknown': result['mode'] = 'subscription'
+    return result
+
+def host_limits():
+    agents = []
+    for agent, reader in (('codex', codex_host_limits), ('claude', claude_host_limits)):
+        try: agents.append(reader())
+        except Exception as error: agents.append({'agent': agent, 'mode': 'unknown', 'error': type(error).__name__})
+    return {'agents': agents}
+
+def store_claude_limits(chat_id, generation, event):
+    """Keep the newest plan-limit snapshot from Claude's status line input."""
+    limits = event.get('rate_limits') if isinstance(event, dict) else None
+    if not isinstance(limits, dict) or not UUID.match(chat_id) or not UUID.match(generation): return
+    windows = [window for window in (limit_window((limits.get(name) or {}).get('used_percentage'), minutes, (limits.get(name) or {}).get('resets_at'))
+                                     for name, minutes in (('five_hour', 300), ('seven_day', 10080)) if isinstance(limits.get(name), dict)) if window]
+    if not windows: return
+    now = time.time(); snapshot = {'windows': windows, 'at': now, 'source': 'statusline'}
+    file = ROOT / 'chats' / chat_id / 'metadata.json'; meta = read(file, {})
+    if meta.get('generation') != generation: return
+    previous = meta.get('limits') or {}
+    if previous.get('windows') == windows and now - previous.get('at', 0) < 30: return
+    billing = meta.get('billing') if isinstance(meta.get('billing'), dict) else {}
+    # A chat that reports plan limits is on a subscription, whatever its launch environment suggested.
+    patch_metadata(file, generation, {'limits': snapshot, 'billing': {**billing, 'mode': 'subscription'}})
+    key = str(home_for('claude')) + '|' + (billing.get('account') or '')
+    def save(state):
+        state = {k: v for k, v in state.items() if isinstance(v, dict) and now - v.get('at', 0) < 30 * 86400}
+        state[key] = {'limits': snapshot, 'at': now}; return state
+    locked_json(limits_dir() / 'claude.json', save)
+
+def user_statusline(project):
+    """The status line Claude would run without Harbor's --settings: local, then project, then user settings."""
+    for settings in reversed(claude_settings(project)):
+        if 'statusLine' in settings: return settings['statusLine'] if isinstance(settings['statusLine'], dict) else None
+    return None
+
+def chainable(line):
+    """Harbor only wraps a status line it can run exactly as Claude would (or none at all)."""
+    if line is None: return True
+    if not isinstance(line, dict) or line.get('type') != 'command' or not isinstance(line.get('command'), str) or not line['command'].strip(): return False
+    if line.get('shell') not in (None, 'bash'): return False
+    if 'args' in line and not (isinstance(line['args'], list) and all(isinstance(arg, str) for arg in line['args'])): return False
+    return 'harbor_bridge' not in line['command'] and not re.search(r'bridge-[0-9a-f]{16}\.py', line['command'])
+
+def statusline_settings(command, cwd):
+    """Harbor's status line for --settings, carrying the user's own display options (padding, refreshInterval).
+    None when the user's status line can't be run faithfully: then Harbor leaves it alone."""
+    line = user_statusline(cwd)
+    if not chainable(line): return None
+    return {**{key: value for key, value in (line or {}).items() if key not in ('type', 'command', 'args', 'shell')}, 'type': 'command', 'command': command}
+
+def statusline(chat_id, generation, stdin=None, stdout=None):
+    """Record the rate-limit snapshot, then run the user's own status line with the same input,
+    passing its output and exit code through. With no user status line, print nothing."""
+    data = (stdin or sys.stdin.buffer).read(); project = None
+    try:
+        event = json.loads(data)
+        if isinstance(event, dict):
+            workspace = event.get('workspace') if isinstance(event.get('workspace'), dict) else {}
+            project = workspace.get('project_dir') or event.get('cwd')
+            store_claude_limits(chat_id, generation, event)
+    except Exception: pass
+    try: line = user_statusline(project if isinstance(project, str) else os.getcwd())
+    except Exception: line = None
+    if not line or not chainable(line): return 0
+    shell = 'args' not in line
+    child = subprocess.Popen(line['command'] if shell else [line['command'], *line['args']], shell=shell, stdin=subprocess.PIPE, stdout=stdout)
+    def forward(signum, _frame):
+        try: child.send_signal(signum)
+        except OSError: pass
+    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP): signal.signal(signum, forward)
+    try: child.communicate(data)
+    except BrokenPipeError: child.wait()
+    return child.returncode if child.returncode >= 0 else 128 - child.returncode
+
+def codex_account(ws):
+    """Billing mode and plan from the chat's own app server. The response's email is discarded."""
+    try: account = (ws.rpc('account/read', {}) or {}).get('account')
+    except (OSError, ValueError, EOFError, RuntimeError, TimeoutError, AttributeError): return {}
+    if not isinstance(account, dict): return {'mode': 'unknown'}
+    kind = account.get('type')
+    if kind == 'chatgpt':
+        plan = plan_name(account.get('planType'))
+        return {'mode': 'subscription', **({'plan': plan} if plan else {})}
+    if kind == 'amazonBedrock': return {'mode': 'api', 'plan': 'Bedrock'}
+    return {'mode': 'api' if kind == 'apiKey' else 'unknown'}
+
+def codex_limits_monitor(endpoint, stop, record):
+    """A second app-server connection, so slow account calls never delay chat status. Reads the account
+    every minute, rate limits when no other chat on this host refreshed them recently, and applies
+    account/rateLimits/updated pushes in between."""
+    ws = None; due = 0; state = {}
+    def store():
+        snapshot = dict(state)
+        record({key: snapshot[key] for key in ('mode', 'plan', 'account') if snapshot.get(key)})
+        if snapshot.get('mode') == 'subscription' and snapshot.get('limits'):
+            def save(value):
+                value[str(home_for('codex'))] = {**{key: snapshot[key] for key in ('mode', 'plan', 'account', 'limits') if snapshot.get(key)}, 'at': snapshot['limits']['at']}; return value
+            try: locked_json(limits_dir() / 'codex.json', save)
+            except OSError: pass
+    def pushed(params):
+        parsed = codex_limits((params or {}).get('rateLimits'))
+        if parsed and parsed[0]['windows']:
+            state['limits'] = {**parsed[0], 'at': time.time(), 'source': 'app-server'}
+            if parsed[1]: state['plan'] = parsed[1]
+            store()
+    while not stop.is_set():
+        try:
+            if ws is None:
+                ws = WS(endpoint); ws.listeners['account/rateLimits/updated'] = pushed; ws.initialize()
+            if time.monotonic() >= due:
+                due = time.monotonic() + 60
+                info = codex_account(ws)
+                if info.get('mode') and info['mode'] != 'subscription':
+                    for key in ('plan', 'limits', 'account'): state.pop(key, None)
+                state.update(info)
+                shared = (read(limits_dir() / 'codex.json', {}) or {}).get(str(home_for('codex'))) or {}
+                if state.get('mode') == 'subscription' and time.time() - shared.get('at', 0) >= 55:
+                    try:
+                        response = ws.rpc('account/rateLimits/read', {'excludeResetCreditDetails': True}) or {}
+                        parsed = codex_limits(response.get('rateLimits'))
+                        state['account'] = account_key('codex', response.get('accountId')) or state.get('account')
+                        if parsed:
+                            state['limits'] = {**parsed[0], 'at': time.time(), 'source': 'app-server'}
+                            if parsed[1] and not state.get('plan'): state['plan'] = parsed[1]
+                    except (RuntimeError, TimeoutError): pass
+                elif state.get('mode') == 'subscription' and shared.get('account'):
+                    state.setdefault('account', shared['account'])
+                store()
+            ws.wait(1)
+        except (OSError, ValueError, EOFError, RuntimeError, TimeoutError):
+            if ws:
+                try: ws.sock.close()
+                except OSError: pass
+            ws = None; stop.wait(10)
+    if ws:
+        try: ws.sock.close()
+        except OSError: pass
+
 class WS:
     """Minimal bounded RFC6455 client on a private Unix socket (no network listener)."""
     def __init__(self, path):
-        self.sock = socket.socket(socket.AF_UNIX); self.sock.settimeout(4); self.sock.connect(str(path)); self.pending = b''; self.counter = 0
+        self.sock = socket.socket(socket.AF_UNIX); self.sock.settimeout(4); self.sock.connect(str(path)); self.pending = b''; self.counter = 0; self.listeners = {}
         key = base64.b64encode(os.urandom(16)).decode()
         self.sock.sendall(('GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ' + key + '\r\nSec-WebSocket-Version: 13\r\n\r\n').encode())
         while b'\r\n\r\n' not in self.pending:
@@ -621,10 +974,24 @@ class WS:
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             message = self.receive()
+            if 'id' not in message: self.notify(message); continue
             if message.get('id') == number:
                 if 'error' in message: raise RuntimeError(message['error'].get('message', 'Agent request failed'))
                 return message.get('result', {})
         raise TimeoutError('Agent request timed out')
+    def notify(self, message):
+        listener = self.listeners.get(message.get('method'))
+        if listener: listener(message.get('params'))
+    def wait(self, seconds):
+        """Deliver notifications that arrive within the given time."""
+        import select
+        deadline = time.monotonic() + seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0: return
+            if not self.pending and not select.select([self.sock], [], [], remaining)[0]: return
+            message = self.receive()
+            if isinstance(message, dict) and 'id' not in message: self.notify(message)
     def initialize(self):
         self.rpc('initialize', {'clientInfo': {'name': 'harbor_monitor', 'version': '0.3.0'}, 'capabilities': {'experimentalApi': True}}); self.send({'method':'initialized'})
 
@@ -729,11 +1096,19 @@ def run(args):
                         update(hasMessages=bool(record.get('preview')) or bool(meta.get('hasMessages')), conversationId=record['id'], name=title(record.get('name') or record.get('preview')), activity=activity, reason=reason, resumable=bool(args.resume or (record.get('path') and pathlib.Path(record['path']).exists())))
                     except (OSError, ValueError, EOFError, RuntimeError, KeyError): update(activity='unknown', reason='Codex runtime status could not be read')
             threading.Thread(target=monitor, daemon=True).start()
+            threading.Thread(target=codex_limits_monitor, args=(endpoint, stop, lambda billing: update(billing=billing)), daemon=True).start()
         else:
             identity = args.resume or str(uuid.uuid4()); update(conversationId=identity)
             hook_command = 'python3 ' + __import__('shlex').quote(str(pathlib.Path(__file__).resolve())) + ' hook ' + args.chat + ' ' + generation
             events = ['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','PermissionRequest','Elicitation','ElicitationResult','Notification','Stop','StopFailure','SessionEnd']
             settings = {'hooks': {event: [{'hooks': [{'type': 'command', 'command': hook_command, 'timeout': 3}]}] for event in events}}
+            # The pane's environment decides Claude's billing (an ANTHROPIC_API_KEY here beats the login), so record it at launch.
+            try: update(billing=claude_plan(os.environ, os.getcwd()))
+            except Exception: pass
+            # Plan limits only reach status lines. Harbor's wraps the user's own, which it then runs unchanged.
+            try: line = statusline_settings('python3 ' + __import__('shlex').quote(str(pathlib.Path(__file__).resolve())) + ' statusline ' + args.chat + ' ' + generation, os.getcwd())
+            except Exception: line = None
+            if line: settings['statusLine'] = line
             help_text = subprocess.check_output(['claude','--help'], text=True, timeout=15) if args.permission_mode == 'standard' else ''
             command = ['claude'] + session_args('claude', args.resume, args.fork, identity) + ['--settings', json.dumps(settings)] + permission_args('claude', args.permission_mode, help_text)
             def monitor():
@@ -800,6 +1175,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(); sub = parser.add_subparsers(dest='action', required=True)
     launch = sub.add_parser('run'); launch.add_argument('agent', choices=['codex','claude']); launch.add_argument('chat'); launch.add_argument('generation'); launch.add_argument('--resume'); launch.add_argument('--fork'); launch.add_argument('--permission-mode', default='standard', choices=['standard','read-only','full-access','accept-edits','plan'])
     event = sub.add_parser('hook'); event.add_argument('chat'); event.add_argument('generation')
+    status = sub.add_parser('statusline'); status.add_argument('chat'); status.add_argument('generation')
+    sub.add_parser('limits')
     identification = sub.add_parser('identify'); identification.add_argument('agent', choices=['codex','claude']); identification.add_argument('pid', type=int)
     available = sub.add_parser('available'); available.add_argument('agent', choices=['codex','claude']); available.add_argument('identity')
     discovery = sub.add_parser('history'); discovery.add_argument('cwd')
@@ -809,6 +1186,7 @@ if __name__ == '__main__':
     usage_parser = sub.add_parser('chat-usage'); usage_parser.add_argument('agent', choices=['codex','claude']); usage_parser.add_argument('cwd'); usage_parser.add_argument('identity'); usage_parser.add_argument('--prices')
     meta = sub.add_parser('metadata'); meta.add_argument('chats', nargs='+')
     args = parser.parse_args()
+    if args.action == 'statusline': sys.exit(statusline(args.chat, args.generation))
     if args.action in ('run','hook') and (not UUID.match(args.chat) or not UUID.match(args.generation)): sys.exit(2)
     if args.action == 'run' and args.fork and (args.resume or not UUID.match(args.fork)): sys.exit(2)
     if args.action == 'run': sys.exit(run(args))
@@ -818,6 +1196,7 @@ if __name__ == '__main__':
     elif args.action == 'available':
         if not UUID.match(args.identity): sys.exit(2)
         print(json.dumps({'busy': conversation_busy(args.agent, args.identity)}))
+    elif args.action == 'limits': print(json.dumps(host_limits()))
     elif args.action == 'usage': print(json.dumps(host_usage(read(pathlib.Path(args.prices), {}) if args.prices else {})))
     elif args.action == 'chat-usage': print(json.dumps(chat_usage(args.agent,args.cwd,args.identity,read(pathlib.Path(args.prices), {}) if args.prices else {})))
     elif args.action == 'preview': print(json.dumps(preview(args.agent,args.cwd,args.identity)))

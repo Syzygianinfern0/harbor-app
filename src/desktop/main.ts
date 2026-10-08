@@ -4,6 +4,7 @@ import { openProjectInCursor } from './cursor';
 import { AppUpdater } from './appUpdater';
 import { HarborEngine } from '../engine/engine';
 import { Transport } from '../engine/transport';
+import { usageSourceFromEnv } from '../engine/usageSource';
 import type { Preferences } from '../shared/types';
 import { dockBadge, NO_VIEW, shouldMarkUnread, unreadCount, validView, viewedChat } from '../shared/unread';
 
@@ -35,6 +36,7 @@ else {
   app.whenReady().then(async () => {
     // HARBOR_TMUX_SOCKET isolates test profiles from the real `-L harbor` server.
     engine = new HarborEngine(app.getPath('userData'), new Transport(process.env.HARBOR_TMUX_SOCKET || (preview ? 'harbor-preview' : 'harbor')));
+    engine.setUsageSource(usageSourceFromEnv(process.env));
     await engine.init();
     updater = new AppUpdater({ version: app.getVersion(), bundlePath: path.resolve(process.execPath, '../../..'), userData: app.getPath('userData'), enabled: app.isPackaged && process.env.HARBOR_RELEASE_BUILD === '1' && !preview, disabledReason: preview ? 'Harbor Preview is a pull request build, so it does not update itself. Run scripts/try-pr.sh again for a newer build.' : undefined, feed: process.env.HARBOR_UPDATE_FEED, releases: process.env.HARBOR_UPDATE_RELEASES, channel: () => engine.snapshot().preferences.updates.channel, fetch: (input, init) => net.fetch(input as string, init), publicKey: process.env.HARBOR_UPDATE_PUBLIC_KEY?.replace(/\\n/g, '\n') });
     updater.on('state', state => window?.webContents.send('harbor:app-update', state));
@@ -58,6 +60,7 @@ else {
     handle('manageProjects', projects => engine.manageProjects(projects));
     handle('usage', () => engine.usage());
     handle('chatUsage', id => engine.chatUsage(id));
+    handle('usageLimits', () => engine.usageLimits());
     handle('chatPreview', id => engine.chatPreview(id));
     handle('importHistory', id => engine.importHistory(id));
     handle('resume', (id,restart) => engine.resume(id,restart));

@@ -1,0 +1,203 @@
+"""Plan detection, remaining limits and the Claude status line wrapper. Fake homes only."""
+import importlib.util, io, json, os, pathlib, sys, tempfile, time, unittest
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location('bridge', pathlib.Path(__file__).parents[1] / 'src/bridge/harbor_bridge.py')
+bridge = importlib.util.module_from_spec(spec); spec.loader.exec_module(bridge)
+
+CHAT = '11111111-1111-4111-8111-111111111111'
+GEN = '22222222-2222-4222-8222-222222222222'
+
+class Homes:
+    """Throwaway HOME, CODEX_HOME, CLAUDE_CONFIG_DIR and Harbor state."""
+    def __enter__(self):
+        self.temp = tempfile.TemporaryDirectory(); d = pathlib.Path(self.temp.name)
+        self.home, self.codex, self.claude, self.root = d / 'home', d / 'codex', d / 'claude', d / 'harbor'
+        for folder in (self.home, self.codex, self.claude): folder.mkdir()
+        self.patches = [patch.dict(os.environ, {'HOME': str(self.home), 'CODEX_HOME': str(self.codex), 'CLAUDE_CONFIG_DIR': str(self.claude)}), patch.object(bridge, 'ROOT', self.root)]
+        for item in self.patches: item.start()
+        for key in (*bridge.API_ENV, *bridge.CLOUD_ENV): os.environ.pop(key, None)
+        return self
+    def __exit__(self, *_):
+        for item in reversed(self.patches): item.stop()
+        self.temp.cleanup()
+    def write(self, path, value):
+        path.parent.mkdir(parents=True, exist_ok=True); path.write_text(value if isinstance(value, str) else json.dumps(value)); return path
+
+def token_count(stamp, limits):
+    return {'timestamp': stamp, 'type': 'event_msg', 'payload': {'type': 'token_count', 'info': None, 'rate_limits': limits}}
+
+SNAKE = {'limit_id': 'codex', 'plan_type': 'plus', 'primary': {'used_percent': 12.5, 'window_minutes': 300, 'resets_at': 1900000000}, 'secondary': {'used_percent': 44.0, 'window_minutes': 10080, 'resets_at': 1900300000}}
+
+class PlanParsing(unittest.TestCase):
+    def test_codex_snapshots_parse_from_app_server_and_logs(self):
+        camel = {'planType': 'pro', 'primary': {'usedPercent': 62, 'windowDurationMins': 300, 'resetsAt': 1900000000}, 'secondary': None, 'rateLimitReachedType': None}
+        limits, plan = bridge.codex_limits(camel)
+        self.assertEqual(plan, 'Pro'); self.assertEqual(limits['windows'], [{'usedPercent': 62.0, 'windowMinutes': 300, 'resetsAt': 1900000000.0}])
+        limits, plan = bridge.codex_limits(SNAKE)
+        self.assertEqual(plan, 'Plus'); self.assertEqual([w['windowMinutes'] for w in limits['windows']], [300, 10080])
+        # Old CLIs logged a relative reset time.
+        limits, _ = bridge.codex_limits({'primary': {'used_percent': 5, 'window_minutes': 300, 'resets_in_seconds': 60}}, base=1000)
+        self.assertEqual(limits['windows'][0]['resetsAt'], 1060)
+        self.assertIsNone(bridge.codex_limits({'primary': None, 'secondary': None}))
+        self.assertEqual(bridge.codex_limits({'primary': None, 'rateLimitReachedType': 'rate_limit_reached'})[0]['reached'], 'rate_limit_reached')
+        self.assertEqual(bridge.limit_window(140)['usedPercent'], 100.0)
+        self.assertIsNone(bridge.limit_window(True)); self.assertIsNone(bridge.limit_window(float('nan')))
+        self.assertEqual(bridge.epoch('2030-03-17T17:46:40Z'), 1900000000.0); self.assertEqual(bridge.epoch(1900000000000), 1900000000.0)
+
+    def test_account_keys_are_stable_hashes_never_raw_ids(self):
+        key = bridge.account_key('claude', 'acct-raw-id', 'org-raw-id')
+        self.assertRegex(key, r'^[0-9a-f]{16}$'); self.assertEqual(key, bridge.account_key('claude', 'acct-raw-id', 'org-raw-id'))
+        self.assertNotEqual(key, bridge.account_key('codex', 'acct-raw-id', 'org-raw-id'))
+        self.assertIsNone(bridge.account_key('codex', None, ''))
+
+    def test_claude_plan_names(self):
+        self.assertEqual(bridge.claude_plan_name('claude_max', 'default_claude_max_20x'), 'Max 20x')
+        self.assertEqual(bridge.claude_plan_name('claude_pro', ''), 'Pro')
+        self.assertEqual(bridge.claude_plan_name('team'), 'Team')
+        self.assertIsNone(bridge.plan_name('unknown'))
+
+class CodexLimits(unittest.TestCase):
+    def test_api_key_mode_reports_no_limits_even_with_old_subscription_logs(self):
+        with Homes() as h:
+            h.write(h.codex / 'sessions/2026/09/01/rollout-a.jsonl', json.dumps(token_count('2026-09-01T00:00:00Z', SNAKE)))
+            os.utime(h.codex / 'sessions/2026/09/01/rollout-a.jsonl', (1, 1))
+            h.write(h.codex / 'auth.json', {'auth_mode': 'apikey', 'OPENAI_API_KEY': 'sk-test-not-real'})
+            result = bridge.codex_host_limits()
+            self.assertEqual(result, {'agent': 'codex', 'mode': 'api'})
+            self.assertNotIn('sk-test', json.dumps(bridge.host_limits()))
+
+    def test_subscription_falls_back_to_logs_newer_than_the_auth_change(self):
+        with Homes() as h:
+            auth = h.write(h.codex / 'auth.json', {'auth_mode': 'chatgpt', 'tokens': {'account_id': 'raw-account', 'access_token': 'secret-token'}})
+            os.utime(auth, (1000, 1000))
+            log = h.write(h.codex / 'sessions/2030/01/02/rollout-b.jsonl', '\n'.join(json.dumps(r) for r in [token_count('2030-01-02T00:00:00Z', SNAKE), token_count('2030-01-02T00:01:00Z', {**SNAKE, 'limit_id': 'other_model'})]))
+            result = bridge.codex_host_limits()
+            self.assertEqual((result['mode'], result['plan'], result['limits']['source']), ('subscription', 'Plus', 'log'))
+            self.assertEqual(result['account'], bridge.account_key('codex', 'raw-account'))
+            text = json.dumps(bridge.host_limits()); self.assertNotIn('raw-account', text); self.assertNotIn('secret-token', text)
+            # A token refresh rewrites auth.json without changing the account: the log still counts.
+            os.utime(auth, (time.time(), time.time()))
+            self.assertIn('limits', bridge.codex_host_limits())
+            # Switching to an API key is an auth change: older log snapshots no longer count.
+            h.write(h.codex / 'auth.json', {'auth_mode': 'apikey', 'OPENAI_API_KEY': 'sk-test-not-real'})
+            self.assertNotIn('limits', bridge.codex_host_limits())
+            # A null rate_limits (an API-key thread) after the change ends the search.
+            h.write(h.codex / 'auth.json', {'auth_mode': 'chatgpt', 'tokens': {'account_id': 'raw-account'}})
+            time.sleep(0.01)
+            log.write_text(json.dumps(token_count('2099-01-01T00:00:00Z', None)))
+            self.assertNotIn('limits', bridge.codex_host_limits())
+
+    def test_live_app_server_snapshot_wins_over_logs(self):
+        with Homes() as h:
+            h.write(h.codex / 'auth.json', {'auth_mode': 'chatgpt', 'tokens': {'account_id': 'raw-account'}})
+            bridge.codex_auth()
+            live = {'mode': 'subscription', 'plan': 'Pro', 'account': 'abcdef0123456789', 'limits': {'windows': [{'usedPercent': 90.0, 'windowMinutes': 300}], 'at': time.time() + 5, 'source': 'app-server'}}
+            h.write(h.root / 'limits/codex.json', {str(h.codex): {**live, 'at': time.time() + 5}})
+            result = bridge.codex_host_limits()
+            self.assertEqual((result['plan'], result['account'], result['limits']['source']), ('Pro', 'abcdef0123456789', 'app-server'))
+
+    def test_app_server_monitor_reads_account_and_limits_without_email(self):
+        class FakeWS:
+            def __init__(self, _endpoint): self.listeners = {}; self.sock = self
+            def initialize(self): pass
+            def close(self): pass
+            def rpc(self, method, params):
+                if method == 'account/read': return {'account': {'type': 'chatgpt', 'email': 'alice@example.invalid', 'planType': 'plus'}}
+                return {'accountId': 'raw-account', 'rateLimits': {'primary': {'usedPercent': 30, 'windowDurationMins': 300, 'resetsAt': 1900000000}, 'secondary': None}}
+            def wait(self, _seconds):
+                self.listeners['account/rateLimits/updated']({'rateLimits': {'primary': {'usedPercent': 31, 'windowDurationMins': 300, 'resetsAt': 1900000000}}})
+                stop.set()
+        with Homes() as h, patch.object(bridge, 'WS', FakeWS):
+            stop = bridge.threading.Event(); records = []
+            bridge.codex_limits_monitor('unused', stop, records.append)
+            self.assertEqual(records[-1], {'mode': 'subscription', 'plan': 'Plus', 'account': bridge.account_key('codex', 'raw-account')})
+            stored = json.loads((h.root / 'limits/codex.json').read_text())[str(h.codex)]
+            self.assertEqual(stored['limits']['windows'][0]['usedPercent'], 31.0)
+            self.assertNotIn('alice', json.dumps(stored) + json.dumps(records)); self.assertNotIn('raw-account', json.dumps(stored))
+
+class ClaudePlans(unittest.TestCase):
+    def test_subscription_profile_and_overrides(self):
+        with Homes() as h:
+            h.write(h.claude / '.claude.json', {'oauthAccount': {'billingType': 'stripe_subscription', 'organizationType': 'claude_max', 'organizationRateLimitTier': 'default_claude_max_5x', 'accountUuid': 'raw-acct', 'organizationUuid': 'raw-org', 'emailAddress': 'alice@example.invalid'}})
+            plan = bridge.claude_plan({})
+            self.assertEqual((plan['mode'], plan['plan']), ('subscription', 'Max 5x')); self.assertRegex(plan['account'], r'^[0-9a-f]{16}$')
+            self.assertNotIn('alice', json.dumps(bridge.host_limits())); self.assertNotIn('raw-acct', json.dumps(bridge.host_limits()))
+            self.assertEqual(bridge.claude_plan({'ANTHROPIC_API_KEY': 'sk-ant-test'}), {'mode': 'api'})
+            self.assertEqual(bridge.claude_plan({'CLAUDE_CODE_USE_BEDROCK': '1'}), {'mode': 'api', 'plan': 'Bedrock'})
+            self.assertEqual(bridge.claude_plan({'CLAUDE_CODE_USE_VERTEX': '0'})['mode'], 'subscription')
+            project = h.home / 'project'
+            h.write(project / '.claude/settings.local.json', {'apiKeyHelper': '/bin/echo'})
+            self.assertEqual(bridge.claude_plan({}, str(project)), {'mode': 'api'})
+            h.write(h.claude / 'settings.json', {'env': {'CLAUDE_CODE_USE_VERTEX': 'true'}})
+            self.assertEqual(bridge.claude_plan({})['plan'], 'Vertex')
+
+    def test_linux_credentials_and_unknown(self):
+        with Homes() as h:
+            self.assertEqual(bridge.claude_plan({}), {'mode': 'unknown'})
+            h.write(h.claude / '.credentials.json', {'claudeAiOauth': {'accessToken': 'secret-token', 'refreshToken': 'secret-refresh', 'subscriptionType': 'pro', 'rateLimitTier': 'default'}})
+            self.assertEqual(bridge.claude_plan({}), {'mode': 'subscription', 'plan': 'Pro'})
+            self.assertNotIn('secret', json.dumps(bridge.host_limits()))
+            h.write(h.claude / '.claude.json', {'oauthAccount': {'organizationType': '', 'accountUuid': 'raw'}, 'primaryApiKey': 'sk-ant-test'})
+            self.assertEqual(bridge.claude_plan({}), {'mode': 'api'})
+
+    def test_status_line_snapshot_reaches_chat_and_host(self):
+        with Homes() as h:
+            h.write(h.claude / '.claude.json', {'oauthAccount': {'organizationType': 'claude_pro', 'accountUuid': 'raw-acct'}})
+            account = bridge.claude_plan({})['account']
+            meta = h.write(h.root / 'chats' / CHAT / 'metadata.json', {'generation': GEN, 'billing': {'mode': 'subscription', 'plan': 'Pro', 'account': account}})
+            self.assertNotIn('limits', bridge.claude_host_limits())
+            event = {'workspace': {'project_dir': str(h.home)}, 'rate_limits': {'five_hour': {'used_percentage': 38, 'resets_at': 1900000000}, 'seven_day': {'used_percentage': 61.5, 'resets_at': 1900300000}}}
+            self.assertEqual(bridge.statusline(CHAT, GEN, io.BytesIO(json.dumps(event).encode())), 0)
+            saved = json.loads(meta.read_text())
+            self.assertEqual([w['usedPercent'] for w in saved['limits']['windows']], [38.0, 61.5]); self.assertEqual(saved['billing']['plan'], 'Pro')
+            host = bridge.claude_host_limits()
+            self.assertEqual(host['limits']['windows'][1]['windowMinutes'], 10080)
+            # Another generation of the chat never takes the snapshot.
+            bridge.store_claude_limits(CHAT, '33333333-3333-4333-8333-333333333333', {'rate_limits': {'five_hour': {'used_percentage': 99}}})
+            self.assertEqual(json.loads(meta.read_text())['limits']['windows'][0]['usedPercent'], 38.0)
+
+class StatusLineChaining(unittest.TestCase):
+    def run_line(self, h, event, stdout_path):
+        with open(stdout_path, 'wb') as out:
+            return bridge.statusline(CHAT, GEN, io.BytesIO(event), out)
+
+    def test_runs_user_status_line_with_same_input_output_and_exit_code(self):
+        with Homes() as h:
+            h.write(h.claude / 'settings.json', {'statusLine': {'type': 'command', 'command': 'cat > "$HOME/seen.json"; printf "user line"; exit 3', 'padding': 2, 'refreshInterval': 5}})
+            event = json.dumps({'workspace': {'project_dir': str(h.home / 'nowhere')}, 'model': {'id': 'x'}}).encode() + b'\n'
+            out = h.home / 'out.txt'
+            self.assertEqual(self.run_line(h, event, out), 3)
+            self.assertEqual(out.read_bytes(), b'user line'); self.assertEqual((h.home / 'seen.json').read_bytes(), event)
+            settings = bridge.statusline_settings('python3 bridge statusline', str(h.home))
+            self.assertEqual(settings, {'padding': 2, 'refreshInterval': 5, 'type': 'command', 'command': 'python3 bridge statusline'})
+
+    def test_no_user_status_line_prints_nothing(self):
+        with Homes() as h:
+            out = h.home / 'out.txt'
+            self.assertEqual(self.run_line(h, b'{"rate_limits": null}', out), 0)
+            self.assertEqual(out.read_bytes(), b'')
+            self.assertEqual(bridge.statusline_settings('cmd', str(h.home)), {'type': 'command', 'command': 'cmd'})
+            # Garbage input still never breaks the chain.
+            self.assertEqual(self.run_line(h, b'not json', out), 0)
+
+    def test_project_settings_take_precedence_and_exec_form_runs_directly(self):
+        with Homes() as h:
+            project = h.home / 'project'
+            h.write(h.claude / 'settings.json', {'statusLine': {'type': 'command', 'command': 'printf user'}})
+            h.write(project / '.claude/settings.json', {'statusLine': {'type': 'command', 'command': 'printf project'}})
+            h.write(project / '.claude/settings.local.json', {'statusLine': {'type': 'command', 'command': sys.executable, 'args': ['-c', 'import sys; sys.stdout.write("local:" + str(len(sys.stdin.read())))']}})
+            event = json.dumps({'workspace': {'project_dir': str(project)}}).encode()
+            out = h.home / 'out.txt'
+            self.assertEqual(self.run_line(h, event, out), 0)
+            self.assertEqual(out.read_text(), 'local:' + str(len(event)))
+
+    def test_status_lines_harbor_cannot_run_faithfully_are_left_alone(self):
+        with Homes() as h:
+            h.write(h.claude / 'settings.json', {'statusLine': {'type': 'command', 'command': 'Get-Date', 'shell': 'powershell'}})
+            self.assertIsNone(bridge.statusline_settings('cmd', str(h.home)))
+            h.write(h.claude / 'settings.json', {'statusLine': {'type': 'command', 'command': 'python3 ~/.local/share/harbor/bridge-0123456789abcdef.py statusline a b'}})
+            self.assertIsNone(bridge.statusline_settings('cmd', str(h.home)))
+            self.assertFalse(bridge.chainable({'type': 'other'})); self.assertTrue(bridge.chainable(None))
+
+if __name__ == '__main__':
+    unittest.main()

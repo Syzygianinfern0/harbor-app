@@ -2,10 +2,11 @@ import type { PricingCatalog } from './pricing';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Connection, Conversation, Session, ChatPreview, ChatUsage, AgentUsage, DirectoryListing } from '../shared/types';
+import type { AgentPlan, ChatBilling, Connection, Conversation, Session, ChatPreview, ChatUsage, AgentUsage, DirectoryListing, LimitSnapshot } from '../shared/types';
+import { cleanPlans } from '../shared/usagePlans';
 import { Transport, quote } from './transport';
 
-export interface AgentMetadata { hasMessages?: boolean; attentionAt?: number; completedAt?: number; generation?: string; conversationId?: string; name?: string; activity?: Session['activity']; reason?: string; updatedAt?: number; resumable?: boolean }
+export interface AgentMetadata { hasMessages?: boolean; attentionAt?: number; completedAt?: number; generation?: string; conversationId?: string; name?: string; activity?: Session['activity']; reason?: string; updatedAt?: number; resumable?: boolean; billing?: ChatBilling; limits?: LimitSnapshot }
 export class AgentBridge {
   private installed = new Map<string, Promise<string>>();
   constructor(private transport: Transport) {}
@@ -55,6 +56,10 @@ export class AgentBridge {
   async usage(connection: Connection, catalog?: PricingCatalog): Promise<{agents: AgentUsage[]}> {
     const bridge = await this.ensure(connection);
     return JSON.parse(await this.transport.run(connection, this.transport.setup()+`python3 ${bridge} usage${catalog?` --prices ${await this.ensurePrices(connection,catalog)}`:''}`, {timeout:120000}));
+  }
+  async limits(connection: Connection): Promise<{agents: AgentPlan[]}> {
+    const bridge = await this.ensure(connection);
+    return {agents: cleanPlans(JSON.parse(await this.transport.run(connection, this.transport.setup()+`python3 ${bridge} limits`, {retry:true, timeout:20000})))};
   }
   async chatUsage(connection: Connection, agent: string, cwd: string, identity: string, catalog?: PricingCatalog): Promise<ChatUsage> {
     const bridge = await this.ensure(connection);

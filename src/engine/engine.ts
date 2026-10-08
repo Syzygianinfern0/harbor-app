@@ -14,7 +14,9 @@ import { AgentBridge } from './bridge';
 import { PricingStore } from './pricing';
 import { PreferencesStore } from './preferences';
 import { Transport, quote, unsetStripped, validateHost, validateConnection } from './transport';
-import type { Connection, CreateSession, Diagnostics, Preferences, Project, SshConnection, Session, Snapshot, AgentUpdate, HostUsage } from '../shared/types';
+import type { ChatBilling, Connection, CreateSession, Diagnostics, HostPlans, Preferences, Project, SshConnection, Session, Snapshot, AgentUpdate, HostUsage, UsageLimits } from '../shared/types';
+import { cleanBilling } from '../shared/usagePlans';
+import { fixtureChat, fixtureLimits, fixtureUsage, readFixture, type UsageSource } from './usageSource';
 
 function bounded(value: unknown, label: string, max = 500) {
   if (typeof value !== 'string' || value.length > max || /[\x00-\x08\x0b-\x1f]/.test(value)) throw new Error(`Invalid ${label}.`);
@@ -169,17 +171,49 @@ export class HarborEngine extends EventEmitter {
     await this.persist(); this.changed();
   }
   private usagePending?: Promise<HostUsage[]>;
+  private usageSource: UsageSource = { kind: 'live' };
+  /** What running chats reported about their billing. Kept in memory only, never in sessions.json. */
+  private chatBilling = new Map<string, ChatBilling>();
+  setUsageSource(source: UsageSource) { this.usageSource = source; }
+  // Hosts in connection backoff are reported as unreachable instead of waiting on their SSH timeout.
+  private unreachable(host: {id: string; label: string; connection: Connection}) {
+    return this.transport.backingOff(host.connection) ? {hostId: host.id, hostLabel: host.label, checkedAt: new Date().toISOString(), agents: [], unreachable: true, error: 'Host is not answering. Retrying with backoff.'} : undefined;
+  }
   usage(): Promise<HostUsage[]> {
+    if (this.usageSource.kind === 'off') return Promise.resolve([]);
+    if (this.usageSource.kind === 'fixture') return readFixture(this.usageSource.file).then(fixtureUsage);
     if (this.usagePending) return this.usagePending;
     this.usagePending = Promise.all(updateMachines(this.preferencesStore.value.hosts, this.projects).map(async host => {
       const base = {hostId: host.id, hostLabel: host.label, checkedAt: new Date().toISOString()};
+      const skipped = this.unreachable(host); if (skipped) return skipped;
       try { return {...base, ...await this.bridge.usage(host.connection,await this.pricing.get())}; }
-      catch (error) { return {...base, agents: [], error: (error as Error).message}; }
+      catch (error) { return {...base, agents: [], error: (error as Error).message, ...(this.transport.backingOff(host.connection) ? {unreachable: true} : {})}; }
     })).finally(() => { this.usagePending = undefined; });
     return this.usagePending;
   }
+  private limitsPending?: Promise<UsageLimits>;
+  /** Plans and remaining limits per host, plus what each running chat reported about its own billing. */
+  usageLimits(): Promise<UsageLimits> {
+    const source = this.usageSource;
+    if (source.kind === 'off') return Promise.resolve({hosts: [], chats: {}, disabled: source.reason});
+    if (source.kind === 'fixture') return readFixture(source.file).then(fixture => fixtureLimits(fixture, this.sessions));
+    if (this.limitsPending) return this.limitsPending;
+    this.limitsPending = Promise.all(updateMachines(this.preferencesStore.value.hosts, this.projects).map(async (host): Promise<HostPlans> => {
+      const base = {hostId: host.id, hostLabel: host.label, checkedAt: new Date().toISOString()};
+      const skipped = this.unreachable(host); if (skipped) return skipped;
+      try { return {...base, ...await this.bridge.limits(host.connection)}; }
+      catch (error) { return {...base, agents: [], error: (error as Error).message, ...(this.transport.backingOff(host.connection) ? {unreachable: true} : {})}; }
+    })).then(hosts => {
+      const chats: Record<string, ChatBilling> = {};
+      for (const session of this.sessions) { const billing = this.chatBilling.get(session.id); if (billing && session.status !== 'closed') chats[session.id] = billing; }
+      return {hosts, chats};
+    }).finally(() => { this.limitsPending = undefined; });
+    return this.limitsPending;
+  }
   async chatUsage(id: string) {
     const session = this.sessions.find(s => s.id === id);
+    if (this.usageSource.kind === 'off') return {error: this.usageSource.reason};
+    if (session && this.usageSource.kind === 'fixture') return fixtureChat(await readFixture(this.usageSource.file), session);
     if (!session?.conversationId || !['codex','claude'].includes(session.launcher)) return {error:'No saved conversation is available yet.'};
     return this.bridge.chatUsage(this.connection(session), session.launcher, session.cwd, session.conversationId, await this.pricing.get());
   }
@@ -228,6 +262,7 @@ export class HarborEngine extends EventEmitter {
           if(meta.conversationId && /^[a-f0-9-]{36}$/i.test(meta.conversationId)) {session.conversationId=meta.conversationId;this.dropDuplicates(session);}
           if(meta.hasMessages===true || (meta.hasMessages===false&&session.hasMessages!==true))session.hasMessages=meta.hasMessages;
           if(meta.resumable!==undefined) session.resumable=meta.resumable;
+          const billing=cleanBilling(meta.billing&&{...meta.billing,limits:meta.limits});if(billing)this.chatBilling.set(session.id,billing);
           if(meta.name && session.nameSource!=='manual') session.name=meta.name.slice(0,100);
           let {activity,reason,completedAt}=meta;
           // Older bridges record a watch-only wait as background and bump updatedAt every poll, so the finish time is fixed once

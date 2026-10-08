@@ -17,6 +17,7 @@ const api: HarborApi = {
   manageProjects: projects => ipcRenderer.invoke('harbor:manageProjects', projects),
   usage: () => ipcRenderer.invoke('harbor:usage'),
   chatUsage: id => ipcRenderer.invoke('harbor:chatUsage', id),
+  usageLimits: () => ipcRenderer.invoke('harbor:usageLimits'),
   chatPreview: id => ipcRenderer.invoke('harbor:chatPreview', id),
   importHistory: id => ipcRenderer.invoke('harbor:importHistory', id),
   resume: (id,restart) => ipcRenderer.invoke('harbor:resume', id,restart),

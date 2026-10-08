@@ -11,7 +11,18 @@ export interface CostSummary extends CostAmount { models: CostModel[]; days: Cos
 export interface ChatUsage { cost?: CostSummary | null; pricingUpdatedAt?: string; periods?: Record<UsagePeriod, {tokens: TokenUsage; sessions: number; cost?: CostSummary}>; tokens?: TokenUsage | null; compactionCount?: number | null; subagents?: number; partial?: boolean; error?: string }
 export type UsagePeriod = 'day' | 'week' | 'month';
 export interface AgentUsage extends ChatUsage { periods: Record<UsagePeriod, {tokens: TokenUsage; sessions: number; cost?: CostSummary}>; agent: 'codex' | 'claude'; sessions: number; recordedSessions: number }
-export interface HostUsage { pricingUpdatedAt?: string; hostId: string; hostLabel: string; checkedAt: string; agents: AgentUsage[]; error?: string }
+export interface HostUsage { pricingUpdatedAt?: string; hostId: string; hostLabel: string; checkedAt: string; agents: AgentUsage[]; error?: string; unreachable?: boolean }
+/** How an agent's usage is paid for: a plan with rolling limits, or per token. */
+export type BillingMode = 'subscription' | 'api' | 'unknown';
+/** One rolling limit window. Percentages are "used" as reported upstream; times are seconds since the epoch. */
+export interface LimitWindow { usedPercent: number; windowMinutes?: number; resetsAt?: number }
+export interface LimitSnapshot { windows: LimitWindow[]; at: number; source?: 'app-server' | 'log' | 'statusline'; reached?: string }
+/** An agent's sign-in on one host. `account` is a hash computed on the host, never a raw account ID. */
+export interface AgentPlan { agent: 'codex' | 'claude'; mode: BillingMode; plan?: string; account?: string; limits?: LimitSnapshot; error?: string }
+export interface HostPlans { hostId: string; hostLabel: string; checkedAt: string; agents: AgentPlan[]; error?: string; unreachable?: boolean }
+/** What a running chat reported about its own billing (recorded at launch, refined by the agent). */
+export interface ChatBilling { mode: BillingMode; plan?: string; account?: string; limits?: LimitSnapshot }
+export interface UsageLimits { hosts: HostPlans[]; chats: Record<string, ChatBilling>; disabled?: string }
 export interface ChatPreview { messageCount?: number; messages: {role: string; text: string}[]; error?: string }
 export interface Conversation { conversationId: string; launcher: 'codex' | 'claude'; name: string; cwd: string; updatedAt: number; createdAt: number; externalActive?: boolean; transcript?: string; hasMessages?: boolean }
 export interface AgentUpdate { hostId: string; hostLabel: string; agent: 'codex' | 'claude'; installed?: string; latest?: string; status: 'current' | 'available' | 'missing' | 'unknown'; error?: string; checkedAt: string }
@@ -62,6 +73,7 @@ export interface HarborApi {
   manageProjects(projects: {id: string; hidden: boolean}[]): Promise<void>;
   usage(): Promise<HostUsage[]>;
   chatUsage(id: string): Promise<ChatUsage>;
+  usageLimits(): Promise<UsageLimits>;
   chatPreview(id: string): Promise<ChatPreview>;
   importHistory(projectId: string): Promise<void>;
   resume(id: string, restart?: boolean): Promise<Session>;
