@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAccounts, chatPlan, cleanBilling, cleanPlans, currentWindows, footerSummary, leftText, resetText, tightest, windowLabel } from '../src/shared/usagePlans';
+import { STALE_AFTER_MS, asOfText, buildAccounts, chatPlan, cleanBilling, cleanLimits, cleanPlans, currentWindows, footerSummary, isStale, leftText, resetText, staleUsedText, tightest, toneOf, windowLabel } from '../src/shared/usagePlans';
 import { usageSourceFromEnv, fixtureLimits } from '../src/engine/usageSource';
 import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../src/shared/usageTokens';
 import type { AgentUsage, HostUsage, UsageLimits } from '../src/shared/types';
@@ -99,4 +99,16 @@ test('token counts sum across cost rows and format compactly with an exact break
   assert.equal(tokenBreakdown(row), '1,234,000 tokens · Input 1,200,000 (cache read 900,000 · cache write 50,000) · Output 34,000 (reasoning 12,000)');
   assert.equal(tokenBreakdown({ ...row, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 }), '1,234,000 tokens · Input 1,200,000 · Output 34,000');
   assert.equal(tokenLine(row), '1.2M input · 950k cached · 34k output · 12k reasoning');
+});
+
+test('stale limits read as a lower bound, never warn as current, and still reset', () => {
+  const fresh = { windows: [{ usedPercent: 91, windowMinutes: 300 }], at: sec - 60 };
+  const old = { windows: [{ usedPercent: 26.4, windowMinutes: 300, resetsAt: sec + 3600 }, { usedPercent: 91, windowMinutes: 10080, resetsAt: sec - 60 }], at: sec - 2 * 3600 };
+  assert.equal(isStale(fresh, now), false); assert.equal(isStale(old, now), true); assert.equal(isStale(undefined, now), false);
+  assert.equal(isStale({ ...fresh, at: sec - STALE_AFTER_MS / 1000 + 1 }, now), false); assert.equal(isStale({ ...fresh, at: sec - STALE_AFTER_MS / 1000 - 1 }, now), true);
+  const windows = currentWindows(old, now);
+  assert.deepEqual(windows.map(staleUsedText), ['≥26% used', '≥0% used']);
+  assert.equal(asOfText(old.at, now), 'as of 2 h ago');
+  assert.equal(toneOf(fresh.windows[0], false), 'danger'); assert.equal(toneOf(fresh.windows[0], true), 'stale');
+  assert.equal(cleanLimits({ ...fresh, source: 'live' })?.source, 'live');
 });

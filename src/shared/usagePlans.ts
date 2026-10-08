@@ -31,7 +31,7 @@ export function cleanLimits(value: unknown): LimitSnapshot | undefined {
   const windows = raw.windows.slice(0, 6).filter(w => w && finite(w.usedPercent, 0, 100)).map(w => ({ usedPercent: w.usedPercent, ...(finite(w.windowMinutes, 1) ? { windowMinutes: w.windowMinutes } : {}), ...(finite(w.resetsAt, 1) ? { resetsAt: w.resetsAt } : {}) }));
   const reached = text(raw.reached, 60);
   if (!windows.length && !reached) return undefined;
-  return { windows, at: raw.at, ...(raw.source && ['app-server', 'log', 'statusline'].includes(raw.source) ? { source: raw.source } : {}), ...(reached ? { reached } : {}) };
+  return { windows, at: raw.at, ...(raw.source && ['app-server', 'live', 'log', 'statusline'].includes(raw.source) ? { source: raw.source } : {}), ...(reached ? { reached } : {}) };
 }
 export function cleanBilling(value: unknown): ChatBilling | undefined {
   const raw = value as ChatBilling | undefined;
@@ -152,3 +152,14 @@ export function agoText(at: number, now = Date.now()) {
   const days = Math.floor(seconds / 86400);
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
+
+/** A snapshot older than this is shown greyed out, as a lower bound: usage can only have grown since. */
+export const STALE_AFTER_MS = 10 * 60 * 1000;
+export const isStale = (limits: LimitSnapshot | undefined, now = Date.now()) => !!limits && now - limits.at * 1000 > STALE_AFTER_MS;
+/** When each agent's limits refresh on their own. */
+export const STALE_HINT: Record<Agent, string> = { claude: 'Updates when a Claude chat replies', codex: 'Updates when a Codex chat runs' };
+/** "≥26% used" for a stale reading (a window that has reset since reads ≥0%). */
+export const staleUsedText = (window: LimitWindow) => `≥${Math.round(window.usedPercent)}% used`;
+export const asOfText = (at: number, now = Date.now()) => `as of ${agoText(at, now)}`;
+/** Tone for meters and rings: a stale number never warns as if it were current. */
+export const toneOf = (window: LimitWindow, stale: boolean) => stale ? 'stale' : level(window.usedPercent);

@@ -61,3 +61,9 @@
 .cost-total small.cost-total-tokens{font-size:11px;opacity:1;color:var(--muted);font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){.cost-disclosure-chevron{transition:none}}
 .cost-total>span{white-space:nowrap}
+/* Stale limits (older than STALE_AFTER_MS): greyed out, shown as a lower bound. */
+:root{--limit-stale:#5d6470}
+.limit-track.stale>i{background:var(--limit-stale)}
+.limit-meter-top .stale,.sidebar-cost .stale,.sidebar-cost-collapsed.stale,.plan-chip.stale{color:var(--muted)}
+.limit-ring.stale .fg{stroke:var(--limit-stale)}
+.account-foot .account-stale{color:var(--muted)}

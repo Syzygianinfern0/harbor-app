@@ -18,7 +18,7 @@ export interface HostUsage { pricingUpdatedAt?: string; hostId: string; hostLabe
 export type BillingMode = 'subscription' | 'api' | 'unknown';
 /** One rolling limit window. Percentages are "used" as reported upstream; times are seconds since the epoch. */
 export interface LimitWindow { usedPercent: number; windowMinutes?: number; resetsAt?: number }
-export interface LimitSnapshot { windows: LimitWindow[]; at: number; source?: 'app-server' | 'log' | 'statusline'; reached?: string }
+export interface LimitSnapshot { windows: LimitWindow[]; at: number; source?: 'app-server' | 'live' | 'log' | 'statusline'; reached?: string }
 /** An agent's sign-in on one host. `account` is a hash computed on the host, never a raw account ID. */
 export interface AgentPlan { agent: 'codex' | 'claude'; mode: BillingMode; plan?: string; account?: string; limits?: LimitSnapshot; error?: string }
 export interface HostPlans { hostId: string; hostLabel: string; checkedAt: string; agents: AgentPlan[]; error?: string; unreachable?: boolean }
