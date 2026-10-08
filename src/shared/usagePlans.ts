@@ -28,7 +28,7 @@ export const SHORT_NAMES: Record<Agent, string> = { claude: 'Claude', codex: 'Co
 export function cleanLimits(value: unknown): LimitSnapshot | undefined {
   const raw = value as LimitSnapshot | undefined;
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.windows) || !finite(raw.at, 1)) return undefined;
-  const windows = raw.windows.slice(0, 6).filter(w => w && finite(w.usedPercent, 0, 100)).map(w => ({ usedPercent: w.usedPercent, ...(finite(w.windowMinutes, 1) ? { windowMinutes: w.windowMinutes } : {}), ...(finite(w.resetsAt, 1) ? { resetsAt: w.resetsAt } : {}) }));
+  const windows = raw.windows.slice(0, 6).filter(w => w && finite(w.usedPercent, 0, 100)).map(w => ({ usedPercent: w.usedPercent, ...(finite(w.windowMinutes, 1) ? { windowMinutes: w.windowMinutes } : {}), ...(finite(w.resetsAt, 1) ? { resetsAt: w.resetsAt } : {}), ...(finite(w.at, 1) ? { at: w.at } : {}) }));
   const reached = text(raw.reached, 60);
   if (!windows.length && !reached) return undefined;
   return { windows, at: raw.at, ...(raw.source && ['app-server', 'live', 'log', 'statusline'].includes(raw.source) ? { source: raw.source } : {}), ...(reached ? { reached } : {}) };
@@ -50,13 +50,30 @@ export function cleanPlans(value: unknown): AgentPlan[] {
 
 /** A window whose reset time has passed has started over. */
 export function currentWindows(limits: LimitSnapshot | undefined, now = Date.now()): LimitWindow[] {
-  return (limits?.windows ?? []).map(w => w.resetsAt && w.resetsAt * 1000 <= now ? { usedPercent: 0, ...(w.windowMinutes ? { windowMinutes: w.windowMinutes } : {}) } : w);
+  return (limits?.windows ?? []).map(w => ({ ...(w.resetsAt && w.resetsAt * 1000 <= now ? { usedPercent: 0, ...(w.windowMinutes ? { windowMinutes: w.windowMinutes } : {}) } : w), at: w.at ?? limits!.at }));
 }
 /** The window closest to its limit; on a tie, the one that resets sooner. */
 export function tightest(windows: LimitWindow[]): LimitWindow | undefined {
   return windows.reduce<LimitWindow | undefined>((worst, w) => !worst || w.usedPercent > worst.usedPercent || (w.usedPercent === worst.usedPercent && (w.windowMinutes ?? Infinity) < (worst.windowMinutes ?? Infinity)) ? w : worst, undefined);
 }
-const newest = (a?: LimitSnapshot, b?: LimitSnapshot) => !a ? b : !b ? a : b.at > a.at ? b : a;
+const SAME_WINDOW = 120; // seconds: resetsAt this close is the same limit window
+/** Merge window by window (as the bridge does): a later reset is a newer window, within one window the higher
+ * percentage wins (usage only grows), and a window missing from one snapshot is kept from the other. */
+export function mergeLimits(a?: LimitSnapshot, b?: LimitSnapshot): LimitSnapshot | undefined {
+  if (!a || !b) return a ?? b;
+  const merged = new Map<number | undefined, LimitWindow>();
+  for (const snapshot of [a, b]) for (const raw of snapshot.windows) {
+    const window = { ...raw, at: raw.at ?? snapshot.at }; const kept = merged.get(window.windowMinutes);
+    if (!kept) { merged.set(window.windowMinutes, window); continue; }
+    const x = kept.resetsAt, y = window.resetsAt;
+    if (x && y && Math.abs(x - y) > SAME_WINDOW) merged.set(window.windowMinutes, y > x ? window : kept);
+    else if (x && y) merged.set(window.windowMinutes, { ...kept, usedPercent: Math.max(kept.usedPercent, window.usedPercent), resetsAt: Math.max(x, y), at: Math.max(kept.at!, window.at!) });
+    else merged.set(window.windowMinutes, window.at! >= kept.at! ? window : kept);
+  }
+  const windows = [...merged.values()].sort((x, y) => (x.windowMinutes ?? 0) - (y.windowMinutes ?? 0));
+  const newer = b.at >= a.at ? b : a;
+  return { ...newer, windows, at: Math.max(a.at, b.at) };
+}
 
 export function buildAccounts(hosts: HostUsage[] | undefined, limits: UsageLimits | undefined): UsageAccount[] {
   const usage = new Map((hosts ?? []).map(h => [h.hostId, h]));
@@ -80,7 +97,7 @@ export function buildAccounts(hosts: HostUsage[] | undefined, limits: UsageLimit
       const account = accounts.get(key) ?? { key, kind, agent, hosts: [], cost: { day: blank(), week: blank(), month: blank() }, costAvailable: false, partial: false };
       if (!account.hosts.some(h => h.id === id)) account.hosts.push({ id, label });
       account.plan = account.plan ?? plan?.plan;
-      account.limits = newest(account.limits, plan?.limits);
+      account.limits = mergeLimits(account.limits, plan?.limits);
       if (agentUsage && !spent?.error) {
         for (const period of PERIODS) account.cost[period] = add(account.cost[period], agentUsage.periods[period]?.cost);
         account.costAvailable = account.costAvailable || PERIODS.some(p => !!agentUsage.periods[p]?.cost);
@@ -121,7 +138,7 @@ export function chatPlan(session: { id: string; launcher: string; host: string; 
   if (kind !== 'subscription') return { kind, agent, plan: kind === 'api' ? billing?.plan ?? fallback?.plan : undefined };
   const accountId = billing?.account ?? fallback?.account;
   const account = accounts.find(a => a.kind === 'subscription' && a.agent === agent && (accountId ? a.key === `${agent}:${accountId}` : a.hosts.some(h => h.id === id)));
-  const snapshot = newest(account?.limits, billing?.limits);
+  const snapshot = mergeLimits(account?.limits, billing?.limits);
   const window = tightest(currentWindows(snapshot, now));
   return { kind, agent, plan: billing?.plan ?? fallback?.plan ?? account?.plan, window, account, limits: snapshot, reached: !!window && window.usedPercent >= 100 };
 }
@@ -156,6 +173,8 @@ export function agoText(at: number, now = Date.now()) {
 /** A snapshot older than this is shown greyed out, as a lower bound: usage can only have grown since. */
 export const STALE_AFTER_MS = 10 * 60 * 1000;
 export const isStale = (limits: LimitSnapshot | undefined, now = Date.now()) => !!limits && now - limits.at * 1000 > STALE_AFTER_MS;
+/** Staleness per window: each window carries when it was read (currentWindows fills it in). */
+export const windowStale = (window: LimitWindow | undefined, now = Date.now()) => !!window?.at && now - window.at * 1000 > STALE_AFTER_MS;
 /** When each agent's limits refresh on their own. */
 export const STALE_HINT: Record<Agent, string> = { claude: 'Updates when a Claude chat replies', codex: 'Updates when a Codex chat runs' };
 /** "≥26% used" for a stale reading (a window that has reset since reads ≥0%). */

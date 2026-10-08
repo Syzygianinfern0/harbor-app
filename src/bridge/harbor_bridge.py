@@ -2,7 +2,7 @@
 """Host-local Harbor adapter. No dependencies, no credential/config edits, no prompt logging."""
 import fcntl
 import math
-import argparse, base64, hashlib, json, os, pathlib, re, shutil, signal, socket, sqlite3, struct, subprocess, sys, threading, time, uuid
+import argparse, base64, hashlib, json, os, pathlib, re, shutil, signal, socket, sqlite3, stat, struct, subprocess, sys, threading, time, uuid
 
 ROOT = pathlib.Path.home() / '.local/share/harbor'
 UUID = re.compile(r'^[0-9a-fA-F-]{36}$')
@@ -892,15 +892,50 @@ def claude_plan(environ=None, cwd=None):
     if config.get('primaryApiKey'): return {'mode': 'api'}
     return {'mode': 'unknown'}
 
+SAME_WINDOW = 120  # resetsAt within 2 minutes: the same limit window
+
+def merge_limits(old, new):
+    """Merge two snapshots window by window, so an idle chat's cached reading never overwrites a newer one:
+    a later reset is a newer window; within the same window usage only grows, so the higher percentage
+    wins; a window missing from one snapshot is kept from the other. Each window keeps its own time."""
+    if not isinstance(old, dict) or not isinstance(old.get('windows'), list): return new
+    if not isinstance(new, dict) or not isinstance(new.get('windows'), list): return old
+    def windows(snapshot):
+        return {w.get('windowMinutes'): {**w, 'at': w.get('at', snapshot.get('at', 0))} for w in snapshot['windows'] if isinstance(w, dict)}
+    merged = windows(old)
+    for key, window in windows(new).items():
+        kept = merged.get(key)
+        if not kept: merged[key] = window; continue
+        a, b = kept.get('resetsAt'), window.get('resetsAt')
+        if a and b and abs(a - b) > SAME_WINDOW: merged[key] = window if b > a else kept
+        elif a and b: merged[key] = {**kept, 'usedPercent': max(kept['usedPercent'], window['usedPercent']), 'resetsAt': max(a, b), 'at': max(kept['at'], window['at'])}
+        else: merged[key] = window if window['at'] >= kept['at'] else kept
+    result = {**old, **new, 'windows': sorted(merged.values(), key=lambda w: w.get('windowMinutes') or 0)}
+    result['at'] = max(w['at'] for w in result['windows']) if result['windows'] else max(old.get('at', 0), new.get('at', 0))
+    return result
+
+def reading_time(event, now):
+    """When Claude last got a response in this chat: its transcript's mtime (never read), capped at now.
+    Claude re-runs status lines in idle chats with the rate limits cached from that chat's last response,
+    so the time the status line ran says nothing about how fresh they are."""
+    path = event.get('transcript_path') if isinstance(event, dict) else None
+    if isinstance(path, str) and path:
+        try:
+            info = os.stat(path)
+            if stat.S_ISREG(info.st_mode): return min(info.st_mtime, now)
+        except (OSError, ValueError): pass
+    return now
+
 def claude_host_limits():
     result = {'agent': 'claude', **claude_plan()}
     if result['mode'] == 'api': return result
     stored = read(limits_dir() / 'claude.json', {}) or {}
     prefix = str(home_for('claude')) + '|'
     candidates = [entry for key, entry in stored.items() if isinstance(entry, dict) and key.startswith(prefix) and (not result.get('account') or key in (prefix + result['account'], prefix))]
-    newest = max(candidates, key=lambda entry: entry.get('at', 0), default=None)
-    if newest and newest.get('limits'):
-        result['limits'] = newest['limits']
+    limits = None
+    for entry in candidates: limits = merge_limits(limits, entry.get('limits'))
+    if limits and limits.get('windows'):
+        result['limits'] = limits
         if result['mode'] == 'unknown': result['mode'] = 'subscription'
     return result
 
@@ -912,24 +947,28 @@ def host_limits():
     return {'agents': agents}
 
 def store_claude_limits(chat_id, generation, event):
-    """Keep the newest plan-limit snapshot from Claude's status line input."""
+    """Merge the plan-limit reading from Claude's status line input into the chat's and the account's."""
     limits = event.get('rate_limits') if isinstance(event, dict) else None
     if not isinstance(limits, dict) or not UUID.match(chat_id) or not UUID.match(generation): return
     windows = [window for window in (limit_window((limits.get(name) or {}).get('used_percentage'), minutes, (limits.get(name) or {}).get('resets_at'))
                                      for name, minutes in (('five_hour', 300), ('seven_day', 10080)) if isinstance(limits.get(name), dict)) if window]
     if not windows: return
-    now = time.time(); snapshot = {'windows': windows, 'at': now, 'source': 'statusline'}
+    now = time.time(); at = reading_time(event, now)
+    snapshot = {'windows': [{**window, 'at': at} for window in windows], 'at': at, 'source': 'statusline'}
     file = ROOT / 'chats' / chat_id / 'metadata.json'; meta = read(file, {})
     if meta.get('generation') != generation: return
-    previous = meta.get('limits') or {}
-    if previous.get('windows') == windows and now - previous.get('at', 0) < 30: return
+    previous = meta.get('limits') if isinstance(meta.get('limits'), dict) else None
+    merged = merge_limits(previous, snapshot)
     billing = meta.get('billing') if isinstance(meta.get('billing'), dict) else {}
+    if merged == previous and billing.get('mode') == 'subscription': return
     # A chat that reports plan limits is on a subscription, whatever its launch environment suggested.
-    patch_metadata(file, generation, {'limits': snapshot, 'billing': {**billing, 'mode': 'subscription'}})
+    patch_metadata(file, generation, {'limits': merged, 'billing': {**billing, 'mode': 'subscription'}})
     key = str(home_for('claude')) + '|' + (billing.get('account') or '')
     def save(state):
         state = {k: v for k, v in state.items() if isinstance(v, dict) and now - v.get('at', 0) < 30 * 86400}
-        state[key] = {'limits': snapshot, 'at': now}; return state
+        combined = merge_limits((state.get(key) or {}).get('limits'), snapshot)
+        if state.get(key, {}).get('limits') == combined: return None
+        state[key] = {'limits': combined, 'at': combined['at']}; return state
     locked_json(limits_dir() / 'claude.json', save)
 
 def user_statusline(project):

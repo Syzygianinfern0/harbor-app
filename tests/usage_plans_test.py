@@ -234,6 +234,54 @@ class ClaudePlans(unittest.TestCase):
             bridge.store_claude_limits(CHAT, '33333333-3333-4333-8333-333333333333', {'rate_limits': {'five_hour': {'used_percentage': 99}}})
             self.assertEqual(json.loads(meta.read_text())['limits']['windows'][0]['usedPercent'], 38.0)
 
+IDLE = '44444444-4444-4444-8444-444444444444'
+
+class ClaudeReadings(unittest.TestCase):
+    """Claude re-runs status lines in idle chats with the limits cached from their last response."""
+    def chat(self, h, chat, account, transcript_age):
+        h.write(h.root / 'chats' / chat / 'metadata.json', {'generation': GEN, 'billing': {'mode': 'subscription', 'account': account}})
+        transcript = h.write(h.claude / 'projects' / (chat + '.jsonl'), '{}')
+        os.utime(transcript, (time.time() - transcript_age,) * 2)
+        return str(transcript)
+    def windows(self):
+        return {w['windowMinutes']: w for w in bridge.claude_host_limits()['limits']['windows']}
+
+    def test_an_idle_chats_cached_reading_never_overwrites_a_fresh_one(self):
+        with Homes() as h:
+            h.write(h.claude / '.claude.json', {'oauthAccount': {'organizationType': 'claude_max', 'accountUuid': 'raw-acct'}}); account = bridge.claude_plan({})['account']
+            fresh = self.chat(h, CHAT, account, 5); idle = self.chat(h, IDLE, account, 3 * 3600)
+            bridge.store_claude_limits(CHAT, GEN, {'transcript_path': fresh, 'rate_limits': {'five_hour': {'used_percentage': 3, 'resets_at': 1900000000}, 'seven_day': {'used_percentage': 86, 'resets_at': 1900300000}}})
+            # The idle chat's status line runs later, with an older reading that lacks the 5-hour window.
+            bridge.store_claude_limits(IDLE, GEN, {'transcript_path': idle, 'rate_limits': {'seven_day': {'used_percentage': 80, 'resets_at': 1900300000}}})
+            windows = self.windows()
+            self.assertEqual((windows[300]['usedPercent'], windows[10080]['usedPercent']), (3.0, 86.0))
+            self.assertLess(time.time() - windows[10080]['at'], 60); self.assertLess(time.time() - bridge.claude_host_limits()['limits']['at'], 60)
+            # The idle chat's own record is timed by its transcript, so it reads as hours old.
+            idle_limits = json.loads((h.root / 'chats' / IDLE / 'metadata.json').read_text())['limits']
+            self.assertGreater(time.time() - idle_limits['at'], 3 * 3600 - 60)
+
+    def test_a_newer_window_replaces_the_old_and_usage_only_grows_within_one(self):
+        with Homes() as h:
+            h.write(h.claude / '.claude.json', {'oauthAccount': {'organizationType': 'claude_max', 'accountUuid': 'raw-acct'}}); account = bridge.claude_plan({})['account']
+            transcript = self.chat(h, CHAT, account, 0)
+            store = lambda used, reset: bridge.store_claude_limits(CHAT, GEN, {'transcript_path': transcript, 'rate_limits': {'five_hour': {'used_percentage': used, 'resets_at': reset}}})
+            store(91, 1900000000); store(40, 1900000060)  # same window, a stale lower copy: keep 91
+            self.assertEqual(self.windows()[300]['usedPercent'], 91.0)
+            store(2, 1900018000)  # the window reset: a later resetsAt is a newer window
+            self.assertEqual((self.windows()[300]['usedPercent'], self.windows()[300]['resetsAt']), (2.0, 1900018000.0))
+            store(95, 1900000000)  # a reading from the old window never comes back
+            self.assertEqual(self.windows()[300]['usedPercent'], 2.0)
+            meta = json.loads((h.root / 'chats' / CHAT / 'metadata.json').read_text())['limits']['windows']
+            self.assertEqual([(w['usedPercent'], w['resetsAt']) for w in meta], [(2.0, 1900018000.0)])
+
+    def test_reading_time_comes_from_the_transcript_without_reading_it(self):
+        with Homes() as h:
+            now = time.time(); file = h.write(h.claude / 't.jsonl', 'not json')
+            os.utime(file, (now - 7200,) * 2); self.assertAlmostEqual(bridge.reading_time({'transcript_path': str(file)}, now), now - 7200, delta=1)
+            os.utime(file, (now + 600,) * 2); self.assertEqual(bridge.reading_time({'transcript_path': str(file)}, now), now)  # capped
+            for event in ({}, {'transcript_path': str(h.claude)}, {'transcript_path': str(h.claude / 'missing')}, {'transcript_path': 7}):
+                self.assertEqual(bridge.reading_time(event, now), now)
+
 class StatusLineChaining(unittest.TestCase):
     def run_line(self, h, event, stdout_path):
         with open(stdout_path, 'wb') as out:

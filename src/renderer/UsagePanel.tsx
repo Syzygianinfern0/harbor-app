@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronRight, DollarSign, Gauge, Info, RefreshCw, X } from 'lucide-react';
 import type { ChatUsage, CostAmount, CostModel, HostUsage, LimitWindow, Session, TokenUsage, UsageLimits, UsagePeriod } from '../shared/types';
-import { AGENT_NAMES, SHORT_NAMES, STALE_HINT, agoText, asOfText, buildAccounts, chatPlan, currentWindows, footerSummary, isStale, leftText, level, resetText, staleUsedText, tightest, toneOf, windowLabel, type AccountKind, type UsageAccount } from '../shared/usagePlans';
+import { AGENT_NAMES, SHORT_NAMES, STALE_HINT, agoText, asOfText, buildAccounts, chatPlan, currentWindows, footerSummary, leftText, level, resetText, staleUsedText, tightest, toneOf, windowLabel, windowStale, type AccountKind, type UsageAccount } from '../shared/usagePlans';
 import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../shared/usageTokens';
 import { AgentIcon } from './AgentIcon';
 import './usage.css';
@@ -84,14 +84,15 @@ export function AccountCard({account,now,period='day',compact=false}:{account:Us
   const hosts=account.hosts.map(h=>h.label).join(', ');
   const name=account.agent?SHORT_NAMES[account.agent]:'';
   const reached=!!worst&&(worst.usedPercent>=100||!!account.limits?.reached);
-  const stale=isStale(account.limits,now);const staleAt=stale?account.limits!.at:undefined;
+  // Each window has its own reading time; the card warns only from a current one.
+  const stale=windowStale(worst,now);const staleWindows=windows.filter(w=>windowStale(w,now));const allStale=!!windows.length&&staleWindows.length===windows.length;
   const tone=account.kind==='down'?'warn':worst&&!stale?level(worst.usedPercent):'';
   let body;
-  if(account.kind==='subscription') body=<>{windows.map((w,i)=><Meter key={i} window={w} now={now} staleAt={staleAt}/>)}
+  if(account.kind==='subscription') body=<>{windows.map((w,i)=><Meter key={i} window={w} now={now} staleAt={windowStale(w,now)?w.at:undefined}/>)}
     {!account.limits&&<div className="usage-callout info"><Info size={13}/><span>{account.agent==='claude'?'Signed in with a subscription. Usage appears after the next reply in a Harbor-launched Claude chat.':'Signed in with ChatGPT. Usage appears after the next Codex reply.'}</span></div>}
-    {stale?(worst&&(reached||worst.usedPercent>=90)?<div className="usage-callout info"><Info size={13}/><span>{windowLabel(worst)} was {worst.usedPercent>=100?'at the limit':`at ${Math.round(worst.usedPercent)}%`}, {asOfText(account.limits!.at,now)}.</span></div>:null)
+    {stale?(worst&&(reached||worst.usedPercent>=90)?<div className="usage-callout info"><Info size={13}/><span>{windowLabel(worst)} was {worst.usedPercent>=100?'at the limit':`at ${Math.round(worst.usedPercent)}%`}, {asOfText(worst.at!,now)}.</span></div>:null)
     :reached?<div className="usage-callout danger"><AlertTriangle size={13}/><span>{name} is paused{worst?.resetsAt?` until ${resetText(tightest(windows.filter(w=>w.usedPercent>=100))?.resetsAt??worst.resetsAt,now)}`:''}. Chats on this account will wait.</span></div>:worst&&worst.usedPercent>=90?<div className="usage-callout warn"><AlertTriangle size={13}/><span>Almost out.{worst.resetsAt?` Resets ${resetText(worst.resetsAt,now)}.`:''}</span></div>:null}
-    <div className="account-foot">{account.costAvailable&&<span>≈ {money(account.cost.week.usd)} at API rates this week, not charged</span>}{account.limits&&<span className={stale?'account-stale':''}>{stale?`As of ${agoText(account.limits.at,now)} · ${STALE_HINT[account.agent!]}`:`Updated ${agoText(account.limits.at,now)}${account.limits.source==='log'?' from saved logs':''}`}{compact&&account.hosts.length>1?` · shared by ${account.hosts.length} hosts`:''}</span>}</div></>;
+    <div className="account-foot">{account.costAvailable&&<span>≈ {money(account.cost.week.usd)} at API rates this week, not charged</span>}{account.limits&&<span className={staleWindows.length?'account-stale':''}>{allStale?`As of ${agoText(Math.max(...windows.map(w=>w.at!)),now)}`:`Updated ${agoText(account.limits.at,now)}${account.limits.source==='log'?' from saved logs':''}`}{staleWindows.length?` · ${STALE_HINT[account.agent!]}`:''}{compact&&account.hosts.length>1?` · shared by ${account.hosts.length} hosts`:''}</span>}</div></>;
   else if(account.kind==='api') body=<><SpendRows account={account} period={period}/>{!compact&&<div className="account-foot"><span>Recorded or estimated at model API rates</span></div>}</>;
   else if(account.kind==='unknown') body=<><SpendRows account={account} period={period}/><div className="account-foot"><span>{account.agent==='codex'?`Couldn't tell whether this is an API key or a subscription. Update Codex on ${hosts} to see limits.`:`Couldn't detect the plan on ${hosts}.`}</span></div></>;
   else body=<div className="usage-callout warn"><AlertTriangle size={13}/><span title={account.error}>{hosts} is unreachable. Retrying with backoff.</span></div>;
@@ -106,9 +107,9 @@ function CostNotes({state,partial}:{state:UsageState;partial:boolean}) {
 function footerValue({state,now}:{state:UsageState;now:number}) {
   const summary=footerSummary(state.accounts,now);const star=summary.partial?' *':'';
   if(summary.worst){
-    const {account,window}=summary.worst;const stale=isStale(account.limits,now);const tone=toneOf(window,stale);
+    const {account,window}=summary.worst;const stale=windowStale(window,now);const tone=toneOf(window,stale);
     const left=stale?staleUsedText(window):window.usedPercent>=100?'Limit reached':`${Math.max(0,Math.floor(100-window.usedPercent))}%`;
-    const asOf=stale?` (${asOfText(account.limits!.at,now)}; ${STALE_HINT[account.agent!].toLowerCase()})`:'';
+    const asOf=stale?` (${asOfText(window.at!,now)}; ${STALE_HINT[account.agent!].toLowerCase()})`:'';
     if(summary.spend) return {icon:'gauge',label:'Usage',tone,value:<><span className={tone}>{left}</span> · {price(summary.spend)}{star}</>,title:`${SHORT_NAMES[account.agent!]} ${windowLabel(window).toLowerCase()}: ${stale?staleUsedText(window):leftText(window)}${asOf} · API spend in the last 24 hours: ${price(summary.spend)}`};
     return {icon:'gauge',label:`${SHORT_NAMES[account.agent!]} ${windowLabel(window).toLowerCase()}`,tone,value:<><span className={tone}>{stale?staleUsedText(window):leftText(window)}</span>{star}</>,title:stale?`${AGENT_NAMES[account.agent!]} ${account.plan??''}: ${staleUsedText(window)} of the ${windowLabel(window).toLowerCase()} limit${asOf}`:`${AGENT_NAMES[account.agent!]} ${account.plan??''}: ${leftText(window)} of the ${windowLabel(window).toLowerCase()} limit`};
   }
@@ -168,9 +169,9 @@ function PlanChip({session,usage,active}:{session:Session;usage?:ChatUsage;activ
   const cost=usage&&!usage.error?<ChatCost usage={usage} active={active}/>:null;
   if(!plan) return cost;
   if(plan.kind==='subscription'){
-    const stale=isStale(plan.limits,now);const tone=plan.window?toneOf(plan.window,stale):'';const reset=resetText(plan.window?.resetsAt,now);
-    const title=!plan.limits?'Subscription detected. Remaining usage appears after the next reply.':stale?`${AGENT_NAMES[plan.agent]} plan limits ${asOfText(plan.limits.at,now)}; usage may be higher now. ${STALE_HINT[plan.agent]}.`:`${AGENT_NAMES[plan.agent]} plan limits, updated ${agoText(plan.limits.at,now)}. Shared by every chat on this account.`;
-    return <span className={`plan-chip ${tone}`} aria-label="Plan usage" title={title}><PlanTag kind="subscription" plan={plan.plan}/>{plan.window?<span>{windowLabel(plan.window)} · {stale?`${staleUsedText(plan.window)} · ${asOfText(plan.limits!.at,now)}`:`${leftText(plan.window)}${reset?` · resets ${reset}`:''}`}</span>:<span>Usage appears after next reply</span>}</span>;
+    const stale=windowStale(plan.window,now);const tone=plan.window?toneOf(plan.window,stale):'';const reset=resetText(plan.window?.resetsAt,now);
+    const title=!plan.limits?'Subscription detected. Remaining usage appears after the next reply.':stale?`${AGENT_NAMES[plan.agent]} plan limits ${asOfText(plan.window!.at!,now)}; usage may be higher now. ${STALE_HINT[plan.agent]}.`:`${AGENT_NAMES[plan.agent]} plan limits, updated ${agoText(plan.limits.at,now)}. Shared by every chat on this account.`;
+    return <span className={`plan-chip ${tone}`} aria-label="Plan usage" title={title}><PlanTag kind="subscription" plan={plan.plan}/>{plan.window?<span>{windowLabel(plan.window)} · {stale?`${staleUsedText(plan.window)} · ${asOfText(plan.window.at!,now)}`:`${leftText(plan.window)}${reset?` · resets ${reset}`:''}`}</span>:<span>Usage appears after next reply</span>}</span>;
   }
   return <span className="plan-chip" aria-label="Plan usage" title={plan.kind==='unknown'?'Plan unknown: estimate at model API rates':'Billed per token: estimate at model API rates'}><PlanTag kind={plan.kind} plan={plan.plan}/>{cost}</span>;
 }
@@ -178,8 +179,8 @@ function PlanChip({session,usage,active}:{session:Session;usage?:ChatUsage;activ
 export function LimitRing({session}:{session:Session}) {
   const now=useNow(60000);const plan=useChatPlan(session,now);const window=plan?.window;
   if(plan?.kind!=='subscription'||!window||window.usedPercent<90)return null;
-  const stale=isStale(plan.limits,now);
-  const r=5.5,c=2*Math.PI*r;const label=`${SHORT_NAMES[plan.agent]} ${windowLabel(window).toLowerCase()}: ${stale?`${staleUsedText(window)}, ${asOfText(plan.limits!.at,now)}`:leftText(window)}`;
+  const stale=windowStale(window,now);
+  const r=5.5,c=2*Math.PI*r;const label=`${SHORT_NAMES[plan.agent]} ${windowLabel(window).toLowerCase()}: ${stale?`${staleUsedText(window)}, ${asOfText(window.at!,now)}`:leftText(window)}`;
   return <svg className={`limit-ring ${toneOf(window,stale)}`} viewBox="0 0 14 14" role="img" aria-label={label}><title>{label}</title><circle className="bg" cx="7" cy="7" r={r}/><circle className="fg" cx="7" cy="7" r={r} strokeDasharray={`${c*Math.min(100,window.usedPercent)/100} ${c}`} transform="rotate(-90 7 7)"/></svg>;
 }
 export function ChatUsageBar({session,active,version}:{session:Session;active:boolean;version:number}) {

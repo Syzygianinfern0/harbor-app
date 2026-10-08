@@ -25,9 +25,10 @@ const SCENARIOS: Record<string, object> = {
       { hostId: buildbox, hostLabel: 'buildbox', agents: [], unreachable: true, error: 'Host is not answering. Retrying with backoff.' }] }, chat },
   near: { usage: [{ hostId: local, hostLabel: 'This Mac', agents: [spend('claude', 8.24), spend('codex', 1.92)] }],
     limits: { hosts: [{ hostId: local, hostLabel: 'This Mac', agents: [{ agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: windows(94, 71) }, { agent: 'codex', mode: 'subscription', plan: 'Plus', account: 'bbbbbbbbbbbbbbbb', limits: windows(40, 100) }] }] }, chat },
-  // Claude's last reading is two hours old (no Harbor-launched Claude chat has replied since); Codex is live.
+  // Claude's last reading is two hours old (no Harbor-launched Claude chat has replied since); Codex is live,
+  // except its weekly window, last read 90 minutes ago (each window carries its own reading time).
   stale: { usage: [{ hostId: local, hostLabel: 'This Mac', agents: [spend('claude', 2.48), spend('codex', 0.62)] }],
-    limits: { hosts: [{ hostId: local, hostLabel: 'This Mac', agents: [{ agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: { ...windows(91, 40), ago: 7200, source: 'statusline' } }, { agent: 'codex', mode: 'subscription', plan: 'Plus', account: 'bbbbbbbbbbbbbbbb', limits: { ...windows(27, 69), source: 'live' } }] }] }, chat },
+    limits: { hosts: [{ hostId: local, hostLabel: 'This Mac', agents: [{ agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: { ...windows(91, 40), ago: 7200, source: 'statusline' } }, { agent: 'codex', mode: 'subscription', plan: 'Plus', account: 'bbbbbbbbbbbbbbbb', limits: { windows: [{ usedPercent: 27, windowMinutes: 300, resetsIn: 8040 }, { usedPercent: 69, windowMinutes: 10080, resetsIn: 300000, ago: 5400 }], ago: 60, source: 'live' } }] }] }, chat },
   // The sandbox's own fixture (npm run dev:sandbox), so its token counts stay renderable.
   sandbox: JSON.parse(readFileSync(path.resolve('tests/fixtures/usage-mixed.json'), 'utf8')),
 };
@@ -175,7 +176,8 @@ test('stale readings are greyed lower bounds with a hint, and never warn as if c
     await expect(claude).toContainText('As of 2 h ago · Updates when a Claude chat replies'); await expect(claude).toContainText('5-hour was at 91%, as of 2 h ago.');
     await expect(claude).not.toContainText('Almost out'); await expect(claude).not.toContainText('% left'); await expect(claude.locator('.limit-track.stale')).toHaveCount(2);
     const codex = popover.getByRole('region', { name: 'Codex usage' });
-    await expect(codex).toContainText('73% left'); await expect(codex).toContainText('Updated 1 min ago'); await expect(codex.locator('.limit-track.stale')).toHaveCount(0);
+    await expect(codex).toContainText('73% left'); await expect(codex).toContainText('≥69% used'); await expect(codex).toContainText('as of 1 h ago');
+    await expect(codex).toContainText('Updated 1 min ago · Updates when a Codex chat runs'); await expect(codex.locator('.limit-track.stale')).toHaveCount(1);
     await shot(page, 'usage-stale-popover'); await page.keyboard.press('Escape');
     await openChat(page, 'Fix tab folding');
     await expect(page.getByLabel('Plan usage')).toContainText('5-hour · ≥91% used · as of 2 h ago'); await expect(page.getByLabel('Plan usage')).toHaveClass(/stale/);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { STALE_AFTER_MS, asOfText, buildAccounts, chatPlan, cleanBilling, cleanLimits, cleanPlans, currentWindows, footerSummary, isStale, leftText, resetText, staleUsedText, tightest, toneOf, windowLabel } from '../src/shared/usagePlans';
+import { STALE_AFTER_MS, asOfText, buildAccounts, chatPlan, cleanBilling, cleanLimits, cleanPlans, currentWindows, footerSummary, isStale, mergeLimits, windowStale, leftText, resetText, staleUsedText, tightest, toneOf, windowLabel } from '../src/shared/usagePlans';
 import { usageSourceFromEnv, fixtureLimits } from '../src/engine/usageSource';
 import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../src/shared/usageTokens';
 import type { AgentUsage, HostUsage, UsageLimits } from '../src/shared/types';
@@ -68,7 +68,7 @@ test('chat plan: its own billing first, then the host default', () => {
 });
 
 test('windows reset, labels and text', () => {
-  assert.deepEqual(currentWindows({ windows: [{ usedPercent: 80, windowMinutes: 300, resetsAt: sec - 1 }], at: sec - 9000 }, now), [{ usedPercent: 0, windowMinutes: 300 }]);
+  assert.deepEqual(currentWindows({ windows: [{ usedPercent: 80, windowMinutes: 300, resetsAt: sec - 1 }], at: sec - 9000 }, now), [{ usedPercent: 0, windowMinutes: 300, at: sec - 9000 }]);
   assert.equal(tightest([{ usedPercent: 40, windowMinutes: 10080 }, { usedPercent: 40, windowMinutes: 300 }])?.windowMinutes, 300);
   assert.deepEqual([300, 10080, 1440, 120, 43200, undefined].map(m => windowLabel({ usedPercent: 1, windowMinutes: m })), ['5-hour', 'Weekly', 'Daily', '2-hour', '30-day', 'Limit']);
   assert.equal(leftText({ usedPercent: 61.5 }), '38% left'); assert.equal(leftText({ usedPercent: 100 }), 'Limit reached');
@@ -111,4 +111,17 @@ test('stale limits read as a lower bound, never warn as current, and still reset
   assert.equal(asOfText(old.at, now), 'as of 2 h ago');
   assert.equal(toneOf(fresh.windows[0], false), 'danger'); assert.equal(toneOf(fresh.windows[0], true), 'stale');
   assert.equal(cleanLimits({ ...fresh, source: 'live' })?.source, 'live');
+});
+
+test('limits merge per window: newer windows replace, usage only grows, missing windows are kept', () => {
+  const fresh = { windows: [{ usedPercent: 3, windowMinutes: 300, resetsAt: sec + 17000 }, { usedPercent: 86, windowMinutes: 10080, resetsAt: sec + 300000 }], at: sec - 30 };
+  const idle = { windows: [{ usedPercent: 80, windowMinutes: 10080, resetsAt: sec + 300030 }], at: sec - 3 * 3600 };
+  const merged = mergeLimits(fresh, idle)!;
+  assert.deepEqual(merged.windows.map(w => [w.windowMinutes, w.usedPercent, w.at]), [[300, 3, sec - 30], [10080, 86, sec - 30]]);
+  assert.deepEqual(mergeLimits(idle, fresh), merged);
+  const reset = mergeLimits(fresh, { windows: [{ usedPercent: 1, windowMinutes: 300, resetsAt: sec + 30000 }], at: sec - 3 * 3600 })!;
+  assert.equal(reset.windows[0].usedPercent, 1);
+  const windows = currentWindows({ ...merged, windows: [merged.windows[0], { ...merged.windows[1], at: sec - 7200 }] }, now);
+  assert.deepEqual(windows.map(w => windowStale(w, now)), [false, true]);
+  assert.equal(windowStale(currentWindows(idle, now)[0], now), true);
 });
