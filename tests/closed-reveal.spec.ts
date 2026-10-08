@@ -69,6 +69,8 @@ test('clicking a project name shows its closed chats even while closed chats are
 
     // From the collapsed rail, opening a project shows all of its chats in the overview and the peeked sidebar.
     await page.getByRole('button',{name:'Collapse sidebar'}).click();
+    // Move the pointer off the dock first: left over the rail, it would peek the sidebar open over the rail's buttons.
+    await page.mouse.move(900,500);await expect(page.locator('.sidebar-dock.is-peeking')).toHaveCount(0);
     await page.getByRole('button',{name:'Open project tessera-api'}).click();
     await expect.poll(()=>overview(page)).toEqual(['Rate limiter','Flaky auth test']);
     expect(await rows(page)).toEqual(['Rate limiter','Flaky auth test']);

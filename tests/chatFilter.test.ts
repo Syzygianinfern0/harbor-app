@@ -11,7 +11,7 @@ test('a revealed project shows its closed chats while every other project obeys 
  assert.deepEqual(shown({hideClosed:false,notesOnly:false}),['a','b','c','e']);
  assert.deepEqual(shown({hideClosed:true,notesOnly:false}),['c']);
  assert.deepEqual(shown({hideClosed:true,notesOnly:false,reveal:'p'}),['a','c','e']);
- // Revealing does not bypass the notes-only filter, shell rows, or empty chats.
+ // Revealing does not bypass the notes-only filter, closed terminals, or empty chats.
  assert.deepEqual(shown({hideClosed:true,notesOnly:true,reveal:'p'}),['e']);
  assert.equal(chatVisible(chat('f','p',{hasMessages:false}),{hideClosed:true,notesOnly:false,reveal:'p'}),false);
  assert.equal(chatVisible(chat('f','p',{hasMessages:false}),{hideClosed:true,notesOnly:false,reveal:'p',fresh:new Set(['f'])}),true);
@@ -25,4 +25,11 @@ test('clicking a project name reveals it; clicking again from its overview hands
  assert.equal(nextReveal('p','p',false),'p');
  assert.equal(nextReveal('p','q',false),'q');
  assert.equal(nextReveal('p','q',true),'q');
+});
+test('terminals are listed while they are open: running, or open as a tab',()=>{
+ const filter={hideClosed:false,notesOnly:false};
+ assert.equal(chatVisible(chat('t','p',{launcher:'shell'}),filter),false,'a closed terminal is not listed');
+ assert.equal(chatVisible(chat('t','p',{launcher:'shell'}),{...filter,open:new Set(['t'])}),true,'unless it is still open as a tab');
+ assert.equal(chatVisible(chat('t','p',{launcher:'shell'}),{hideClosed:true,notesOnly:false,open:new Set(['t'])}),false,'hiding closed chats hides it too');
+ for(const status of ['running','checking','unreachable'] as const)assert.equal(chatVisible(chat('t','p',{launcher:'shell',status,hasMessages:undefined}),{hideClosed:true,notesOnly:false}),true,status);
 });
