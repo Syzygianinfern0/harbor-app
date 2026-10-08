@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-test('refresh is aligned and clickable, and local/remote project menus hand off to Cursor',async()=>{
+test('refresh is aligned and clickable, and local/remote project menus hand off to the default Open in app',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'harbor-project-actions-'));
   const createdAt=new Date().toISOString();
   const projects=[{id:'local-project',name:'Local project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt},{id:'remote-project',name:'Remote project',cwd:'/data/Project #1',connection:{target:'research',port:2222},hostLabel:'Research server',createdAt}];
@@ -14,17 +14,18 @@ test('refresh is aligned and clickable, and local/remote project menus hand off 
     const page=await app.firstWindow();
     await app.evaluate(({ipcMain})=>{
       (globalThis as any).openedProjects=[];(globalThis as any).refreshClicks=0;
-      ipcMain.removeHandler('harbor:openProjectInCursor');ipcMain.handle('harbor:openProjectInCursor',(_e,id)=>{(globalThis as any).openedProjects.push(id);});
+      ipcMain.removeHandler('harbor:openInApps');ipcMain.handle('harbor:openInApps',()=>['finder','cursor']);
+      ipcMain.removeHandler('harbor:openIn');ipcMain.handle('harbor:openIn',(_e,target,app)=>{(globalThis as any).openedProjects.push([target.id,app]);});
       ipcMain.removeHandler('harbor:refresh');ipcMain.handle('harbor:refresh',()=>{(globalThis as any).refreshClicks++;});
       ipcMain.removeHandler('harbor:checkReachability');ipcMain.handle('harbor:checkReachability',()=>({}));
       ipcMain.removeHandler('harbor:importHistory');ipcMain.handle('harbor:importHistory',()=>{});
     });
-    for(const name of ['Local project','Remote project']){
+    for(const [name,item] of [['Local project','Open in Finder'],['Remote project','Open in Cursor']]){
       await page.getByRole('button',{name,exact:true}).click({button:'right'});
-      await page.getByRole('menuitem',{name:'Open in Cursor',exact:true}).click();
+      await page.getByRole('menuitem',{name:item,exact:true}).click();
       await expect(page.getByRole('menu',{name:'Project actions'})).toHaveCount(0);
     }
-    expect(await app.evaluate(()=>(globalThis as any).openedProjects)).toEqual(['local-project','remote-project']);
+    expect(await app.evaluate(()=>(globalThis as any).openedProjects)).toEqual([['local-project','finder'],['remote-project','cursor']]);
     const refresh=page.getByRole('button',{name:'Refresh all chats and status'});
     await expect(refresh).toHaveAttribute('title',/⌘ R/);
     await refresh.click();await expect.poll(()=>app.evaluate(()=>(globalThis as any).refreshClicks)).toBe(1);

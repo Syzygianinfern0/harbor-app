@@ -140,6 +140,17 @@ export class HarborEngine extends EventEmitter {
     const cwd = (await this.transport.run(project.connection, this.transport.setup()+`cd -- ${directory(project.cwd)} && pwd -P`)).trim();
     return {...structuredClone(project), cwd};
   }
+  /** A project's or chat's folder as an absolute path on its host, for opening in another app. */
+  async folderForOpen(kind: 'project' | 'chat', id: string): Promise<{cwd: string; connection: Connection}> {
+    if (kind === 'project') { const project = await this.projectForEditor(id); return {cwd: project.cwd, connection: project.connection}; }
+    if (kind !== 'chat') throw new Error('Invalid folder target.');
+    const session = this.sessions.find(s => s.id === id);
+    if (!session) throw new Error('Chat not found.');
+    const connection = structuredClone(this.connection(session));
+    if (session.cwd.startsWith('/')) return {cwd: session.cwd, connection};
+    const cwd = (await this.transport.run(connection, this.transport.setup()+`cd -- ${directory(session.cwd)} && pwd -P`)).trim();
+    return {cwd, connection};
+  }
   async listDirectories(host: string, input: string, showHidden: boolean) {
     bounded(input, 'folder', 4096);
     if (/[\x00-\x1f]/.test(input) || typeof showHidden !== 'boolean') throw new Error('Invalid folder query.');
