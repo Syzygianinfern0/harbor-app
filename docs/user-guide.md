@@ -87,7 +87,7 @@ Groups, folding, colors and the switches persist across restarts alongside tab o
 
 **Icon guide:** shows the actual chat status icons with a short explanation of each.
 
-**Hosts:** only This Mac is present initially. Import selected SSH aliases or add hosts manually. Imported hosts remain editable: display name, address, username, port, identity file, and default folder. SSH config is never edited. Host profile edits apply to new projects; existing projects and chats retain their connection settings.
+**Hosts:** only This Mac is present initially. Import selected SSH aliases or add hosts manually. Imported hosts remain editable: display name, address, username, port, identity file, and default folder. **Test connection** sits at the top of each host's settings; it checks SSH and tmux and reports whether Codex and Claude Code are installed there. SSH config is never edited. Host profile edits apply to new projects; existing projects and chats retain their connection settings.
 
 **Terminal:** font size/family and cursor blinking update open terminals. New launches clear inherited color-disabling variables and advertise full color. Colors and ⌘ Backspace are tested inside the actual Codex and Claude interfaces.
 
@@ -117,7 +117,7 @@ How usage is counted (deduplication, forks, subagents) is described in [architec
 
 ### Harbor
 
-Release builds check GitHub for a new version about 20 seconds after launch, every four hours, and when your Mac wakes. A new version downloads in the background; Harbor checks its signature, checksum and code signature before offering it. Then **Restart to update** appears above Preferences (and in Preferences → Updates). Click it to restart into the new version now, or just keep working: it installs the next time you quit Harbor. **Harbor → Check for Updates…** checks right away.
+Release builds check GitHub for a new version about 20 seconds after launch, every four hours, and when your Mac wakes. A new version downloads in the background; Harbor checks its signature, checksum and code signature before offering it. Then **Restart to update** appears above Preferences (and in Preferences → Updates). Click it to restart into the new version now, or just keep working: it installs the next time you quit Harbor. It's safe to restart right away: Harbor says so next to the button, because your chats keep running in tmux and your tabs and splits reopen where you left them. **Harbor → Check for Updates…** checks right away.
 
 **Update channel** (Preferences → Updates) is **Stable** by default: you get releases once they are marked ready for everyone. **Beta** gets each release as soon as it is published, so you try it before everyone else. Switching from Beta back to Stable never downgrades Harbor; you stay on your version until Stable catches up, and an update already downloaded still installs.
 
