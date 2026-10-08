@@ -490,3 +490,8 @@ button.note-check:hover{color:#8d98a6}
 .update-safe{margin:12px 0 0;padding:9px 12px;border:1px solid #3b5645;border-radius:6px;background:#223b2b4d;color:#a8d3b9;font-size:11px;line-height:1.5}
 .host-test{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:-4px 0 18px}.host-test .diagnostic{align-self:stretch;margin:4px 0 0}
 .update-channel{margin-top:14px;max-width:420px}
+/* Inline chat rename (double-click a chat's name in the sidebar or its tab) */
+.inline-rename{flex:1;min-width:0;padding:3px 6px;margin:-4px 0;border-radius:4px;border:1px solid #9be1c4;background:#151a20;color:#eef3f9;font-size:11px;outline:none}
+.inline-rename:focus-visible{outline:none}.project-conversations .chat-row .inline-rename{font-size:12px}
+.tab-rename{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 17px;min-width:0;flex:1}
+.session-toolbar .tab.renaming{min-width:180px}
