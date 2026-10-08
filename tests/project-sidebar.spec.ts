@@ -96,7 +96,7 @@ test('a project hides from its right-click menu, comes back from the hidden list
     await expect(projectName(page,'Alpha')).toHaveCount(0);await expect(chat(page,'Alpha chat 1')).toHaveCount(0);
     await expect.poll(async()=>(await index()).projects.find((p:any)=>p.id==='p0').hidden).toBe(true);
     // Show hidden projects, then bring Alpha back from its menu.
-    const toggle=page.getByRole('button',{name:'Show hidden projects (1)',exact:true});await toggle.click();
+    const toggle=page.getByRole('button',{name:'Hidden projects (1)',exact:true});await toggle.click();
     const hidden=page.getByRole('group',{name:'Hidden projects'});await expect(hidden).toContainText('Alpha');
     await mkdir('test-results/screenshots',{recursive:true});await page.screenshot({path:'test-results/screenshots/sidebar-hidden-projects.png'});
     await hidden.locator('.project-heading',{hasText:'Alpha'}).click({button:'right'});
@@ -106,7 +106,7 @@ test('a project hides from its right-click menu, comes back from the hidden list
     await expect.poll(async()=>(await index()).projects.find((p:any)=>p.id==='p0').hidden).toBe(false);
     // Hide again and use the inline Show button.
     await menu('Alpha');await page.getByRole('menuitem',{name:'Hide project',exact:true}).click();
-    await page.getByRole('button',{name:'Show hidden projects (1)',exact:true}).click();
+    await page.getByRole('button',{name:'Hidden projects (1)',exact:true}).click();
     await page.getByRole('button',{name:'Show project Alpha',exact:true}).click();
     await expect(projectName(page,'Alpha')).toHaveCount(1);
 
@@ -137,11 +137,66 @@ test('a project hides from its right-click menu, comes back from the hidden list
     expect(saved).toHaveLength(2);expect(saved.every((s:any)=>s.projectRemoved===true)).toBe(true);
     expect(await app.evaluate(()=>(globalThis as any).terminated)).toBe(0);
     // A hidden project can be deleted from the hidden list.
-    await page.getByRole('button',{name:'Show hidden projects (1)',exact:true}).click();
+    await page.getByRole('button',{name:'Hidden projects (1)',exact:true}).click();
     await page.getByRole('group',{name:'Hidden projects'}).locator('.project-heading',{hasText:'Gamma'}).click({button:'right'});
     await page.getByRole('menuitem',{name:'Delete project…',exact:true}).click();
     await page.getByRole('alertdialog',{name:'Delete project Gamma'}).getByRole('button',{name:'Delete project',exact:true}).click();
     await expect.poll(async()=>(await index()).projects.map((p:any)=>p.id)).toEqual(['p0']);
     await expect(page.getByRole('group',{name:'Hidden projects'})).toHaveCount(0);
+  }finally{await h.close();}
+});
+
+test('the eye button opens the hidden projects right under the PROJECTS heading, even with the list scrolled',async()=>{
+  const names=Array.from({length:14},(_,i)=>`Project ${String.fromCharCode(65+i)}`);
+  const h=await launch(names,4);
+  try {
+    const {page,app}=h;
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1100,640));
+    const menu=async(name:string)=>{await page.locator('.sidebar .project-section .project-heading',{hasText:name}).click({button:'right'});};
+    for(const name of ['Project B','Project C']){await menu(name);await page.getByRole('menuitem',{name:'Hide project',exact:true}).click();await expect(projectName(page,name)).toHaveCount(0);}
+    const list=page.locator('.sidebar .projects-list');
+    await expect.poll(()=>list.evaluate(el=>el.scrollHeight-el.clientHeight)).toBeGreaterThan(600);
+    await list.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+    const toggle=page.getByRole('button',{name:'Hidden projects (2)',exact:true});
+    await expect(toggle).toHaveAttribute('aria-expanded','false');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded','true');
+    const panel=page.getByRole('group',{name:'Hidden projects'});
+    await expect(panel).toContainText('Project B');await expect(panel).toContainText('Project C');
+    // The panel sits directly under the pinned heading and nothing covers it, although the list is scrolled to the bottom.
+    const geometry=await list.evaluate(el=>{
+      const label=el.querySelector('.section-label')!.getBoundingClientRect();const box=el.querySelector('.hidden-projects')!.getBoundingClientRect();
+      const show=el.querySelector('.hidden-projects .text-button')!.getBoundingClientRect();
+      return {scrolled:el.scrollTop,gap:box.top-label.bottom,listTop:el.getBoundingClientRect().top,labelTop:label.top,showOnTop:!!document.elementFromPoint(show.left+show.width/2,show.top+show.height/2)?.closest('.hidden-projects')};
+    });
+    expect(geometry.scrolled).toBeGreaterThan(600);expect(Math.abs(geometry.gap)).toBeLessThan(3);expect(geometry.labelTop-geometry.listTop).toBeCloseTo(0,0);expect(geometry.showOnTop).toBe(true);
+    await mkdir('test-results/screenshots',{recursive:true});await page.screenshot({path:'test-results/screenshots/sidebar-hidden-projects-scrolled.png'});
+    // Close button and Escape both close it and hand focus back to the eye button.
+    await panel.getByRole('button',{name:'Close hidden projects',exact:true}).click();
+    await expect(panel).toHaveCount(0);await expect(toggle).toHaveAttribute('aria-expanded','false');await expect(toggle).toBeFocused();
+    await toggle.click();await panel.getByRole('button',{name:'Show project Project B',exact:true}).focus();
+    await page.keyboard.press('Escape');await expect(panel).toHaveCount(0);await expect(toggle).toBeFocused();
+    // Showing projects one by one keeps the panel open until none are left.
+    await toggle.click();
+    await panel.getByRole('button',{name:'Show project Project B',exact:true}).click();
+    await expect(projectName(page,'Project B')).toHaveCount(1);await expect(panel).toContainText('Project C');
+    await expect(page.getByRole('button',{name:'Hidden projects (1)',exact:true})).toHaveAttribute('aria-expanded','true');
+    await panel.getByRole('button',{name:'Show project Project C',exact:true}).click();
+    await expect(panel).toHaveCount(0);await expect(page.getByRole('button',{name:/^Hidden projects/})).toHaveCount(0);
+  }finally{await h.close();}
+});
+
+test('every item in the project and chat right-click menus has an icon',async()=>{
+  const h=await launch(['Alpha','Beta'],2);
+  try {
+    const {page}=h;
+    const icons=async(label:string)=>{const m=page.getByRole('menu',{name:label});await expect(m).toBeVisible();return m.getByRole('menuitem').evaluateAll(items=>items.map(i=>({text:i.textContent,icon:!!i.querySelector('svg')})));};
+    await page.locator('.sidebar .project-heading',{hasText:'Alpha'}).click({button:'right'});
+    const project=await icons('Project actions');expect(project.map(i=>i.text)).toContain('Rename project…');
+    expect(project.filter(i=>!i.icon)).toEqual([]);
+    await page.keyboard.press('Escape');await page.mouse.click(600,400);
+    await chat(page,'Alpha chat 1').click({button:'right'});
+    const chatItems=await icons('Chat actions');expect(chatItems.map(i=>i.text)).toContain('Rename chat…');
+    expect(chatItems.filter(i=>!i.icon)).toEqual([]);
   }finally{await h.close();}
 });
