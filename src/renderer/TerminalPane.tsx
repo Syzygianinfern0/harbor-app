@@ -130,10 +130,12 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
   }, [session.id, session.generation, reconnectKey]);
   useEffect(() => {
     const terminal = terminalRef.current;
-    if (!terminal || !element.current?.isConnected || !element.current.clientWidth) return;
+    if (!terminal) return;
     terminal.options.fontSize = preferences.fontSize;
     terminal.options.fontFamily = preferences.fontFamily;
     terminal.options.cursorBlink = preferences.cursorBlink;
+    // A hidden terminal (behind Settings, or in another tab) refits when its pane shows again.
+    if (!element.current?.isConnected || !element.current.clientWidth) return;
     fitRef.current?.fit();
     void window.harbor.resize(session.id, terminal.cols, terminal.rows).catch(() => {});
   }, [preferences.fontSize, preferences.fontFamily, preferences.cursorBlink, session.id]);

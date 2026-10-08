@@ -26,3 +26,13 @@ export function findStatus(query:string,index:number,count:number,limit:number):
   const total=count>=limit?`${limit}+`:String(count);
   return index<0?`${total} ${count===1?'match':'matches'}`:`${index+1} of ${total}`;
 }
+/** Every Harbor shortcut, listed read-only in Settings → Shortcuts. Keep in step with the handlers above, App.tsx and the app menu. */
+export const shortcutList: {section:string;items:[action:string,keys:string][]}[] = [
+  {section:'Chats',items:[['New chat in the selected project','⌘ N / ⌘ T'],['Close the chat, or Settings when it is showing','⌘ W'],['Open the focused chat’s folder in the default app','⌘ ⇧ O'],['Refresh chats and status','⌘ R'],['Search chats and projects','⌘ K'],['Find in the focused terminal, or search Settings','⌘ F']]},
+  {section:'Tabs',items:[['Select tab 1–8','⌘ 1 … ⌘ 8'],['Select the last tab','⌘ 9'],['Next / previous tab (Settings comes last)','⌃ Tab / ⌃ ⇧ Tab'],['Next / previous tab','⌘ ⇧ ] / ⌘ ⇧ [']]},
+  {section:'Tab groups',items:[['Group the selected tabs','⌘ G'],['Turn grouping by project on or off','⌘ ⇧ G'],['Next / previous group','⌥ ⌘ → / ⌥ ⌘ ←'],['Open group 1–9','⌥ ⌘ 1 … ⌥ ⌘ 9'],['Next chat that needs input','⌘ J']]},
+  {section:'New chat dialog',items:[['Codex / Claude Code / Terminal','⌘ 1 / ⌘ 2 / ⌘ 3']]},
+  {section:'Terminal',items:[['Delete to the start of the line','⌘ ⌫'],['Start / end of the line','⌘ ← / ⌘ →'],['Copy / paste','⌘ C / ⌘ V']]},
+  {section:'Notes',items:[['Switch between Markdown and Formatted','⌘ E']]},
+  {section:'Window',items:[['Open Settings','⌘ ,'],['Collapse or pin the sidebar','⌘ B']]},
+];

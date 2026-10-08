@@ -6,7 +6,7 @@ Everything Harbor does, by area. New here? Start with the [README](../README.md)
 - [Keyboard and layout](#keyboard-and-layout)
 - [Tab groups](#tab-groups)
 - [Workspace controls](#workspace-controls)
-- [Preferences](#preferences)
+- [Settings](#settings)
 - [Usage and costs](#usage-and-costs)
 - [Updates](#updates)
 
@@ -34,7 +34,7 @@ Use **Add project** to choose a saved host and an existing directory. The direct
 Right-click a project or chat to open its folder in another app: the menu leads with your default app, and **Open in…** lists the others. The chat toolbar's app button (or ⌘⇧O) opens the focused chat's folder in the default app. Harbor offers Finder, Terminal, iTerm2, VS Code, Cursor and Zed when they are installed, plus a custom command.
 
 - **SSH projects:** VS Code and Cursor open through Remote-SSH, Zed through its ssh:// remote projects (hosts without hostname or identity-file overrides), and Terminal or iTerm2 open a window that runs `ssh -t <host>` and starts a login shell in the folder. Harbor keeps the host's saved username, port, hostname and identity-file overrides. Finder is not offered. The first time iTerm2 opens an SSH folder, macOS asks whether Harbor may control iTerm2.
-- **Preferences → Open in:** choose which apps the menus list and which one is the default. Apps that are not installed are shown but cannot be picked. The custom command runs with `/bin/sh` on your Mac with `$HARBOR_DIR` set to the folder (on the SSH host for remote projects) and `$HARBOR_HOST` to the SSH host, empty for local folders; for example `open -a "Sublime Text" "$HARBOR_DIR"`.
+- **Settings → Open in…:** choose which apps the menus list and which one is the default. Apps that are not installed are shown but cannot be picked. The custom command runs with `/bin/sh` on your Mac with `$HARBOR_DIR` set to the folder (on the SSH host for remote projects) and `$HARBOR_HOST` to the SSH host, empty for local folders; for example `open -a "Sublime Text" "$HARBOR_DIR"`.
 
 ## Keyboard and layout
 
@@ -47,8 +47,8 @@ Right-click a project or chat to open its folder in another app: the menu leads 
 - **⌘ 1 / ⌘ 2 / ⌘ 3 in the New chat dialog:** choose Codex / Claude Code / Terminal. Each option shows its shortcut.
 - With many tabs, inactive tabs shrink first; then the tab strip scrolls horizontally (trackpad or mouse wheel) with its scrollbar hidden. The active tab stays in view.
 - **Control-Tab / Control-Shift-Tab:** next / previous tab, with wraparound. **⌘ Shift-[ / ⌘ Shift-]:** previous / next tab.
-- **⌘ W:** close the active chat, confirming before stopping a live session.
-- **⌘ ,:** Preferences.
+- **⌘ W:** close the active chat, confirming before stopping a live session (or close Settings when it is showing).
+- **⌘ ,:** open Settings, or go to it if it's already open. While Settings is showing, **⌘ W** closes it (no confirmation), **⌘ F** focuses its search, and **Control-Tab** reaches it after the last chat; **⌘ 1–9** only pick chats. **Settings → Shortcuts** lists every shortcut.
 - **⌘ C / ⌘ V:** terminal copy and paste.
 - **Control-letter shortcuts** pass through to the terminal, including **Ctrl-T** for Codex's transcript, **Ctrl-R** for shell history search, and **Ctrl-W** for word deletion. **Control-Tab / Control-Shift-Tab** remain Harbor tab navigation.
 
@@ -82,31 +82,39 @@ Groups, folding, colors and the switches persist across restarts alongside tab o
 
 - Use the refresh icon at the top right (or ⌘R) to discover saved chats across projects and refresh session and host status.
 - Shift+Enter inserts a newline in Codex and Claude. Ctrl+Enter reaches them as a distinct key (`ESC [13;5u`, as in kitty-protocol terminals) instead of a plain Enter: Claude submits, and Codex ignores it unless bound, e.g. `[tui.keymap.composer] submit = ["enter", "ctrl-enter"]` in `~/.codex/config.toml`. Shell chats still receive a plain carriage return; ⌘N followed by Enter starts a chat with the selected defaults. Middle-click a tab to close it, using the same running-session confirmation as its close button.
-- Preferences opens in a centered, scrollable dialog. Its Projects pane supports drag ordering, visibility, and deletion; save to apply or cancel to discard. Project headings also support drag ordering directly in the sidebar. Deletion removes Harbor's project entry while keeping files, conversations, and running sessions.
+- **Settings → Projects** supports drag ordering, visibility, and deletion; each change applies right away, and deleting asks you to confirm. Project headings also support drag ordering directly in the sidebar. Deletion removes Harbor's project entry while keeping files, conversations, and running sessions.
 - Shell terminals stay out of the chat sidebar. Closed and disconnected agent chats show a read-only saved-message preview when a transcript is available, with a message count and the last four text messages. Tool records are excluded; preview messages are shortened to 1,200 characters.
 - Agent marks use monochrome OpenAI and Claude silhouettes from Simple Icons, colored by the app theme.
 
-## Preferences
+## Settings
 
-**Icon guide:** shows the actual chat status icons with a short explanation of each.
+Settings opens as a tab at the right end of the tab bar (**⌘ ,**, or **Settings** at the bottom of the sidebar). There is only ever one: asking again switches to it and flashes it. Your chats keep running and stay attached behind it, and the sidebar keeps showing their status. Click a chat tab (or the chat in the sidebar) to go back; close the tab with its **×** or **⌘ W**. If Settings was open when you quit, its tab comes back on the next launch, behind the chat you were in.
 
-**Hosts:** only This Mac is present initially. Import selected SSH aliases or add hosts manually. Imported hosts remain editable: display name, address, username, port, identity file, and default folder. **Test connection** sits at the top of each host's settings; it checks SSH and tmux and reports whether Codex and Claude Code are installed there. SSH config is never edited. Host profile edits apply to new projects; existing projects and chats retain their connection settings.
+The list on the left has a category per page, with one entry per machine under **Remotes**, and a search box (**⌘ F**) that finds a setting by name or keyword (try "ssh", "beta" or "sound") across every page and machine; pick a result to jump to it. The page column keeps the same size whatever the category. In a narrow window the categories move to a row above the page.
 
-**Terminal:** font size/family and cursor blinking update open terminals. New launches clear inherited color-disabling variables and advertise full color. Colors and ⌘ Backspace are tested inside the actual Codex and Claude interfaces.
+**Changes save as you make them**, one section at a time; **Saved** appears next to the page title. A remote's name, folder and connection fields are the exception: they show **Save** and **Revert** at the bottom of its page, so a half-typed SSH address is never used (Return also saves). Its **Show in launcher** switch saves right away. Removing a remote or deleting a project asks first. Links elsewhere open the right page: the sidebar cost's **View detailed usage** opens **Usage**, **Manage remotes in Settings…** in Add project opens **Remotes**, and **Update ready** in the sidebar opens **Updates**.
 
-**Sidebar:** chats are indented under a branch line within each project. Confirmed-empty agent history is hidden, while freshly created chats stay visible for the current app session (until explicitly closed). Unknown or unreadable history remains visible, and no conversations are deleted. Five chats are shown initially (pinned first, then most recent); **Show more** reveals five more, and search includes all chats. Remote projects show a muted host name and a reachability dot, checked every 30 seconds; local projects omit this metadata. Enable or disable hover expansion; Harbor remembers whether the sidebar is collapsed.
+**General:** sidebar hover expansion, and the terminal's font size, font family and cursor blinking, which update open terminals.
 
-**Agent defaults:** choose separate Codex and Claude permission defaults, or override the mode in New chat. Standard approvals are selected initially. Codex offers workspace, read-only, and full access; Claude offers standard, accept edits, plan, and full access. A managed chat retains its selected mode when resumed; Codex remote resumes use the conversation’s saved permissions because the CLI rejects permission overrides on that path. Modes use the installed CLIs’ supported flags, based on the [Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli) and [Claude permissions reference](https://code.claude.com/docs/en/permissions).
+**Status icons:** shows the actual chat status icons with a short explanation of each.
+
+**Remotes:** only This Mac is present initially. Import selected SSH aliases or add remotes manually; a remote added by hand is kept as a draft until you save it. Imported hosts remain editable: display name, address, username, port, identity file, and default folder. **Test connection** sits at the top of each remote's page; it checks SSH and tmux and reports whether Codex and Claude Code are installed there. SSH config is never edited. Host profile edits apply to new projects; existing projects and chats retain their connection settings.
+
+**Terminal colors:** new launches clear inherited color-disabling variables and advertise full color. Colors and ⌘ Backspace are tested inside the actual Codex and Claude interfaces.
+
+**Sidebar:** chats are indented under a branch line within each project. Confirmed-empty agent history is hidden, while freshly created chats stay visible for the current app session (until explicitly closed). Unknown or unreadable history remains visible, and no conversations are deleted. Five chats are shown initially (pinned first, then most recent); **Show more** reveals five more, and search includes all chats. Remote projects show a muted host name and a reachability dot, checked every 30 seconds; local projects omit this metadata. Enable or disable hover expansion in **Settings → General**; Harbor remembers whether the sidebar is collapsed.
+
+**Agents:** choose separate Codex and Claude permission defaults, or override the mode in New chat. Standard approvals are selected initially. Codex offers workspace, read-only, and full access; Claude offers standard, accept edits, plan, and full access. A managed chat retains its selected mode when resumed; Codex remote resumes use the conversation’s saved permissions because the CLI rejects permission overrides on that path. Modes use the installed CLIs’ supported flags, based on the [Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli) and [Claude permissions reference](https://code.claude.com/docs/en/permissions).
 
 **Notifications:** enable desktop notifications, sound, notifications while Harbor is focused, and completion notifications. Use **Send test notification** to check macOS delivery and receive delivery or failure feedback. Run the packaged, signed Harbor.app so macOS registers Harbor by name. **Open notification settings** goes directly to macOS settings. Allow Harbor under **System Settings → Notifications** if needed; macOS Focus rules apply. Notifications work while Harbor is running, including with its window closed.
 
 **Unread chats:** when a chat needs input or approval, hits an agent error, or finishes a turn (if **Notify when an agent finishes working** is on) while you aren't looking at it, it's marked unread with a small blue dot and a bolder title. You're looking at a chat when it's in a visible pane of Harbor's window and that window has focus. The dot shows on the chat's sidebar row, its tab (icon-only tabs too) and its groups-overview card. Rollup dots appear on folded tab-group chips, groups-overview cards, folded sidebar projects (and a project heading whose unread chat is past **Show more** or filtered out) and collapsed-rail projects. The macOS Dock badge shows how many chats are unread. The marker is Harbor's in-app notification, so it works even with desktop notifications turned off. The mark clears when the chat becomes the focused pane of the focused window, for example when you click it or its desktop notification. If you open it while Harbor is in the background, it clears once you switch back. It's saved with the chat in `sessions.json` (`unread: true`), so it survives a restart. Older indexes without the field load unchanged. Archived chats aren't counted.
 
-**Updates:** the top of this tab is Harbor itself (see [Updates](#updates)); below it, check installed Codex and Claude versions on enabled hosts and project machines against their official npm release channels. Results are grouped by host and distinguish current, update available, missing, and unavailable. **Update** uses the active installation’s npm, Homebrew, or Claude native updater, then checks the active version again and displays verification and command output. Unknown installation layouts are reported rather than replaced. Checks alone never install updates. Existing chats retain their running agent processes. Pinned/preview release channels may differ.
+**Updates:** the top of this page is Harbor itself (see [Updates](#updates)); below it, check installed Codex and Claude versions on enabled hosts and project machines against their official npm release channels. Results are grouped by host and distinguish current, update available, missing, and unavailable. **Update** uses the active installation’s npm, Homebrew, or Claude native updater, then checks the active version again and displays verification and command output. Unknown installation layouts are reported rather than replaced. Checks alone never install updates. Existing chats retain their running agent processes. Pinned/preview release channels may differ.
 
 ## Usage and costs
 
-The subtle **24h cost** above Preferences shows overall usage across configured hosts. Click it for rolling **24-hour**, **7-day**, and **30-day** costs by host and model. **View detailed usage** opens Preferences → Usage, where you can group by host/model, model/host, or day/host/model. Overall views show costs only. They refresh every minute and on global refresh; Preferences also has a manual refresh.
+The subtle **24h cost** above Settings shows overall usage across configured hosts. Click it for rolling **24-hour**, **7-day**, and **30-day** costs by host and model. **View detailed usage** opens Settings → Usage, where you can group by host/model, model/host, or day/host/model. Overall views show costs only. They refresh every minute and on global refresh; Settings → Usage also has a manual refresh.
 
 Each Codex/Claude chat has a single lifetime total for tokens, recorded compactions, and cost when available. Hover over tokens for the input/output/cache breakdown; click the chat cost for its model breakdown. Visible chat metrics refresh every 30 seconds. Missing data is unavailable, and incomplete coverage is marked partial.
 
@@ -120,9 +128,9 @@ How usage is counted (deduplication, forks, subagents) is described in [architec
 
 ### Harbor
 
-Release builds check GitHub for a new version about 20 seconds after launch, every four hours, and when your Mac wakes. A new version downloads in the background; Harbor checks its signature, checksum and code signature before offering it. Then **Restart to update** appears above Preferences (and in Preferences → Updates). Click it to restart into the new version now, or just keep working: it installs the next time you quit Harbor. It's safe to restart right away: Harbor says so next to the button, because your chats keep running in tmux and your tabs and splits reopen where you left them. **Harbor → Check for Updates…** checks right away.
+Release builds check GitHub for a new version about 20 seconds after launch, every four hours, and when your Mac wakes. A new version downloads in the background; Harbor checks its signature, checksum and code signature before offering it. Then **Update ready** appears above Settings in the sidebar; it opens **Settings → Updates**, where **Restart to update** restarts into the new version now, or just keep working: it installs the next time you quit Harbor. It's safe to restart right away: Harbor says so next to the button, because your chats keep running in tmux and your tabs and splits reopen where you left them. **Harbor → Check for Updates…** checks right away.
 
-**Update channel** (Preferences → Updates) is **Stable** by default: you get releases once they are marked ready for everyone. **Beta** gets each release as soon as it is published, so you try it before everyone else. Switching from Beta back to Stable never downgrades Harbor; you stay on your version until Stable catches up, and an update already downloaded still installs.
+**Update channel** (Settings → Updates) is **Stable** by default: you get releases once they are marked ready for everyone. **Beta** gets each release as soon as it is published, so you try it before everyone else. Switching from Beta back to Stable never downgrades Harbor; you stay on your version until Stable catches up, and an update already downloaded still installs.
 
 Installing quits Harbor, swaps the app, and (after a restart) reopens it. Quitting only detaches from tmux, so every chat keeps running and reattaches. The previous version is kept in `~/Library/Application Support/Harbor/previous-version/` in case you need to roll back; the install log is `update-install.log` next to it. Updates are skipped while macOS is shutting down or logging out.
 
@@ -131,6 +139,6 @@ Harbor updates itself only where it can replace its own app: not from the disk i
 ### Agents
 
 
-Harbor checks Codex and Claude Code on startup, wake, and focus when its cached results are older than 24 hours. Unreachable machines are retried after an hour; **Check for updates** always requests a fresh check. Results survive app restarts. In Preferences → Agent updates, **Update all** checks again, then updates every installed agent with an available release across the listed machines. Failures are shown per agent while the remaining updates continue, even if Preferences is closed. Checks never install updates automatically.
+Harbor checks Codex and Claude Code on startup, wake, and focus when its cached results are older than 24 hours. Unreachable machines are retried after an hour; **Check for updates** always requests a fresh check. Results survive app restarts. In Settings → Updates, **Update all** checks again, then updates every installed agent with an available release across the listed machines. Failures are shown per agent while the remaining updates continue, even if you leave Settings. Checks never install updates automatically.
 
 Standalone Codex installations (including `CODEX_HOME` overrides) update via the active binary’s `codex update` command. npm and Homebrew installations retain their existing update paths; unknown installation owners are rejected. Harbor verifies the active version after updating and does not retry a possibly completed mutation automatically.

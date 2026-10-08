@@ -46,11 +46,14 @@ else {
       });
     }
     handle('snapshot', () => engine.snapshot());
-    handle('savePreferences', async (preferences: Preferences) => {
+    // A different update channel triggers a check right away.
+    const checkIfChannelChanged = async (save: () => Promise<void>) => {
       const channel = engine.snapshot().preferences.updates.channel;
-      await engine.savePreferences(preferences);
+      await save();
       if (engine.snapshot().preferences.updates.channel !== channel) void updater?.check().catch(() => undefined);
-    });
+    };
+    handle('savePreferences', (preferences: Preferences) => checkIfChannelChanged(() => engine.savePreferences(preferences)));
+    handle('updatePreferences', (patch: Partial<Preferences>) => checkIfChannelChanged(() => engine.updatePreferences(patch)));
     handle('sshCandidates', () => engine.sshCandidates());
     handle('resolveSsh', alias => engine.resolveSsh(alias));
     handle('addProject', input => engine.addProject(input));
@@ -71,7 +74,7 @@ else {
       const folder = await engine.folderForOpen(target.kind, target.id);
       const preferences = engine.snapshot().preferences.openIn;
       const app = requested ?? defaultApp(preferences, Object.keys(await installedApps()) as never, folder.connection);
-      if (!app) throw new Error('No app can open this folder. Choose apps in Preferences → Open in.');
+      if (!app) throw new Error('No app can open this folder. Choose apps in Settings → Open in.');
       await openIn(app, folder, preferences);
     });
     handle('updateAgent', (hostId,agent) => engine.updateAgent(hostId,agent));
@@ -152,7 +155,7 @@ else {
     if(process.env.HARBOR_TEST_HOOKS==='1')(globalThis as any).harborTest={engine};
     engine.on('terminal', event => window?.webContents.send('harbor:terminal', event));
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: appName, submenu: [{ role: 'about' }, { label: 'Check for Updates…', click: () => void checkForUpdatesFromMenu() }, { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+      { label: appName, submenu: [{ role: 'about' }, { label: 'Check for Updates…', click: () => void checkForUpdatesFromMenu() }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => window?.webContents.send('harbor:preferences') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
       { label: 'Session', submenu: [{label:'Close Chat',accelerator:'CmdOrCtrl+W',click:()=>window?.webContents.send('harbor:close-session')}, { label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => window?.webContents.send('harbor:new-session') }, {label:'New Tab',accelerator:'CmdOrCtrl+T',click:()=>window?.webContents.send('harbor:new-session')}, {label:'Next Tab',accelerator:'Ctrl+Tab',click:()=>window?.webContents.send('harbor:tab-shortcut','next')}, {label:'Previous Tab',accelerator:'Ctrl+Shift+Tab',click:()=>window?.webContents.send('harbor:tab-shortcut','previous')}, ...Array.from({length:9},(_,i)=>({label:i===8?'Select Last Tab':`Select Tab ${i+1}`,accelerator:`CmdOrCtrl+${i+1}`,click:()=>window?.webContents.send('harbor:tab-shortcut',i+1)})), { label: 'Refresh Chats and Status', accelerator: 'CmdOrCtrl+R', click: () => window?.webContents.send('harbor:refresh-all') }] },
       { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'togglefullscreen' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const }] : [])] }, { role: 'windowMenu' }
     ]));

@@ -79,11 +79,11 @@ export function launchPlan(app: OpenAppId, target: OpenTarget, appPath: string |
   const cwd = absolute(target.cwd), remote = target.connection !== 'local';
   if (!supportsConnection(app, target.connection)) throw new Error(`${appLabel(app, preferences)} cannot open folders on SSH hosts.`);
   if (app === 'custom') {
-    if (!preferences.customCommand) throw new Error('Set a custom command in Preferences → Open in.');
+    if (!preferences.customCommand) throw new Error('Set a custom command in Settings → Open in.');
     const host = remote ? (() => { const c = validateConnection(target.connection); return c.user ? `${c.user}@${c.target.replace(/^[^@]+@/, '')}` : c.target; })() : '';
     return { kind: 'custom', command: preferences.customCommand, cwd: remote ? home : cwd, env: { HARBOR_DIR: cwd, HARBOR_HOST: host } };
   }
-  if (!appPath) throw new Error(`${appLabel(app)} was not found. Install it, or hide it in Preferences → Open in.`);
+  if (!appPath) throw new Error(`${appLabel(app)} was not found. Install it, or hide it in Settings → Open in.`);
   if (app === 'vscode' || app === 'cursor') return { kind: 'editor', editor: app };
   if (!remote) return { kind: 'exec', file: '/usr/bin/open', args: ['-a', appPath, cwd] };
   if (app === 'terminal') return { kind: 'exec', file: '/usr/bin/open', args: ['-a', appPath, '{script}'], script: remoteShellScript(target, home) };

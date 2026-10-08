@@ -7,6 +7,7 @@ function subscribe<T>(channel: string, callback: (value: T) => void) {
 const api: HarborApi = {
   snapshot: () => ipcRenderer.invoke('harbor:snapshot'),
   savePreferences: preferences => ipcRenderer.invoke('harbor:savePreferences', preferences),
+  updatePreferences: patch => ipcRenderer.invoke('harbor:updatePreferences', patch),
   sshCandidates: () => ipcRenderer.invoke('harbor:sshCandidates'),
   resolveSsh: alias => ipcRenderer.invoke('harbor:resolveSsh', alias),
   onRefresh: callback => subscribe('harbor:refresh-all', callback),

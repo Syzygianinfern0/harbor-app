@@ -72,7 +72,7 @@ Prefer a download? Get the `.dmg` from [Releases](https://github.com/Syzygianinf
 
 Harbor keeps itself up to date: it downloads new releases in the background and installs them when you click **Restart to update** or next quit it. Your chats keep running in tmux throughout.
 
-To use remote machines, add them under **Preferences → Hosts** (import from your SSH config or enter them by hand).
+To use remote machines, add them under **Settings → Remotes** (import from your SSH config or enter them by hand).
 
 ### Requirements
 

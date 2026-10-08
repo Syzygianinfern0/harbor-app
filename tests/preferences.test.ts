@@ -60,6 +60,21 @@ test('invalid preference files are preserved and unsafe SSH options are rejected
   preferences.hosts[1].connection = { target: 'valid', port: 70000 };
   assert.throws(() => validatePreferences(preferences), /port/);
 });
+test('section updates merge with the latest saved preferences, even when they overlap', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'harbor-preferences-update-'));
+  const store = new PreferencesStore(directory); await store.load();
+  const base = defaultPreferences();
+  // Each starts from the same stale copy; none may undo another.
+  await Promise.all([store.update({ notifications: { ...base.notifications, sound: false } }), store.update({ terminal: { ...base.terminal, fontSize: 17 } }), store.update({ agents: { codex: 'full-access', claude: 'plan' } })]);
+  assert.equal(store.value.notifications.sound, false); assert.equal(store.value.terminal.fontSize, 17); assert.equal(store.value.agents.claude, 'plan');
+  const reloaded = new PreferencesStore(directory); await reloaded.load();
+  assert.deepEqual(reloaded.value, store.value);
+  // An invalid section is refused and changes nothing; unknown sections are refused too.
+  await assert.rejects(store.update({ terminal: { ...base.terminal, fontFamily: '' } }), /Invalid terminal preferences/);
+  await assert.rejects(store.update({ bogus: true } as never), /Invalid preferences/);
+  assert.equal(store.value.terminal.fontSize, 17);
+});
+
 test('SSH overrides use separate arguments; launcher environment drops color suppression', () => {
   const transport = new Transport();
   const args = transport.sshArgs({ target: 'alias', hostname: 'actual.example.com', user: 'alice', port: 2222, identityFile: '/tmp/a key' });
