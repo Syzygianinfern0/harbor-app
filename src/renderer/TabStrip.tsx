@@ -3,6 +3,7 @@ import { Bell, ChevronLeft, ChevronRight, Columns2, Plus, Settings2, X } from 'l
 import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon, UnreadDot } from './ChatStatusIcon';
+import { LimitRing } from './UsagePanel';
 import { activityLabel, chatActivity, tracksActivity, type ChatStatus } from '../shared/chatStatus';
 import { terminalCommand } from '../shared/terminalName';
 import { dropSide, planStripDrop, type StripSource } from '../shared/dropCue';
@@ -169,7 +170,7 @@ export function TabStrip(props:TabStripProps) {
       draggable={!editing} onDragStart={event=>props.onDragStart(event,id)} onDragEnd={props.onDragEnd} {...targetProps({tab:id},id)}
       data-split={run?.join(' ')} className={`tab ${split} ${active?'active':''} ${props.dragging===id||!!props.dragging&&!!run?.includes(props.dragging)?'dragging':''} ${color?'grouped':''} ${end?'group-end':''} ${size} ${selection.has(id)?'multi-selected':''} ${editing?'renaming':''}`}>
       {editing?<div className="tab-rename"><AgentIcon launcher={s.launcher} size={14}/><InlineRename initial={s.name} label={`Rename chat ${s.name}`} onDone={name=>props.onRename?.(s,name)}/></div>:
-      <button onClick={event=>click(event,s)} onDoubleClick={event=>{if(!event.metaKey&&!event.shiftKey)props.onStartRename?.(id);}} aria-pressed={selection.size?selection.has(id):undefined} aria-description={run?`Split view with ${partners}`:undefined}>{run?.[0]===id&&<Columns2 className="split-mark" size={11} aria-hidden="true"/>}<AgentIcon launcher={s.launcher} size={14}/><span className="tab-name">{s.name}{command&&<span className="terminal-command"> · {command}</span>}</span><ChatStatusIcon session={s}/></button>}
+      <button onClick={event=>click(event,s)} onDoubleClick={event=>{if(!event.metaKey&&!event.shiftKey)props.onStartRename?.(id);}} aria-pressed={selection.size?selection.has(id):undefined} aria-description={run?`Split view with ${partners}`:undefined}>{run?.[0]===id&&<Columns2 className="split-mark" size={11} aria-hidden="true"/>}<AgentIcon launcher={s.launcher} size={14}/><span className="tab-name">{s.name}{command&&<span className="terminal-command"> · {command}</span>}</span><ChatStatusIcon session={s}/><LimitRing session={s}/></button>}
       <button className="tab-close" disabled={props.busy===s.id} aria-label={`Close chat ${s.name}`} title="Close chat and stop its tmux session" onClick={()=>props.onClose(s)}><X size={12}/></button>
       {active&&<><span className="tab-flare left" aria-hidden="true"/><span className="tab-flare right" aria-hidden="true"/></>}
     </div>;

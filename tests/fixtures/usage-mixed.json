@@ -1,0 +1,279 @@
+{
+ "_comment": "Fake usage for npm run dev:sandbox and screenshots. Placeholder numbers only; resetsIn/ago are seconds relative to now.",
+ "usage": [
+  {
+   "hostId": "\"local\"",
+   "hostLabel": "This Mac",
+   "agents": [
+    {
+     "agent": "claude",
+     "sessions": 4,
+     "recordedSessions": 4,
+     "periods": {
+      "day": {
+       "tokens": {"inputTokens": 85400, "outputTokens": 3220, "cacheReadTokens": 63196, "cacheWriteTokens": 6832, "reasoningTokens": 0, "totalTokens": 88620},
+       "sessions": 1,
+       "cost": {
+        "usd": 1.4,
+        "estimated": 3,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-model", "usd": 1.4, "estimated": 3, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 85400, "outputTokens": 3220, "cacheReadTokens": 63196, "cacheWriteTokens": 6832, "reasoningTokens": 0, "totalTokens": 88620}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-model", "usd": 1.4, "estimated": 3, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 85400, "outputTokens": 3220, "cacheReadTokens": 63196, "cacheWriteTokens": 6832, "reasoningTokens": 0, "totalTokens": 88620}}
+        ],
+        "tokens": {"inputTokens": 85400, "outputTokens": 3220, "cacheReadTokens": 63196, "cacheWriteTokens": 6832, "reasoningTokens": 0, "totalTokens": 88620}
+       }
+      },
+      "week": {
+       "tokens": {"inputTokens": 411750, "outputTokens": 15525, "cacheReadTokens": 304695, "cacheWriteTokens": 32940, "reasoningTokens": 0, "totalTokens": 427275},
+       "sessions": 3,
+       "cost": {
+        "usd": 6.75,
+        "estimated": 9,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-model", "usd": 6.75, "estimated": 9, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 411750, "outputTokens": 15525, "cacheReadTokens": 304695, "cacheWriteTokens": 32940, "reasoningTokens": 0, "totalTokens": 427275}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-model", "usd": 2.7, "estimated": 3, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 164700, "outputTokens": 6210, "cacheReadTokens": 121878, "cacheWriteTokens": 13176, "reasoningTokens": 0, "totalTokens": 170910}},
+         {"day": "2026-01-14", "model": "demo-model", "usd": 2.02, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 123220, "outputTokens": 4646, "cacheReadTokens": 91182, "cacheWriteTokens": 9857, "reasoningTokens": 0, "totalTokens": 127866}},
+         {"day": "2026-01-13", "model": "demo-model", "usd": 1.35, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 82350, "outputTokens": 3105, "cacheReadTokens": 60939, "cacheWriteTokens": 6588, "reasoningTokens": 0, "totalTokens": 85455}},
+         {"day": "2026-01-12", "model": "demo-model", "usd": 0.68, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 41480, "outputTokens": 1564, "cacheReadTokens": 30695, "cacheWriteTokens": 3318, "reasoningTokens": 0, "totalTokens": 43044}}
+        ],
+        "tokens": {"inputTokens": 411750, "outputTokens": 15525, "cacheReadTokens": 304695, "cacheWriteTokens": 32940, "reasoningTokens": 0, "totalTokens": 427275}
+       }
+      },
+      "month": {
+       "tokens": {"inputTokens": 1348100, "outputTokens": 50830, "cacheReadTokens": 997594, "cacheWriteTokens": 107848, "reasoningTokens": 0, "totalTokens": 1398930},
+       "sessions": 4,
+       "cost": {
+        "usd": 22.1,
+        "estimated": 20,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-model", "usd": 22.1, "estimated": 20, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 1348100, "outputTokens": 50830, "cacheReadTokens": 997594, "cacheWriteTokens": 107848, "reasoningTokens": 0, "totalTokens": 1398930}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-model", "usd": 5.53, "estimated": 5, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 337330, "outputTokens": 12719, "cacheReadTokens": 249624, "cacheWriteTokens": 26986, "reasoningTokens": 0, "totalTokens": 350049}},
+         {"day": "2026-01-14", "model": "demo-model", "usd": 4.74, "estimated": 4, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 289140, "outputTokens": 10902, "cacheReadTokens": 213963, "cacheWriteTokens": 23131, "reasoningTokens": 0, "totalTokens": 300042}},
+         {"day": "2026-01-13", "model": "demo-model", "usd": 3.95, "estimated": 3, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 240950, "outputTokens": 9085, "cacheReadTokens": 178303, "cacheWriteTokens": 19276, "reasoningTokens": 0, "totalTokens": 250035}},
+         {"day": "2026-01-12", "model": "demo-model", "usd": 3.16, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 192760, "outputTokens": 7268, "cacheReadTokens": 142642, "cacheWriteTokens": 15420, "reasoningTokens": 0, "totalTokens": 200028}},
+         {"day": "2026-01-11", "model": "demo-model", "usd": 2.37, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 144570, "outputTokens": 5451, "cacheReadTokens": 106981, "cacheWriteTokens": 11565, "reasoningTokens": 0, "totalTokens": 150021}},
+         {"day": "2026-01-10", "model": "demo-model", "usd": 1.58, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 96380, "outputTokens": 3634, "cacheReadTokens": 71321, "cacheWriteTokens": 7710, "reasoningTokens": 0, "totalTokens": 100014}},
+         {"day": "2026-01-09", "model": "demo-model", "usd": 0.77, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 46970, "outputTokens": 1771, "cacheReadTokens": 34757, "cacheWriteTokens": 3757, "reasoningTokens": 0, "totalTokens": 48741}}
+        ],
+        "tokens": {"inputTokens": 1348100, "outputTokens": 50830, "cacheReadTokens": 997594, "cacheWriteTokens": 107848, "reasoningTokens": 0, "totalTokens": 1398930}
+       }
+      }
+     }
+    },
+    {
+     "agent": "codex",
+     "sessions": 3,
+     "recordedSessions": 3,
+     "periods": {
+      "day": {
+       "tokens": {"inputTokens": 25620, "outputTokens": 966, "cacheReadTokens": 21008, "cacheWriteTokens": 0, "reasoningTokens": 386, "totalTokens": 26586},
+       "sessions": 1,
+       "cost": {
+        "usd": 0.42,
+        "estimated": 2,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-codex-model", "usd": 0.42, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 25620, "outputTokens": 966, "cacheReadTokens": 21008, "cacheWriteTokens": 0, "reasoningTokens": 386, "totalTokens": 26586}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-codex-model", "usd": 0.42, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 25620, "outputTokens": 966, "cacheReadTokens": 21008, "cacheWriteTokens": 0, "reasoningTokens": 386, "totalTokens": 26586}}
+        ],
+        "tokens": {"inputTokens": 25620, "outputTokens": 966, "cacheReadTokens": 21008, "cacheWriteTokens": 0, "reasoningTokens": 386, "totalTokens": 26586}
+       }
+      },
+      "week": {
+       "tokens": {"inputTokens": 134200, "outputTokens": 5060, "cacheReadTokens": 110044, "cacheWriteTokens": 0, "reasoningTokens": 2024, "totalTokens": 139260},
+       "sessions": 2,
+       "cost": {
+        "usd": 2.2,
+        "estimated": 6,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-codex-model", "usd": 2.2, "estimated": 6, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 134200, "outputTokens": 5060, "cacheReadTokens": 110044, "cacheWriteTokens": 0, "reasoningTokens": 2024, "totalTokens": 139260}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-codex-model", "usd": 0.88, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 53680, "outputTokens": 2024, "cacheReadTokens": 44017, "cacheWriteTokens": 0, "reasoningTokens": 809, "totalTokens": 55704}},
+         {"day": "2026-01-14", "model": "demo-codex-model", "usd": 0.66, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 40260, "outputTokens": 1518, "cacheReadTokens": 33013, "cacheWriteTokens": 0, "reasoningTokens": 607, "totalTokens": 41778}},
+         {"day": "2026-01-13", "model": "demo-codex-model", "usd": 0.44, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 26840, "outputTokens": 1012, "cacheReadTokens": 22008, "cacheWriteTokens": 0, "reasoningTokens": 404, "totalTokens": 27852}},
+         {"day": "2026-01-12", "model": "demo-codex-model", "usd": 0.22, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 13420, "outputTokens": 506, "cacheReadTokens": 11004, "cacheWriteTokens": 0, "reasoningTokens": 202, "totalTokens": 13926}}
+        ],
+        "tokens": {"inputTokens": 134200, "outputTokens": 5060, "cacheReadTokens": 110044, "cacheWriteTokens": 0, "reasoningTokens": 2024, "totalTokens": 139260}
+       }
+      },
+      "month": {
+       "tokens": {"inputTokens": 481900, "outputTokens": 18170, "cacheReadTokens": 395158, "cacheWriteTokens": 0, "reasoningTokens": 7268, "totalTokens": 500070},
+       "sessions": 3,
+       "cost": {
+        "usd": 7.9,
+        "estimated": 12,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-codex-model", "usd": 7.9, "estimated": 12, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 481900, "outputTokens": 18170, "cacheReadTokens": 395158, "cacheWriteTokens": 0, "reasoningTokens": 7268, "totalTokens": 500070}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-codex-model", "usd": 1.98, "estimated": 3, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 120780, "outputTokens": 4554, "cacheReadTokens": 99039, "cacheWriteTokens": 0, "reasoningTokens": 1821, "totalTokens": 125334}},
+         {"day": "2026-01-14", "model": "demo-codex-model", "usd": 1.69, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 103090, "outputTokens": 3887, "cacheReadTokens": 84533, "cacheWriteTokens": 0, "reasoningTokens": 1554, "totalTokens": 106977}},
+         {"day": "2026-01-13", "model": "demo-codex-model", "usd": 1.41, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 86010, "outputTokens": 3243, "cacheReadTokens": 70528, "cacheWriteTokens": 0, "reasoningTokens": 1297, "totalTokens": 89253}},
+         {"day": "2026-01-12", "model": "demo-codex-model", "usd": 1.13, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 68930, "outputTokens": 2598, "cacheReadTokens": 56522, "cacheWriteTokens": 0, "reasoningTokens": 1039, "totalTokens": 71528}},
+         {"day": "2026-01-11", "model": "demo-codex-model", "usd": 0.85, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 51850, "outputTokens": 1955, "cacheReadTokens": 42517, "cacheWriteTokens": 0, "reasoningTokens": 782, "totalTokens": 53805}},
+         {"day": "2026-01-10", "model": "demo-codex-model", "usd": 0.56, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 34160, "outputTokens": 1288, "cacheReadTokens": 28011, "cacheWriteTokens": 0, "reasoningTokens": 515, "totalTokens": 35448}},
+         {"day": "2026-01-09", "model": "demo-codex-model", "usd": 0.28, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 17080, "outputTokens": 644, "cacheReadTokens": 14005, "cacheWriteTokens": 0, "reasoningTokens": 257, "totalTokens": 17724}}
+        ],
+        "tokens": {"inputTokens": 481900, "outputTokens": 18170, "cacheReadTokens": 395158, "cacheWriteTokens": 0, "reasoningTokens": 7268, "totalTokens": 500070}
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "hostId": "{\"target\":\"devbox\"}",
+   "hostLabel": "devbox",
+   "agents": [
+    {
+     "agent": "claude",
+     "sessions": 2,
+     "recordedSessions": 2,
+     "periods": {
+      "day": {
+       "tokens": {"inputTokens": 128100, "outputTokens": 4830, "cacheReadTokens": 94794, "cacheWriteTokens": 10248, "reasoningTokens": 0, "totalTokens": 132930},
+       "sessions": 1,
+       "cost": {
+        "usd": 2.1,
+        "estimated": 4,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-model", "usd": 2.1, "estimated": 4, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 128100, "outputTokens": 4830, "cacheReadTokens": 94794, "cacheWriteTokens": 10248, "reasoningTokens": 0, "totalTokens": 132930}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-model", "usd": 2.1, "estimated": 4, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 128100, "outputTokens": 4830, "cacheReadTokens": 94794, "cacheWriteTokens": 10248, "reasoningTokens": 0, "totalTokens": 132930}}
+        ],
+        "tokens": {"inputTokens": 128100, "outputTokens": 4830, "cacheReadTokens": 94794, "cacheWriteTokens": 10248, "reasoningTokens": 0, "totalTokens": 132930}
+       }
+      },
+      "week": {
+       "tokens": {"inputTokens": 600850, "outputTokens": 22655, "cacheReadTokens": 444629, "cacheWriteTokens": 48068, "reasoningTokens": 0, "totalTokens": 623505},
+       "sessions": 2,
+       "cost": {
+        "usd": 9.85,
+        "estimated": 8,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-model", "usd": 9.85, "estimated": 8, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 600850, "outputTokens": 22655, "cacheReadTokens": 444629, "cacheWriteTokens": 48068, "reasoningTokens": 0, "totalTokens": 623505}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-model", "usd": 3.94, "estimated": 3, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 240340, "outputTokens": 9062, "cacheReadTokens": 177851, "cacheWriteTokens": 19227, "reasoningTokens": 0, "totalTokens": 249402}},
+         {"day": "2026-01-14", "model": "demo-model", "usd": 2.95, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 179950, "outputTokens": 6785, "cacheReadTokens": 133163, "cacheWriteTokens": 14396, "reasoningTokens": 0, "totalTokens": 186735}},
+         {"day": "2026-01-13", "model": "demo-model", "usd": 1.97, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 120170, "outputTokens": 4531, "cacheReadTokens": 88925, "cacheWriteTokens": 9613, "reasoningTokens": 0, "totalTokens": 124701}},
+         {"day": "2026-01-12", "model": "demo-model", "usd": 0.99, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 60390, "outputTokens": 2277, "cacheReadTokens": 44688, "cacheWriteTokens": 4831, "reasoningTokens": 0, "totalTokens": 62667}}
+        ],
+        "tokens": {"inputTokens": 600850, "outputTokens": 22655, "cacheReadTokens": 444629, "cacheWriteTokens": 48068, "reasoningTokens": 0, "totalTokens": 623505}
+       }
+      },
+      "month": {
+       "tokens": {"inputTokens": 1915400, "outputTokens": 72220, "cacheReadTokens": 1417396, "cacheWriteTokens": 153232, "reasoningTokens": 0, "totalTokens": 1987620},
+       "sessions": 2,
+       "cost": {
+        "usd": 31.4,
+        "estimated": 14,
+        "recorded": 0,
+        "unpriced": 0,
+        "models": [
+         {"model": "demo-model", "usd": 31.4, "estimated": 14, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 1915400, "outputTokens": 72220, "cacheReadTokens": 1417396, "cacheWriteTokens": 153232, "reasoningTokens": 0, "totalTokens": 1987620}}
+        ],
+        "days": [
+         {"day": "2026-01-15", "model": "demo-model", "usd": 7.85, "estimated": 3, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 478850, "outputTokens": 18055, "cacheReadTokens": 354349, "cacheWriteTokens": 38308, "reasoningTokens": 0, "totalTokens": 496905}},
+         {"day": "2026-01-14", "model": "demo-model", "usd": 6.73, "estimated": 3, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 410530, "outputTokens": 15479, "cacheReadTokens": 303792, "cacheWriteTokens": 32842, "reasoningTokens": 0, "totalTokens": 426009}},
+         {"day": "2026-01-13", "model": "demo-model", "usd": 5.61, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 342210, "outputTokens": 12903, "cacheReadTokens": 253235, "cacheWriteTokens": 27376, "reasoningTokens": 0, "totalTokens": 355113}},
+         {"day": "2026-01-12", "model": "demo-model", "usd": 4.49, "estimated": 2, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 273890, "outputTokens": 10327, "cacheReadTokens": 202678, "cacheWriteTokens": 21911, "reasoningTokens": 0, "totalTokens": 284217}},
+         {"day": "2026-01-11", "model": "demo-model", "usd": 3.36, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 204960, "outputTokens": 7728, "cacheReadTokens": 151670, "cacheWriteTokens": 16396, "reasoningTokens": 0, "totalTokens": 212688}},
+         {"day": "2026-01-10", "model": "demo-model", "usd": 2.24, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 136640, "outputTokens": 5152, "cacheReadTokens": 101113, "cacheWriteTokens": 10931, "reasoningTokens": 0, "totalTokens": 141792}},
+         {"day": "2026-01-09", "model": "demo-model", "usd": 1.12, "estimated": 1, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 68320, "outputTokens": 2576, "cacheReadTokens": 50556, "cacheWriteTokens": 5465, "reasoningTokens": 0, "totalTokens": 70896}}
+        ],
+        "tokens": {"inputTokens": 1915400, "outputTokens": 72220, "cacheReadTokens": 1417396, "cacheWriteTokens": 153232, "reasoningTokens": 0, "totalTokens": 1987620}
+       }
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "limits": {
+  "hosts": [
+   {
+    "hostId": "\"local\"",
+    "hostLabel": "This Mac",
+    "agents": [
+     {
+      "agent": "claude",
+      "mode": "subscription",
+      "plan": "Pro",
+      "account": "aaaaaaaaaaaaaaaa",
+      "limits": {
+       "windows": [
+        {"usedPercent": 52, "windowMinutes": 300, "resetsIn": 6000},
+        {"usedPercent": 33, "windowMinutes": 10080, "resetsIn": 280000}
+       ],
+       "ago": 120,
+       "source": "statusline"
+      }
+     },
+     {
+      "agent": "codex",
+      "mode": "subscription",
+      "plan": "Plus",
+      "account": "bbbbbbbbbbbbbbbb",
+      "limits": {
+       "windows": [
+        {"usedPercent": 27, "windowMinutes": 300, "resetsIn": 11400},
+        {"usedPercent": 69, "windowMinutes": 10080, "resetsIn": 190000}
+       ],
+       "ago": 20,
+       "source": "app-server"
+      }
+     }
+    ]
+   },
+   {
+    "hostId": "{\"target\":\"devbox\"}",
+    "hostLabel": "devbox",
+    "agents": [
+     {"agent": "claude", "mode": "api"},
+     {"agent": "codex", "mode": "subscription", "plan": "Plus", "account": "bbbbbbbbbbbbbbbb"}
+    ]
+   }
+  ]
+ },
+ "chat": {
+  "tokens": {"inputTokens": 1200000, "outputTokens": 84511, "cacheReadTokens": 910000, "cacheWriteTokens": 64000, "reasoningTokens": 0, "totalTokens": 1284511},
+  "compactionCount": 2,
+  "cost": {
+   "usd": 1.92,
+   "estimated": 12,
+   "recorded": 0,
+   "unpriced": 0,
+   "models": [
+    {"model": "demo-model", "usd": 1.92, "estimated": 12, "recorded": 0, "unpriced": 0, "tokens": {"inputTokens": 1200000, "outputTokens": 84511, "cacheReadTokens": 910000, "cacheWriteTokens": 64000, "reasoningTokens": 0, "totalTokens": 1284511}}
+   ],
+   "days": [],
+   "tokens": {"inputTokens": 1200000, "outputTokens": 84511, "cacheReadTokens": 910000, "cacheWriteTokens": 64000, "reasoningTokens": 0, "totalTokens": 1284511}
+  }
+ }
+}
