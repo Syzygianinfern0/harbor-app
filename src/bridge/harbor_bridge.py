@@ -893,6 +893,10 @@ def claude_plan(environ=None, cwd=None):
     return {'mode': 'unknown'}
 
 SAME_WINDOW = 120  # resetsAt within 2 minutes: the same limit window
+# Versioned because chats launched by an older Harbor keep running their old bridge, whose status line
+# rewrites limits/claude.json wholesale with a cached reading stamped "now". Those entries are ignored.
+def claude_limits_file():
+    return limits_dir() / 'claude-v2.json'
 
 def merge_limits(old, new):
     """Merge two snapshots window by window, so an idle chat's cached reading never overwrites a newer one:
@@ -901,15 +905,21 @@ def merge_limits(old, new):
     if not isinstance(old, dict) or not isinstance(old.get('windows'), list): return new
     if not isinstance(new, dict) or not isinstance(new.get('windows'), list): return old
     def windows(snapshot):
-        return {w.get('windowMinutes'): {**w, 'at': w.get('at', snapshot.get('at', 0))} for w in snapshot['windows'] if isinstance(w, dict)}
+        return {w.get('windowMinutes'): {**w, 'at': w.get('at', snapshot.get('at', 0)), 'timed': 'at' in w} for w in snapshot['windows'] if isinstance(w, dict)}
     merged = windows(old)
     for key, window in windows(new).items():
         kept = merged.get(key)
         if not kept: merged[key] = window; continue
+        # A window without its own time (an older bridge stamps the whole snapshot with the time its status
+        # line ran) is never fresher than what is already known.
+        if window['timed'] != kept['timed']:
+            untimed, timed = (kept, window) if window['timed'] else (window, kept)
+            untimed['at'] = min(untimed['at'], timed['at'])
         a, b = kept.get('resetsAt'), window.get('resetsAt')
         if a and b and abs(a - b) > SAME_WINDOW: merged[key] = window if b > a else kept
-        elif a and b: merged[key] = {**kept, 'usedPercent': max(kept['usedPercent'], window['usedPercent']), 'resetsAt': max(a, b), 'at': max(kept['at'], window['at'])}
-        else: merged[key] = window if window['at'] >= kept['at'] else kept
+        elif a and b: merged[key] = {**kept, 'usedPercent': max(kept['usedPercent'], window['usedPercent']), 'resetsAt': max(a, b), 'at': max(kept['at'], window['at']), 'timed': kept['timed'] or window['timed']}
+        else: merged[key] = window if window['at'] > kept['at'] or (window['at'] == kept['at'] and window['timed']) else kept
+    for window in merged.values(): window.pop('timed', None)
     result = {**old, **new, 'windows': sorted(merged.values(), key=lambda w: w.get('windowMinutes') or 0)}
     result['at'] = max(w['at'] for w in result['windows']) if result['windows'] else max(old.get('at', 0), new.get('at', 0))
     return result
@@ -929,7 +939,7 @@ def reading_time(event, now):
 def claude_host_limits():
     result = {'agent': 'claude', **claude_plan()}
     if result['mode'] == 'api': return result
-    stored = read(limits_dir() / 'claude.json', {}) or {}
+    stored = read(claude_limits_file(), {}) or {}
     prefix = str(home_for('claude')) + '|'
     candidates = [entry for key, entry in stored.items() if isinstance(entry, dict) and key.startswith(prefix) and (not result.get('account') or key in (prefix + result['account'], prefix))]
     limits = None
@@ -969,7 +979,7 @@ def store_claude_limits(chat_id, generation, event):
         combined = merge_limits((state.get(key) or {}).get('limits'), snapshot)
         if state.get(key, {}).get('limits') == combined: return None
         state[key] = {'limits': combined, 'at': combined['at']}; return state
-    locked_json(limits_dir() / 'claude.json', save)
+    locked_json(claude_limits_file(), save)
 
 def user_statusline(project):
     """The status line Claude would run without Harbor's --settings: local, then project, then user settings."""

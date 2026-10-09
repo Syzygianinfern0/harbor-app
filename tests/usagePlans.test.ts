@@ -125,3 +125,10 @@ test('limits merge per window: newer windows replace, usage only grows, missing 
   assert.deepEqual(windows.map(w => windowStale(w, now)), [false, true]);
   assert.equal(windowStale(currentWindows(idle, now)[0], now), true);
 });
+
+test('an older bridge\'s untimed reading never replaces or freshens a timed window', () => {
+  const known = { windows: [{ usedPercent: 3, windowMinutes: 300, resetsAt: sec + 17000, at: sec - 30 }, { usedPercent: 86, windowMinutes: 10080, resetsAt: sec + 300000, at: sec - 30 }, { usedPercent: 40, windowMinutes: 60, at: sec - 900 }], at: sec - 30 };
+  const legacy = { windows: [{ usedPercent: 80, windowMinutes: 10080, resetsAt: sec + 300000 }, { usedPercent: 10, windowMinutes: 60 }], at: sec };
+  for (const merged of [mergeLimits(known, legacy)!, mergeLimits(legacy, known)!])
+    assert.deepEqual(merged.windows.map(w => [w.windowMinutes, w.usedPercent, w.at]), [[60, 40, sec - 900], [300, 3, sec - 30], [10080, 86, sec - 30]]);
+});

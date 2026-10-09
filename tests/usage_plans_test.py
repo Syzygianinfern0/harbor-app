@@ -274,6 +274,28 @@ class ClaudeReadings(unittest.TestCase):
             meta = json.loads((h.root / 'chats' / CHAT / 'metadata.json').read_text())['limits']['windows']
             self.assertEqual([(w['usedPercent'], w['resetsAt']) for w in meta], [(2.0, 1900018000.0)])
 
+    def test_bridges_from_an_older_harbor_cannot_flip_the_reading(self):
+        """Chats launched before an update keep running their old bridge, which rewrites limits/claude.json
+        and its chat's metadata wholesale with a cached reading stamped now and no per-window times."""
+        def legacy_store(chat, account, limits):
+            now = time.time(); snapshot = {'windows': limits, 'at': now, 'source': 'statusline'}
+            bridge.patch_metadata(h.root / 'chats' / chat / 'metadata.json', GEN, {'limits': snapshot, 'billing': {'mode': 'subscription', 'account': account}})
+            bridge.locked_json(h.root / 'limits/claude.json', lambda state: {**state, str(h.claude) + '|' + account: {'limits': snapshot, 'at': now}})
+        with Homes() as h:
+            h.write(h.claude / '.claude.json', {'oauthAccount': {'organizationType': 'claude_max', 'accountUuid': 'raw-acct'}}); account = bridge.claude_plan({})['account']
+            fresh = self.chat(h, CHAT, account, 5); self.chat(h, IDLE, account, 3 * 3600)
+            new = lambda: bridge.store_claude_limits(CHAT, GEN, {'transcript_path': fresh, 'rate_limits': {'five_hour': {'used_percentage': 3, 'resets_at': 1900000000}, 'seven_day': {'used_percentage': 86, 'resets_at': 1900300000}}})
+            old = lambda: legacy_store(IDLE, account, [{'usedPercent': 80.0, 'windowMinutes': 10080, 'resetsAt': 1900300000.0}])
+            for write in (new, old, new, old, old):
+                write()
+                windows = self.windows()
+                self.assertEqual((windows[300]['usedPercent'], windows[10080]['usedPercent']), (3.0, 86.0))
+            # Untimed windows merged into a known reading never look fresher or replace it.
+            known = {'windows': [{'usedPercent': 40.0, 'windowMinutes': 60, 'at': time.time() - 900}], 'at': time.time() - 900}
+            legacy = {'windows': [{'usedPercent': 10.0, 'windowMinutes': 60}], 'at': time.time()}
+            for merged in (bridge.merge_limits(known, legacy), bridge.merge_limits(legacy, known)):
+                self.assertEqual(merged['windows'], known['windows'])
+
     def test_reading_time_comes_from_the_transcript_without_reading_it(self):
         with Homes() as h:
             now = time.time(); file = h.write(h.claude / 't.jsonl', 'not json')

@@ -61,16 +61,19 @@ const SAME_WINDOW = 120; // seconds: resetsAt this close is the same limit windo
  * percentage wins (usage only grows), and a window missing from one snapshot is kept from the other. */
 export function mergeLimits(a?: LimitSnapshot, b?: LimitSnapshot): LimitSnapshot | undefined {
   if (!a || !b) return a ?? b;
-  const merged = new Map<number | undefined, LimitWindow>();
+  type Timed = LimitWindow & { at: number; timed: boolean };
+  const merged = new Map<number | undefined, Timed>();
   for (const snapshot of [a, b]) for (const raw of snapshot.windows) {
-    const window = { ...raw, at: raw.at ?? snapshot.at }; const kept = merged.get(window.windowMinutes);
+    const window: Timed = { ...raw, at: raw.at ?? snapshot.at, timed: raw.at !== undefined }; const kept = merged.get(window.windowMinutes);
     if (!kept) { merged.set(window.windowMinutes, window); continue; }
+    // A window without its own time (an older bridge's whole-snapshot stamp) is never fresher than a timed one.
+    if (window.timed !== kept.timed) { const untimed = window.timed ? kept : window, timed = window.timed ? window : kept; untimed.at = Math.min(untimed.at, timed.at); }
     const x = kept.resetsAt, y = window.resetsAt;
     if (x && y && Math.abs(x - y) > SAME_WINDOW) merged.set(window.windowMinutes, y > x ? window : kept);
-    else if (x && y) merged.set(window.windowMinutes, { ...kept, usedPercent: Math.max(kept.usedPercent, window.usedPercent), resetsAt: Math.max(x, y), at: Math.max(kept.at!, window.at!) });
-    else merged.set(window.windowMinutes, window.at! >= kept.at! ? window : kept);
+    else if (x && y) merged.set(window.windowMinutes, { ...kept, usedPercent: Math.max(kept.usedPercent, window.usedPercent), resetsAt: Math.max(x, y), at: Math.max(kept.at, window.at), timed: kept.timed || window.timed });
+    else merged.set(window.windowMinutes, window.at > kept.at || (window.at === kept.at && window.timed) ? window : kept);
   }
-  const windows = [...merged.values()].sort((x, y) => (x.windowMinutes ?? 0) - (y.windowMinutes ?? 0));
+  const windows = [...merged.values()].map(({ timed: _timed, ...window }) => window).sort((x, y) => (x.windowMinutes ?? 0) - (y.windowMinutes ?? 0));
   const newer = b.at >= a.at ? b : a;
   return { ...newer, windows, at: Math.max(a.at, b.at) };
 }
