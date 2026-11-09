@@ -82,6 +82,33 @@ test('update settings show cached automatic results and bulk progress survives c
   }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
 
+test('an agent update on one machine leaves rows on other machines available',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'harbor-row-ui-'));
+  const app=await electron.launch({args:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
+  try {
+    const page=await app.firstWindow();
+    await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeVisible();
+    await app.evaluate(async ({ipcMain,BrowserWindow})=>{
+      const original=await BrowserWindow.getAllWindows()[0].webContents.executeJavaScript('window.harbor.snapshot()');
+      const row=(hostId:string,agent:string)=>({hostId,hostLabel:hostId,agent,status:'available',installed:'1.0.0',latest:'1.1.0',checkedAt:new Date().toISOString()});
+      const state:any={updates:[row('This Mac','codex'),row('This Mac','claude'),row('Research server','claude')],checking:false,updatingAll:false,checkedAt:Date.now(),installing:['This Mac:codex'],queued:[],results:{'This Mac:codex':{message:'Updating… This may take a few minutes.'}}};
+      const contents=BrowserWindow.getAllWindows()[0].webContents;const send=contents.send.bind(contents);
+      contents.send=(channel,...args)=>{if(channel==='harbor:snapshot-changed')args[0]={...args[0],agentUpdates:structuredClone(state)};send(channel,...args);};
+      ipcMain.removeHandler('harbor:snapshot');ipcMain.handle('harbor:snapshot',()=>({...original,agentUpdates:structuredClone(state)}));
+      ipcMain.removeHandler('harbor:checkUpdates');ipcMain.handle('harbor:checkUpdates',()=>state.updates);
+    });
+    await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('button',{name:'Updates',exact:true}).click();
+    const button=(host:string,agent:string)=>page.getByRole('button',{name:`Update ${agent}`,exact:true}).and(page.getByTitle(`Update ${agent} on ${host}`));
+    await expect(button('This Mac','Codex').locator('.spin')).toBeVisible();
+    await expect(button('This Mac','Codex')).toBeDisabled();
+    await expect(button('This Mac','Claude Code')).toBeDisabled();
+    await expect(button('Research server','Claude Code')).toBeEnabled();
+    await expect(button('Research server','Claude Code').locator('.spin')).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Update all (3)',exact:true})).toBeDisabled();
+    await mkdir('test-results/screenshots',{recursive:true});await page.screenshot({path:'test-results/screenshots/agent-update-rows.png'});
+  }finally{await app.close();await rm(dir,{recursive:true,force:true});}
+});
+
 test('projects heading toggles between collapsing and expanding every project',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'harbor-fold-all-'));
   const createdAt=new Date().toISOString();

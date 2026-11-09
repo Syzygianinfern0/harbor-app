@@ -146,7 +146,7 @@ async function stage(app: ElectronApplication, page: Page) {
       ...(activity === 'background' ? { activityDetail: launcher === 'claude' ? 'npm run test:integration' : 'python sweep.py' } : {}),
       ...(id === 'b1' ? { pinned: true } : {}), ...(id === 'a1' ? { note: NOTE } : {}) };
   });
-  snapshot.agentUpdates = { updates: [...UPDATES], checking: false, updatingAll: false, results: {}, checkedAt: now };
+  snapshot.agentUpdates = { updates: [...UPDATES], checking: false, updatingAll: false, installing: [], queued: [], results: {}, checkedAt: now };
   const screens = Object.fromEntries(CHATS.map(([id, projectId, , kind]) => [id, { kind, cwd: PROJECTS.find(p => p.id === projectId)!.cwd }]));
   await app.evaluate(({ BrowserWindow, ipcMain }, { snapshot, screens, script }) => {
     const draw = new Function('return ' + script)() as (id: string, kind: string, cwd: string, cols: number, rows: number) => string;
