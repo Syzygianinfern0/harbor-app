@@ -1,4 +1,5 @@
 import type { Session } from './types';
+import { isUnread } from './unread';
 
 export const activityLabel = {
   starting: 'Starting', working: 'Working', attention: 'Needs input or approval',
@@ -17,6 +18,17 @@ export function chatActivity(session: Session): ChatStatus {
   if (session.activity === 'idle' && session.completedAt) return 'completed';
   return session.activity || 'unknown';
 }
+
+/** A chat's status for folded-group rollups (see ROLLUP_ORDER in shared/tabGroups.ts): like chatActivity, but a finished turn the user
+ * hasn't seen yet (still marked unread) is 'completed-unread', so it outranks chats that are working now while seen ones rank last. */
+export type RollupStatus = ChatStatus | 'completed-unread';
+export function rollupStatus(session: Session): RollupStatus {
+  const activity = chatActivity(session);
+  return activity === 'completed' && isUnread(session) ? 'completed-unread' : activity;
+}
+/** The icon a rollup status is drawn with: an unseen finished turn uses the normal finished icon (the unread dot sits beside it). */
+export const rollupIcon = (status: string): ChatStatus => (status === 'completed-unread' ? 'completed' : status) as ChatStatus;
+export const rollupLabel = (status: string) => status === 'completed-unread' ? 'Turn finished while you were away' : activityLabel[rollupIcon(status)];
 
 /** True when a bridge reason says the chat waits only on artifact live-update watchers. Claude flags those ambient, not activity, so
  * the turn is finished; bridges older than the watcher filter still recorded them as background work. */

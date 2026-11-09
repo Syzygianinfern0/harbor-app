@@ -15,9 +15,9 @@ async function fixture() {
 const openChat=(page:Page,name:string)=>page.locator('.sidebar .chat-row',{hasText:name}).click();
 const tabOrder=(page:Page)=>page.locator('.session-toolbar [data-tab-id]').evaluateAll(e=>e.map(t=>(t as HTMLElement).dataset.tabId));
 const chipOrder=(page:Page)=>page.locator('.session-toolbar [data-group-key]').evaluateAll(e=>e.map(t=>(t as HTMLElement).dataset.groupKey));
-async function setActivity(app:ElectronApplication,page:Page,activity:Record<string,string>) {
+async function setActivity(app:ElectronApplication,page:Page,activity:Record<string,string>,extra:Record<string,object>={}) {
   const snapshot=await page.evaluate(()=>window.harbor.snapshot());
-  snapshot.sessions=snapshot.sessions.map(s=>activity[s.id]?{...s,status:'running',activity:activity[s.id] as any}:s);
+  snapshot.sessions=snapshot.sessions.map(s=>activity[s.id]?{...s,status:'running',activity:activity[s.id] as any,...extra[s.id]}:s);
   await app.evaluate(({BrowserWindow,ipcMain},snapshot)=>{
     ipcMain.removeHandler('harbor:snapshot');ipcMain.handle('harbor:snapshot',()=>snapshot);
     const contents=BrowserWindow.getAllWindows()[0].webContents;const send=(contents as any).__send??contents.send.bind(contents);(contents as any).__send=send;
@@ -106,6 +106,16 @@ test('project and custom tab groups fold, report status, persist, and link to th
     // Sidebar: a folded project reports its live chats; its menu shows and folds its tabs.
     await page.getByRole('button',{name:'Collapse project neurips-paper',exact:true}).click();
     await expect(page.locator('.project-rollup')).toHaveCount(1);await expect(page.locator('.project-rollup .chat-activity.working')).toHaveCount(1);
+    // An old finished turn doesn't hide a working chat; one that finished while you were away (unread) does, with the finished icon.
+    await setActivity(app,page,{c1:'idle',c2:'working'},{c1:{completedAt:Date.now()}});
+    await expect(page.locator('.project-rollup .chat-activity.working')).toHaveCount(1);await expect(page.locator('.project-rollup .chat-activity.completed')).toHaveCount(0);
+    await page.locator('.sidebar').screenshot({path:'test-results/screenshots/34-rollup-working.png'});
+    await setActivity(app,page,{c1:'idle'},{c1:{completedAt:Date.now(),unread:true}});
+    await expect(page.locator('.project-rollup .chat-activity.completed')).toHaveCount(1);
+    await expect(page.locator('.project-rollup')).toHaveAttribute('title',/Turn finished while you were away: Rebuttal draft/);
+    await page.locator('.sidebar').screenshot({path:'test-results/screenshots/35-rollup-unread-finished.png'});
+    await setActivity(app,page,{c1:'idle'},{c1:{completedAt:Date.now(),unread:undefined}});
+    await expect(page.locator('.project-rollup .chat-activity.working')).toHaveCount(1);
     await page.locator('.project-heading',{hasText:'tessera-api'}).click({button:'right'});
     await page.getByRole('menuitem',{name:'Fold in tab bar',exact:true}).click();
     await expect(page.getByRole('button',{name:/^tessera-api group/})).toHaveAttribute('aria-expanded','false');

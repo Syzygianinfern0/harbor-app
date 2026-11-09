@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addToGroup, arrangeTabs, assignProjectColors, createGroup, defaultTabGroups, groupEntry, groupKeys, isCollapsed, layoutTabs, pruneGroups, removeFromGroups, restoreTabGroups, rollup, setCollapsed, stripTabs, ungroup, updateGroup, GROUP_COLORS } from '../src/shared/tabGroups';
+import { activityLabel, rollupIcon, rollupLabel, rollupStatus } from '../src/shared/chatStatus';
+import type { Session } from '../src/shared/types';
 import { groupShortcut } from '../src/shared/shortcuts';
 
 const project:Record<string,string>={a1:'a',a2:'a',a3:'a',b1:'b',b2:'b',c1:'c'};
@@ -49,11 +51,31 @@ test('folding keeps the selected tab visible, and focus mode opens only the sele
   assert.equal(groupEntry({...state,lastActive:{'p:a':'gone'}},segments,'p:a'),'a1');
 });
 
-test('rollup reports the most urgent status first',()=>{
+test('rollup reports notifications first, then whatever is going on now',()=>{
   const items=[{s:'idle'},{s:'working'},{s:'completed'},{s:'attention'},{s:'attention'}];
   assert.deepEqual(rollup(items,i=>i.s),{activity:'attention',item:items[3],count:2});
-  assert.equal(rollup([{s:'working'},{s:'completed'}],i=>i.s)?.activity,'completed');
+  assert.equal(rollup([{s:'error'},{s:'completed-unread'}],i=>i.s)?.activity,'error');
+  assert.equal(rollup([{s:'working'},{s:'completed-unread'}],i=>i.s)?.activity,'completed-unread','a finish you have not seen outranks work in progress');
+  assert.equal(rollup([{s:'completed'},{s:'completed'},{s:'working'}],i=>i.s)?.activity,'working','old finished chats do not hide a working one');
+  assert.equal(rollup([{s:'background'},{s:'starting'},{s:'completed'}],i=>i.s)?.activity,'starting');
+  assert.equal(rollup([{s:'completed'},{s:'background'}],i=>i.s)?.activity,'background');
+  assert.deepEqual(rollup([{s:'completed'},{s:'completed'},{s:'idle'}],i=>i.s),{activity:'completed',item:{s:'completed'},count:2});
   assert.equal(rollup([{s:'idle'},{s:'closed'}],i=>i.s),undefined);
+});
+
+test('rollup status marks unseen finished turns and draws them with the finished icon',()=>{
+  const chat=(patch:Partial<Session>)=>({id:'a',name:'Fix bug',launcher:'claude',status:'running',activity:'idle',archived:false,...patch}) as Session;
+  assert.equal(rollupStatus(chat({completedAt:1})),'completed');
+  assert.equal(rollupStatus(chat({completedAt:1,unread:true})),'completed-unread');
+  assert.equal(rollupStatus(chat({completedAt:1,unread:true,archived:true})),'completed','archived chats are never unread');
+  assert.equal(rollupStatus(chat({activity:'working',unread:true})),'working');
+  assert.equal(rollupStatus(chat({activity:'attention',unread:true})),'attention');
+  assert.equal(rollupIcon('completed-unread'),'completed');assert.equal(rollupIcon('working'),'working');
+  assert.equal(rollupLabel('completed-unread'),'Turn finished while you were away');assert.equal(rollupLabel('working'),activityLabel.working);
+  const items=[chat({id:'old1',completedAt:1}),chat({id:'old2',completedAt:1}),chat({id:'busy',activity:'working'})];
+  assert.equal(rollup(items,rollupStatus)?.item.id,'busy');
+  items.push(chat({id:'new',completedAt:1,unread:true}));
+  assert.equal(rollup(items,rollupStatus)?.item.id,'new');
 });
 
 test('pruning, colors and restore validate persisted state',()=>{

@@ -100,8 +100,11 @@ export function assignProjectColors(state:TabGroups,projectIds:string[]):TabGrou
   for(const id of missing){const count=(c:string)=>Object.values(colors).filter(v=>v===c).length;colors[id]=[...colorValues].sort((a,b)=>count(a)-count(b)||colorValues.indexOf(a)-colorValues.indexOf(b))[0];}
   return {...state,projectColors:colors};
 }
-/** The one status worth reporting for a folded group: the most urgent, then the item that has it. */
-export const ROLLUP_ORDER=['attention','error','completed','background','working','starting'] as const;
+/** The one status worth reporting for a folded group, and the item that has it. Anything that raised a notification comes first
+ * (needs input, error, a turn that finished while you were away); otherwise whatever is going on now (working, starting, background
+ * work); a finished turn you have already seen ranks last, so old finished chats don't hide a working one. Statuses come from
+ * `rollupStatus` (shared/chatStatus.ts); draw them with `rollupIcon`. A future 'interrupted' status belongs just before 'completed'. */
+export const ROLLUP_ORDER=['attention','error','completed-unread','working','starting','background','completed'] as const;
 export function rollup<T>(items:T[],activity:(item:T)=>string) {
   for(const status of ROLLUP_ORDER){const hits=items.filter(i=>activity(i)===status);if(hits.length)return {activity:status,item:hits[0],count:hits.length};}
   return undefined;
