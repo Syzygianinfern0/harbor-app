@@ -39,6 +39,7 @@
 .chat-usage-bar .chat-plan .chat-cost{margin-left:0}
 .plan-chip{display:inline-flex;align-items:center;gap:6px;padding:1px 4px;border-radius:4px}
 .plan-chip.warn{color:var(--limit-warn)}.plan-chip.danger{color:var(--limit-danger)}
+.plan-chip .plan-chip-cost{color:var(--muted);white-space:nowrap}
 .limit-ring{width:13px;height:13px;flex-shrink:0;margin-left:3px}
 .limit-ring circle{fill:none;stroke-width:3}
 .limit-ring .bg{stroke:var(--limit-track)}

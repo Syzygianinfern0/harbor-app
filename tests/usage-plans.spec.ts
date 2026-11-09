@@ -94,6 +94,13 @@ test('subscriptions: what is left and when it resets, plus the API-rate value', 
     await page.keyboard.press('Escape');
     await openChat(page, 'Fix tab folding');
     await expect(page.getByLabel('Plan usage')).toContainText('Max'); await expect(page.getByLabel('Plan usage')).toContainText('Weekly · 39% left');
+    const equivalent = page.getByLabel('Plan usage').getByRole('button', { name: 'Chat equivalent API cost' });
+    await expect(equivalent).toHaveText('≈ $0.86 at API rates');
+    await expect(equivalent).toHaveAttribute('title', 'Equivalent API cost at model rates; not charged on your subscription.');
+    await equivalent.click();
+    const popup = page.getByRole('dialog', { name: 'Chat equivalent API cost' });
+    await expect(popup).toContainText('This chat · equivalent API cost'); await expect(popup).toContainText('not charged on your subscription');
+    await shot(page, 'usage-subscription-chat'); await page.keyboard.press('Escape');
     await expect(page.locator('.limit-ring')).toHaveCount(0);
   } finally { await app.close(); }
 });

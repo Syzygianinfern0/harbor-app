@@ -151,13 +151,16 @@ export function UsagePanel({state}:{state:UsageState}) {
   </div>;
 }
 
-function ChatCost({usage,active}:{usage:ChatUsage;active:boolean}) {
+const SUBSCRIPTION_COST_HINT='Equivalent API cost at model rates; not charged on your subscription.';
+/** A chat's cost; on a subscription it is only what the tokens would cost at API rates. */
+function ChatCost({usage,active,kind='billed'}:{usage:ChatUsage;active:boolean;kind?:'billed'|'subscription'}) {
   const [open,setOpen]=useState(false);const button=useRef<HTMLButtonElement>(null);const popup=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(!open)return;const close=(event:MouseEvent)=>{if(!popup.current?.contains(event.target as Node)&&!button.current?.contains(event.target as Node))setOpen(false);};const key=(event:KeyboardEvent)=>{if(event.key==='Escape'){setOpen(false);button.current?.focus();}};document.addEventListener('mousedown',close);document.addEventListener('keydown',key);popup.current?.focus();return()=>{document.removeEventListener('mousedown',close);document.removeEventListener('keydown',key);};},[open]);
   useEffect(()=>{if(!active)setOpen(false);},[active]);
-  if(!usage.cost)return <span className="chat-cost">Cost unavailable</span>;
-  const cost=usage.cost;const rect=button.current?.getBoundingClientRect();
-  return <><button ref={button} className="chat-cost" aria-label="Chat total cost" aria-expanded={open} onClick={()=>setOpen(v=>!v)}><Amount cost={cost} available={!!(cost.estimated+cost.recorded+cost.unpriced)||usage.tokens?.totalTokens===0}/></button>{open&&createPortal(<div ref={popup} tabIndex={-1} className="cost-popover chat-cost-popover" role="dialog" aria-label="Chat total cost" style={{left:Math.max(8,Math.min(rect?.left??8,window.innerWidth-348)),top:Math.min((rect?.bottom??80)+8,window.innerHeight-260)}}><header><strong>This chat · total cost</strong><button className="icon-button" aria-label="Close chat total cost" onClick={()=>{setOpen(false);button.current?.focus();}}><X size={15}/></button></header>{cost.models.map(model=><div className="cost-row" key={model.model}><span>{model.model}</span><Amount cost={model}/></div>)}<div className="cost-row cost-group"><strong>Total</strong><Amount cost={cost} available={!!(cost.estimated+cost.recorded+cost.unpriced)||usage.tokens?.totalTokens===0}/></div><p className="cost-notes">USD · entire conversation. ≈ indicates an estimate at model API rates.{cost.unpriced?' Some records have no known price.':''}</p></div>,document.body)}</>;
+  const sub=kind==='subscription';
+  if(!usage.cost)return sub?null:<span className="chat-cost">Cost unavailable</span>;
+  const cost=usage.cost;const rect=button.current?.getBoundingClientRect();const available=!!(cost.estimated+cost.recorded+cost.unpriced)||usage.tokens?.totalTokens===0;
+  return <><button ref={button} className="chat-cost" aria-label={sub?'Chat equivalent API cost':'Chat total cost'} title={sub?SUBSCRIPTION_COST_HINT:undefined} aria-expanded={open} onClick={()=>setOpen(v=>!v)}>{sub?<>{price(cost,available)} at API rates</>:<Amount cost={cost} available={available}/>}</button>{open&&createPortal(<div ref={popup} tabIndex={-1} className="cost-popover chat-cost-popover" role="dialog" aria-label={sub?'Chat equivalent API cost':'Chat total cost'} style={{left:Math.max(8,Math.min(rect?.left??8,window.innerWidth-348)),top:Math.min((rect?.bottom??80)+8,window.innerHeight-260)}}><header><strong>{sub?'This chat · equivalent API cost':'This chat · total cost'}</strong><button className="icon-button" aria-label="Close chat total cost" onClick={()=>{setOpen(false);button.current?.focus();}}><X size={15}/></button></header>{cost.models.map(model=><div className="cost-row" key={model.model}><span>{model.model}</span><Amount cost={model}/></div>)}<div className="cost-row cost-group"><strong>Total</strong><Amount cost={cost} available={!!(cost.estimated+cost.recorded+cost.unpriced)||usage.tokens?.totalTokens===0}/></div><p className="cost-notes">USD · entire conversation. {sub?'What these tokens would cost at model API rates; not charged on your subscription.':'≈ indicates an estimate at model API rates.'}{cost.unpriced?' Some records have no known price.':''}</p></div>,document.body)}</>;
 }
 function useChatPlan(session:Session,now:number) {
   const data=useUsageData();const accounts=useMemo(()=>buildAccounts(data.hosts,data.limits),[data]);
@@ -166,12 +169,12 @@ function useChatPlan(session:Session,now:number) {
 /** The chat's own billing: what is left of its plan for subscriptions, the estimated cost otherwise. */
 function PlanChip({session,usage,active}:{session:Session;usage?:ChatUsage;active:boolean}) {
   const now=useNow();const plan=useChatPlan(session,now);
-  const cost=usage&&!usage.error?<ChatCost usage={usage} active={active}/>:null;
+  const billed=usage&&!usage.error;const cost=billed?<ChatCost usage={usage} active={active}/>:null;
   if(!plan) return cost;
   if(plan.kind==='subscription'){
     const stale=windowStale(plan.window,now);const tone=plan.window?toneOf(plan.window,stale):'';const reset=resetText(plan.window?.resetsAt,now);
     const title=!plan.limits?'Subscription detected. Remaining usage appears after the next reply.':stale?`${AGENT_NAMES[plan.agent]} plan limits ${asOfText(plan.window!.at!,now)}; usage may be higher now. ${STALE_HINT[plan.agent]}.`:`${AGENT_NAMES[plan.agent]} plan limits, updated ${agoText(plan.limits.at,now)}. Shared by every chat on this account.`;
-    return <span className={`plan-chip ${tone}`} aria-label="Plan usage" title={title}><PlanTag kind="subscription" plan={plan.plan}/>{plan.window?<span>{windowLabel(plan.window)} · {stale?`${staleUsedText(plan.window)} · ${asOfText(plan.window.at!,now)}`:`${leftText(plan.window)}${reset?` · resets ${reset}`:''}`}</span>:<span>Usage appears after next reply</span>}</span>;
+    return <span className={`plan-chip ${tone}`} aria-label="Plan usage" title={title}><PlanTag kind="subscription" plan={plan.plan}/>{plan.window?<span>{windowLabel(plan.window)} · {stale?`${staleUsedText(plan.window)} · ${asOfText(plan.window.at!,now)}`:`${leftText(plan.window)}${reset?` · resets ${reset}`:''}`}</span>:<span>Usage appears after next reply</span>}{billed&&usage.cost&&<span className="plan-chip-cost">· <ChatCost usage={usage} active={active} kind="subscription"/></span>}</span>;
   }
   return <span className="plan-chip" aria-label="Plan usage" title={plan.kind==='unknown'?'Plan unknown: estimate at model API rates':'Billed per token: estimate at model API rates'}><PlanTag kind={plan.kind} plan={plan.plan}/>{cost}</span>;
 }
