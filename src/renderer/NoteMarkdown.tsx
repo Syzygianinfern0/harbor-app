@@ -3,6 +3,7 @@ import { Check, ChevronRight, Flag, GripVertical, Plus, X } from 'lucide-react';
 import { groupLists, inlineText, parseBlocks, parseInline, scanLines, type Block, type Inline, type List, type ListNode, type Priority } from '../shared/markdown';
 import { addTask, deleteTask, editTask, indentTask, insertTask, moveTask, nudgeTask, outdentTask, setPriority, toggleTask, type Placed } from '../shared/todos';
 import { useDropCue } from './useDropCue';
+import { useFitInWindow, type Anchor } from './fitInWindow';
 import { reducedMotion } from './useTabMotion';
 
 // Notes render from a parsed tree into React text nodes only; there is no HTML path, so nothing in a note can inject markup.
@@ -100,12 +101,12 @@ function useRowMotion(root:RefObject<HTMLDivElement|null>,text:string) {
 }
 
 function PriorityMenu({priority,onPick}:{priority:Priority;onPick:(p:Priority)=>void}) {
-  const button=useRef<HTMLButtonElement>(null);const [at,setAt]=useState<{x:number;y:number}>();
+  const button=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null);const [at,setAt]=useState<Anchor>();useFitInWindow(menu,at);
   useEffect(()=>{if(!at)return;const close=(event:MouseEvent)=>{if(!(event.target as Element).closest?.('.note-priority-menu,.note-priority'))setAt(undefined);};document.addEventListener('mousedown',close,true);return()=>document.removeEventListener('mousedown',close,true);},[at]);
-  const open=()=>{if(at){setAt(undefined);return;}const r=button.current!.getBoundingClientRect();setAt({x:Math.max(8,Math.min(r.right-150,innerWidth-158)),y:r.bottom+176>innerHeight?r.top-172:r.bottom+4});};
+  const open=()=>{if(at){setAt(undefined);return;}const r=button.current!.getBoundingClientRect();setAt({left:r.left,right:r.right,top:r.top-4,bottom:r.bottom+4,align:'end'});};
   return <>
     <button ref={button} type="button" className={`note-priority p${priority} ${at?'open':''}`} aria-label={`${PRIORITY_NAMES[priority]} · change priority`} title={PRIORITY_NAMES[priority]} aria-haspopup="menu" aria-expanded={!!at} onClick={open} onKeyDown={event=>{if(event.key==='Escape'&&at){event.stopPropagation();setAt(undefined);}}}><Flag size={11}/></button>
-    {at&&<div className="note-priority-menu" role="menu" aria-label="Priority" style={{left:at.x,top:at.y}} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();setAt(undefined);button.current?.focus();}}}>
+    {at&&<div ref={menu} className="note-priority-menu" role="menu" aria-label="Priority" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();setAt(undefined);button.current?.focus();}}}>
       {([1,2,3,4] as Priority[]).map(p=><button key={p} type="button" role="menuitemradio" aria-checked={p===priority} className={`p${p}`} onClick={()=>{setAt(undefined);onPick(p);}}><Flag size={12}/>{PRIORITY_NAMES[p]}{p===priority&&<Check size={12} className="note-priority-current"/>}</button>)}
     </div>}
   </>;

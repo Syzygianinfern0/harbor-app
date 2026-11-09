@@ -7,6 +7,7 @@ Harbor is an Electron app with a UI-agnostic Node engine. Every chat is a tmux s
 - `src/engine/` — tmux, SSH (system `ssh`, honoring `~/.ssh/config`), persistence, agent status, history and usage. No Electron or React.
 - `src/desktop/` — Electron main process and preload (IPC to the engine).
 - `src/renderer/` — the React UI, with xterm.js terminals.
+  Right-click menus and small popovers take the raw click point or opener rect; `useFitInWindow` (`fitInWindow.ts`, wrapped by `ContextMenu`) measures them before paint and flips or slides them fully inside the window, scrolling a menu taller than the window.
 - `src/shared/` — types and pure logic shared by the engine and UI.
 - `src/bridge/harbor_bridge.py` — the host adapter, deployed to each host.
 
