@@ -52,13 +52,31 @@ export function cleanPlans(value: unknown): AgentPlan[] {
 export function currentWindows(limits: LimitSnapshot | undefined, now = Date.now()): LimitWindow[] {
   return (limits?.windows ?? []).map(w => ({ ...(w.resetsAt && w.resetsAt * 1000 <= now ? { usedPercent: 0, ...(w.windowMinutes ? { windowMinutes: w.windowMinutes } : {}) } : w), at: w.at ?? limits!.at }));
 }
+/** Every reset time (seconds) in the limits Harbor knows, so the UI can update the moment one passes. */
+export function resetTimes(limits: UsageLimits | undefined): number[] {
+  const snapshots = [...(limits?.hosts ?? []).flatMap(h => h.agents.map(a => a.limits)), ...Object.values(limits?.chats ?? {}).map(c => c.limits)];
+  return [...new Set(snapshots.flatMap(s => s?.windows ?? []).map(w => w.resetsAt).filter((t): t is number => finite(t, 1)))];
+}
+/** At the limit now: a current window is full, or the agent said so (Codex's "limit reached") and the fullest
+ * window of that reading has not reset since. */
+export function limitReached(limits: LimitSnapshot | undefined, now = Date.now()): boolean {
+  if (!limits) return false;
+  if (currentWindows(limits, now).some(w => w.usedPercent >= 100)) return true;
+  const fullest = tightest(limits.windows);
+  return !!limits.reached && !(fullest?.resetsAt && fullest.resetsAt * 1000 <= now);
+}
 /** The window closest to its limit; on a tie, the one that resets sooner. */
 export function tightest(windows: LimitWindow[]): LimitWindow | undefined {
   return windows.reduce<LimitWindow | undefined>((worst, w) => !worst || w.usedPercent > worst.usedPercent || (w.usedPercent === worst.usedPercent && (w.windowMinutes ?? Infinity) < (worst.windowMinutes ?? Infinity)) ? w : worst, undefined);
 }
 const SAME_WINDOW = 120; // seconds: resetsAt this close is the same limit window
-/** Merge window by window (as the bridge does): a later reset is a newer window, within one window the higher
- * percentage wins (usage only grows), and a window missing from one snapshot is kept from the other. */
+/** Seconds: two readings of one window taken this close together keep the higher percentage. */
+export const CLOSE_READINGS = 600;
+/** Merge window by window (as the bridge does): a later reset is a newer window, and a window missing from one
+ * snapshot is kept from the other. Within one window, readings taken close together keep the higher percentage
+ * (usage only grows, and a chat may report a slightly older copy); a reading taken well after the other wins even
+ * when it is lower, so a window that was reset early (same resetsAt, less used) shows it. Readings are compared
+ * by time only when both carry their own time or neither does; an untimed one beside a timed one keeps the higher. */
 export function mergeLimits(a?: LimitSnapshot, b?: LimitSnapshot): LimitSnapshot | undefined {
   if (!a || !b) return a ?? b;
   type Timed = LimitWindow & { at: number; timed: boolean };
@@ -70,6 +88,7 @@ export function mergeLimits(a?: LimitSnapshot, b?: LimitSnapshot): LimitSnapshot
     if (window.timed !== kept.timed) { const untimed = window.timed ? kept : window, timed = window.timed ? window : kept; untimed.at = Math.min(untimed.at, timed.at); }
     const x = kept.resetsAt, y = window.resetsAt;
     if (x && y && Math.abs(x - y) > SAME_WINDOW) merged.set(window.windowMinutes, y > x ? window : kept);
+    else if (x && y && window.timed === kept.timed && Math.abs(window.at - kept.at) > CLOSE_READINGS) merged.set(window.windowMinutes, window.at > kept.at ? window : kept);
     else if (x && y) merged.set(window.windowMinutes, { ...kept, usedPercent: Math.max(kept.usedPercent, window.usedPercent), resetsAt: Math.max(x, y), at: Math.max(kept.at, window.at), timed: kept.timed || window.timed });
     else merged.set(window.windowMinutes, window.at > kept.at || (window.at === kept.at && window.timed) ? window : kept);
   }
@@ -143,7 +162,7 @@ export function chatPlan(session: { id: string; launcher: string; host: string; 
   const account = accounts.find(a => a.kind === 'subscription' && a.agent === agent && (accountId ? a.key === `${agent}:${accountId}` : a.hosts.some(h => h.id === id)));
   const snapshot = mergeLimits(account?.limits, billing?.limits);
   const window = tightest(currentWindows(snapshot, now));
-  return { kind, agent, plan: billing?.plan ?? fallback?.plan ?? account?.plan, window, account, limits: snapshot, reached: !!window && window.usedPercent >= 100 };
+  return { kind, agent, plan: billing?.plan ?? fallback?.plan ?? account?.plan, window, account, limits: snapshot, reached: !!window && limitReached(snapshot, now) };
 }
 
 export const level = (used: number) => used >= 90 ? 'danger' : used >= 75 ? 'warn' : '';

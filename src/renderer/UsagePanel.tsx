@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronRight, DollarSign, Gauge, Info, RefreshCw, X } from 'lucide-react';
 import type { ChatUsage, CostAmount, CostModel, HostUsage, LimitWindow, Session, TokenUsage, UsageLimits, UsagePeriod } from '../shared/types';
-import { AGENT_NAMES, SHORT_NAMES, STALE_HINT, agoText, asOfText, buildAccounts, chatPlan, currentWindows, footerSummary, leftText, level, resetText, staleUsedText, tightest, toneOf, windowLabel, windowStale, type AccountKind, type UsageAccount } from '../shared/usagePlans';
+import { AGENT_NAMES, SHORT_NAMES, STALE_HINT, agoText, asOfText, buildAccounts, chatPlan, currentWindows, footerSummary, leftText, level, limitReached, resetText, resetTimes, staleUsedText, tightest, toneOf, windowLabel, windowStale, type AccountKind, type UsageAccount } from '../shared/usagePlans';
+import { ResetClock } from '../shared/resetClock';
 import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../shared/usageTokens';
 import { AgentIcon } from './AgentIcon';
 import './usage.css';
@@ -18,14 +19,19 @@ const rangeName:Record<UsagePeriod,string>={day:'last 24 hours',week:'last week'
 // One shared copy of usage and limits, so tabs and chat bars read the same data the sidebar polls.
 type UsageData={hosts?:HostUsage[];limits?:UsageLimits};
 let shared:UsageData={};const listeners=new Set<()=>void>();
-const publish=(patch:UsageData)=>{shared={...shared,...patch};for(const listener of listeners)listener();};
+const publish=(patch:UsageData)=>{shared={...shared,...patch};if(patch.limits)clock.setResets(resetTimes(patch.limits));for(const listener of listeners)listener();};
 const subscribe=(listener:()=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener);};};
 function useUsageData(){return useSyncExternalStore(subscribe,()=>shared);}
-function useNow(interval=30000){const [now,setNow]=useState(Date.now());useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),interval);return()=>clearInterval(timer);},[interval]);return now;}
+// One clock for every usage view: it ticks every 30 s, just after each known reset time, and when the window comes
+// back into view, then asks for fresh limits once a reset has passed.
+const resetRefreshers=new Set<()=>void>();
+const clock=new ResetClock({interval:30000,onReset:()=>{for(const refresh of resetRefreshers)refresh();},wake:[[document,'visibilitychange'],[window,'focus']]});
+function useNow(){return useSyncExternalStore(clock.subscribe,clock.getNow);}
 
 export function useHostUsage(version:number,configuration:string) {
   const [hosts,setHosts]=useState<HostUsage[]>(); const [limits,setLimits]=useState<UsageLimits>(); const [busy,setBusy]=useState(false); const [error,setError]=useState('');
-  const [refresh,setRefresh]=useState(0);
+  const [refresh,setRefresh]=useState(0);const [limitsRefresh,setLimitsRefresh]=useState(0);
+  useEffect(()=>{const refresh=()=>setLimitsRefresh(v=>v+1);resetRefreshers.add(refresh);return()=>{resetRefreshers.delete(refresh);};},[]);
   useEffect(()=>{
     let cancelled=false,pending=false;
     const run=async()=>{if(pending)return;pending=true;setBusy(true);setError('');try{const value=await window.harbor.usage();if(!cancelled){setHosts(value);publish({hosts:value});}}catch(error){if(!cancelled)setError((error as Error).message);}finally{pending=false;if(!cancelled)setBusy(false);}};
@@ -36,7 +42,7 @@ export function useHostUsage(version:number,configuration:string) {
     let cancelled=false,pending=false;
     const run=async()=>{if(pending)return;pending=true;try{const value=await window.harbor.usageLimits();if(!cancelled){setLimits(value);publish({limits:value});}}catch{/* Limits are optional; costs still show. */}finally{pending=false;}};
     void run();const timer=setInterval(()=>void run(),20000);return()=>{cancelled=true;clearInterval(timer);};
-  },[version,configuration,refresh]);
+  },[version,configuration,refresh,limitsRefresh]);
   const accounts=useMemo(()=>buildAccounts(hosts,limits),[hosts,limits]);
   return {hosts,limits,accounts,busy,error,refresh:useCallback(()=>setRefresh(v=>v+1),[])};
 }
@@ -83,7 +89,7 @@ export function AccountCard({account,now,period='day',compact=false}:{account:Us
   const windows=currentWindows(account.limits,now);const worst=tightest(windows);
   const hosts=account.hosts.map(h=>h.label).join(', ');
   const name=account.agent?SHORT_NAMES[account.agent]:'';
-  const reached=!!worst&&(worst.usedPercent>=100||!!account.limits?.reached);
+  const reached=!!worst&&limitReached(account.limits,now);
   // Each window has its own reading time; the card warns only from a current one.
   const stale=windowStale(worst,now);const staleWindows=windows.filter(w=>windowStale(w,now));const allStale=!!windows.length&&staleWindows.length===windows.length;
   const tone=account.kind==='down'?'warn':worst&&!stale?level(worst.usedPercent):'';
@@ -177,10 +183,11 @@ function PlanChip({session,usage,active}:{session:Session;usage?:ChatUsage;activ
 }
 /** A small ring on a tab, only when its account is at 90% or more of a limit. */
 export function LimitRing({session}:{session:Session}) {
-  const now=useNow(60000);const plan=useChatPlan(session,now);const window=plan?.window;
+  const now=useNow();const plan=useChatPlan(session,now);const window=plan?.window;
   if(plan?.kind!=='subscription'||!window||window.usedPercent<90)return null;
-  const stale=windowStale(window,now);
-  const r=5.5,c=2*Math.PI*r;const label=`${SHORT_NAMES[plan.agent]} ${windowLabel(window).toLowerCase()}: ${stale?`${staleUsedText(window)}, ${asOfText(window.at!,now)}`:leftText(window)}`;
+  // Names the window it shows (the weekly one takes over when it is the fuller) and when that window resets.
+  const stale=windowStale(window,now);const reset=resetText(window.resetsAt,now);
+  const r=5.5,c=2*Math.PI*r;const label=`${SHORT_NAMES[plan.agent]} ${windowLabel(window).toLowerCase()} limit: ${stale?`${staleUsedText(window)}, ${asOfText(window.at!,now)}`:leftText(window)}${reset?`, resets ${reset}`:''}`;
   return <svg className={`limit-ring ${toneOf(window,stale)}`} viewBox="0 0 14 14" role="img" aria-label={label}><title>{label}</title><circle className="bg" cx="7" cy="7" r={r}/><circle className="fg" cx="7" cy="7" r={r} strokeDasharray={`${c*Math.min(100,window.usedPercent)/100} ${c}`} transform="rotate(-90 7 7)"/></svg>;
 }
 export function ChatUsageBar({session,active,version}:{session:Session;active:boolean;version:number}) {

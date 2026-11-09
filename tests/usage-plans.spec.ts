@@ -33,14 +33,14 @@ const SCENARIOS: Record<string, object> = {
   sandbox: JSON.parse(readFileSync(path.resolve('tests/fixtures/usage-mixed.json'), 'utf8')),
 };
 
-async function launch(scenario?: string) {
+async function launch(scenario?: string | object) {
   const dir = await mkdtemp(path.join(tmpdir(), 'harbor-usage-plans-')); const createdAt = new Date().toISOString();
   const projects = [{ id: 'app', name: 'harbor-app', cwd: dir, hostId: 'local', hostLabel: 'This Mac', connection: 'local', createdAt }];
   const sessions = [['claude', 'Fix tab folding'], ['codex', 'Write unit tests']].map(([launcher, name], i) => ({ id: `chat-${i}`, tmuxName: `harbor-eeee${i}`, paneId: `%${i}`, name, host: 'local', cwd: dir, launcher, group: '', tags: [], pinned: false, archived: false, createdAt, updatedAt: new Date(Date.now() - i * 1000).toISOString(), status: 'closed', projectId: 'app', hasMessages: true }));
   await writeFile(path.join(dir, 'sessions.json'), JSON.stringify({ version: 2, projects, sessions }));
   const env: Record<string, string> = { ...process.env as Record<string, string>, HARBOR_DATA_DIR: dir, HARBOR_TMUX_SOCKET: 'harbor-usage-e2e-' + process.pid };
   delete env.HARBOR_USAGE_FIXTURE; delete env.HARBOR_LIVE_USAGE;
-  if (scenario) { const file = path.join(dir, 'usage-fixture.json'); await writeFile(file, JSON.stringify(SCENARIOS[scenario])); env.HARBOR_USAGE_FIXTURE = file; }
+  if (scenario) { const file = path.join(dir, 'usage-fixture.json'); await writeFile(file, JSON.stringify(typeof scenario === 'string' ? SCENARIOS[scenario] : scenario)); env.HARBOR_USAGE_FIXTURE = file; }
   const app = await electron.launch({ executablePath: process.env.HARBOR_TEST_APP, args: process.env.HARBOR_TEST_APP ? [] : ['.'], env });
   return { app, page: await app.firstWindow() };
 }
@@ -142,8 +142,8 @@ test('near the limit: warnings, a paused account and the tab ring', async () => 
     await expect(popover.getByRole('region', { name: 'Claude Code usage' })).toContainText('Almost out. Resets in 2h 14m.');
     await shot(page, 'usage-near-popover'); await page.keyboard.press('Escape');
     await openChat(page, 'Fix tab folding'); await openChat(page, 'Write unit tests');
-    await expect(page.getByRole('img', { name: 'Claude 5-hour: 6% left' })).toBeVisible();
-    await expect(page.getByRole('img', { name: 'Codex weekly: Limit reached' })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Claude 5-hour limit: 6% left, resets in 2h 14m' })).toBeVisible();
+    await expect(page.getByRole('img', { name: /^Codex weekly limit: Limit reached, resets / })).toBeVisible();
     await expect(page.getByLabel('Plan usage')).toContainText('Limit reached');
     await shot(page, 'usage-near-tabs');
   } finally { await app.close(); }
@@ -181,7 +181,30 @@ test('stale readings are greyed lower bounds with a hint, and never warn as if c
     await shot(page, 'usage-stale-popover'); await page.keyboard.press('Escape');
     await openChat(page, 'Fix tab folding');
     await expect(page.getByLabel('Plan usage')).toContainText('5-hour · ≥91% used · as of 2 h ago'); await expect(page.getByLabel('Plan usage')).toHaveClass(/stale/);
-    const ring = page.getByRole('img', { name: 'Claude 5-hour: ≥91% used, as of 2 h ago' }); await expect(ring).toBeVisible(); await expect(ring).toHaveClass(/stale/);
+    const ring = page.getByRole('img', { name: 'Claude 5-hour limit: ≥91% used, as of 2 h ago, resets in 2h 14m' }); await expect(ring).toBeVisible(); await expect(ring).toHaveClass(/stale/);
     await shot(page, 'usage-stale-chat');
+  } finally { await app.close(); }
+});
+
+test('a ring, a paused banner and the footer clear the moment their window resets', async () => {
+  // Absolute reset times (not resetsIn), so the window really passes while the app runs.
+  const resetsAt = Date.now() / 1000 + 20;
+  const { app, page } = await launch({ usage: [{ hostId: local, hostLabel: 'This Mac', agents: [spend('claude', 1.2), spend('codex', 0.4)] }],
+    limits: { hosts: [{ hostId: local, hostLabel: 'This Mac', agents: [
+      { agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: { windows: [{ usedPercent: 95, windowMinutes: 300, resetsAt }, { usedPercent: 40, windowMinutes: 10080, resetsIn: 300000 }], ago: 30 } },
+      { agent: 'codex', mode: 'subscription', plan: 'Plus', account: 'bbbbbbbbbbbbbbbb', limits: { windows: [{ usedPercent: 100, windowMinutes: 300, resetsAt }, { usedPercent: 44, windowMinutes: 10080, resetsIn: 300000 }], ago: 30, reached: 'primary' } }] }] }, chat });
+  try {
+    await openChat(page, 'Fix tab folding');
+    const ring = page.locator('.limit-ring');
+    await expect(ring).toHaveCount(1); await expect(footer(page)).toContainText('Limit reached');
+    await footer(page).click();
+    const codex = page.getByRole('dialog', { name: 'Usage', exact: true }).getByRole('region', { name: 'Codex usage' });
+    await expect(codex).toContainText('Codex is paused until');
+    // Well inside the old 60-second ring interval: the clock ticks just after the reset time itself.
+    const timeout = resetsAt * 1000 - Date.now() + 4000;
+    await expect(codex).not.toContainText('paused', { timeout }); await expect(codex).toContainText('100% left');
+    await page.keyboard.press('Escape');
+    await expect(ring).toHaveCount(0, { timeout: 2000 });
+    await expect(footer(page)).not.toContainText('Limit reached');
   } finally { await app.close(); }
 });
