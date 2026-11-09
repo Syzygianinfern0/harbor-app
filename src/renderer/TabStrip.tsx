@@ -4,7 +4,7 @@ import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, StatusIcon, UnreadDot } from './ChatStatusIcon';
 import { LimitRing } from './UsagePanel';
-import { activityLabel, chatActivity, tracksActivity, type ChatStatus } from '../shared/chatStatus';
+import { activityLabel, chatActivity, rollupIcon, rollupLabel, rollupStatus, tracksActivity } from '../shared/chatStatus';
 import { terminalCommand } from '../shared/terminalName';
 import { dropSide, planStripDrop, type StripSource } from '../shared/dropCue';
 import { splitRuns } from '../shared/splits';
@@ -177,14 +177,14 @@ export function TabStrip(props:TabStripProps) {
   };
   const chip=(key:string,ids:string[])=>{
     const info=groupInfo(key,groups,props.projects);const folded=isCollapsed(groups,key,selectedKey);const holds=!!selected&&ids.includes(selected);
-    const members=ids.map(id=>byId.get(id)!);const summary=folded?rollup(members,s=>chatActivity(s)):undefined;
+    const members=ids.map(id=>byId.get(id)!);const summary=folded?rollup(members,rollupStatus):undefined;
     const hidden=members.filter(s=>s.id!==selected);
     const toggle=()=>{
       // Focus mode: a chip switches groups; the open group's label folds it (showing the overview).
       if(groups.focus&&selected&&key!==selectedKey){const entry=byId.get(groupEntry(groups,segments,key));if(entry)props.onOpen(entry);return;}
       props.onToggleGroup(key);
     };
-    const label=`${info.name} group, ${ids.length} ${ids.length===1?'chat':'chats'}${summary?`, ${activityLabel[summary.activity as ChatStatus].toLowerCase()}`:''}`;
+    const label=`${info.name} group, ${ids.length} ${ids.length===1?'chat':'chats'}${summary?`, ${rollupLabel(summary.activity).toLowerCase()}`:''}`;
     return <div key={key} data-group-key={key} data-hidden-count={folded?hidden.length:undefined} data-attention={folded?hidden.filter(s=>chatActivity(s)==='attention').map(s=>s.id).join(' '):undefined}
       className={`tab-group-chip ${folded?'collapsed':''} ${folded&&holds?'holds-active':''} ${drag.source===key?'drag-source':''} ${cueOf(key)&&cueOf(key)!.x===undefined?'drop-into':''}`} style={{'--group-color':info.color} as CSSProperties}
       draggable onDragStart={event=>{event.dataTransfer.setData(GROUP,key);event.dataTransfer.effectAllowed='move';drag.setSource(key);}} onDragEnd={()=>drag.setSource(undefined)} {...targetProps({key},key)}
@@ -192,7 +192,7 @@ export function TabStrip(props:TabStripProps) {
       <span className="chip-pill"><button className="chip-label" aria-expanded={!folded} aria-label={label} title={`${info.name}${info.detail?` · ${info.detail}`:''} · ${ids.length} ${ids.length===1?'chat':'chats'}\n${groups.focus&&selected?(key===selectedKey?'Click to collapse':'Switch to this group'):folded?'Click to expand':'Click to collapse'} · right-click for options`} onClick={toggle}>
         <span className="chip-name">{info.name}</span>{folded&&<span className="chip-count" aria-hidden="true">{ids.length}</span>}
       </button>
-      {summary&&<button className="chip-rollup" aria-label={`Open ${summary.item.name}: ${activityLabel[summary.activity as ChatStatus]}`} title={`${activityLabel[summary.activity as ChatStatus]}: ${summary.item.name}${summary.count>1?` (+${summary.count-1} more)`:''}\nClick to open`} onClick={()=>props.onOpen(summary.item)}><StatusIcon activity={summary.activity as ChatStatus}/></button>}{folded&&<UnreadDot sessions={hidden} rollup/>}</span>
+      {summary&&<button className="chip-rollup" aria-label={`Open ${summary.item.name}: ${rollupLabel(summary.activity)}`} title={`${rollupLabel(summary.activity)}: ${summary.item.name}${summary.count>1?` (+${summary.count-1} more)`:''}\nClick to open`} onClick={()=>props.onOpen(summary.item)}><StatusIcon activity={rollupIcon(summary.activity)}/></button>}{folded&&<UnreadDot sessions={hidden} rollup/>}</span>
     </div>;
   };
   const edge=(side:'left'|'right')=>{const e=edges[side];if(!e.count)return null;const Arrow=side==='left'?ChevronLeft:ChevronRight;

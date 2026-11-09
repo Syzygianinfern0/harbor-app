@@ -3,7 +3,7 @@ import type { Project, Session } from '../shared/types';
 import { AgentIcon } from './AgentIcon';
 import { ChatStatusIcon, UnreadDot } from './ChatStatusIcon';
 import { unreadCount } from '../shared/unread';
-import { chatActivity } from '../shared/chatStatus';
+import { chatActivity, rollupStatus } from '../shared/chatStatus';
 import { ROLLUP_ORDER, type Segment, type TabGroups } from '../shared/tabGroups';
 import { groupInfo } from './TabStrip';
 
@@ -11,7 +11,7 @@ import { groupInfo } from './TabStrip';
 export function GroupsOverview({segments,groups,sessions,projects,onOpen,onUnfold}:{segments:Segment[];groups:TabGroups;sessions:Session[];projects:Project[];onOpen:(session:Session)=>void;onUnfold:(key:string)=>void}) {
   const byId=new Map(sessions.map(s=>[s.id,s]));
   const cards=segments.flatMap(s=>s.kind==='group'?[{...groupInfo(s.key,groups,projects),chats:s.tabs.map(id=>byId.get(id)).filter((c):c is Session=>!!c)}]:[]);
-  const rank=(s:Session)=>{const i=(ROLLUP_ORDER as readonly string[]).indexOf(chatActivity(s));return i<0?ROLLUP_ORDER.length:i;};
+  const rank=(s:Session)=>{const i=(ROLLUP_ORDER as readonly string[]).indexOf(rollupStatus(s));return i<0?ROLLUP_ORDER.length:i;};
   const waiting=cards.reduce((n,c)=>n+c.chats.filter(s=>chatActivity(s)==='attention').length,0);
   const total=cards.reduce((n,c)=>n+c.chats.length,0);const unread=unreadCount(cards.flatMap(c=>c.chats));
   return <div className="groups-overview">
