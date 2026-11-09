@@ -5,11 +5,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarborEngine } from '../src/engine/engine';
 import { Transport } from '../src/engine/transport';
+import { killTestServer, useTestShell } from './helpers/tmux';
+
+useTestShell();
 import { compareVersions } from '../src/engine/updates';
 
 test('projects retain their directory; closing stops tmux and reopening creates a new incarnation',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'harbor-project-'));const transport=new Transport('harbor-project-'+Date.now());const engine=new HarborEngine(dir,transport);await engine.init(false);
- t.after(async()=>{await engine.dispose();await transport.run('local',transport.setup()+transport.tmux(['kill-server'])).catch(()=>{});});
+ t.after(async()=>{await engine.dispose();await killTestServer(transport, 'local');});
  const project=await engine.addProject({name:'Project',host:'local',cwd:dir});
  const chat=await engine.create({name:'Terminal',host:'local',cwd:'~',launcher:'shell',projectId:project.id});assert.equal(chat.cwd,project.cwd);
  await engine.terminate(chat.id);assert.equal(engine.snapshot().sessions[0].status,'closed');assert.equal(engine.snapshot().sessions[0].archived,false);

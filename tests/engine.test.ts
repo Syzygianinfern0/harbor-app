@@ -8,6 +8,9 @@ import { HarborEngine, validateCreate } from '../src/engine/engine';
 import { ControlParser, decodeOutput } from '../src/engine/control';
 import { discoverHosts } from '../src/engine/hosts';
 import { CommandError, Transport, quote, validateHost } from '../src/engine/transport';
+import { killTestServer, useTestShell } from './helpers/tmux';
+
+useTestShell();
 
 test('control parser preserves binary and split UTF-8, recognizes guarded command responses', () => {
   assert.deepEqual(decodeOutput(Buffer.from('a\\015\\012\\134\\000')), Buffer.from([97, 13, 10, 92, 0]));
@@ -50,7 +53,7 @@ for (const host of ['local', ...(process.env.HARBOR_TEST_SSH ? [process.env.HARB
       await engine.savePreferences(preferences);
     }
 
-    t.after(async () => { await engine.dispose(); await transport.run(host, transport.setup() + transport.tmux(['kill-server'])).catch(() => {}); });
+    t.after(async () => { await engine.dispose(); await killTestServer(transport, host); });
     const diagnosis = await engine.diagnose(host); assert.equal(diagnosis.ok, true, diagnosis.error);
     const testDir = host === 'local' ? path.join(dataDir, "folder with 'quotes' and $dollars") : '~/harbor-smoke-test-20260916';
     if (host === 'local') await mkdir(testDir);

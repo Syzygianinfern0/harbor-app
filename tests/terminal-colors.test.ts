@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { HarborEngine } from '../src/engine/engine';
 import { Transport, quote } from '../src/engine/transport';
+import { killTestServer, useTestShell } from './helpers/tmux';
+
+useTestShell();
 
 // Query from a real raw-mode PTY, not a mocked control-protocol response.
 const probe = `import json, os, pathlib, select, time, tty
@@ -25,12 +28,18 @@ for (const host of ['local', ...(process.env.HARBOR_TEST_SSH ? [process.env.HARB
   test(`terminal colors on ${host}: startup, attachment, reattachment and resume`, { timeout: 60000 }, async t => {
     const transport = new Transport('harbor-colors-' + randomUUID().slice(0, 8));
     const run = (script: string) => transport.run(host, transport.setup() + script);
-    const remoteDir = (await run('mktemp -d /tmp/harbor-colors.XXXXXXXX')).trim();
-    const engine = new HarborEngine(await mkdtemp(path.join(tmpdir(), 'harbor-colors-data-')), transport);
+    // Local scratch lives under os.tmpdir(); remote hosts use their own /tmp.
+    const remoteDir = host === 'local'
+      ? await mkdtemp(path.join(tmpdir(), 'harbor-colors-'))
+      : (await run('mktemp -d /tmp/harbor-colors.XXXXXXXX')).trim();
+    const dataDir = await mkdtemp(path.join(tmpdir(), 'harbor-colors-data-'));
+    const engine = new HarborEngine(dataDir, transport);
     t.after(async () => {
-      await engine.dispose();
-      await run(transport.tmux(['kill-server'])).catch(() => {});
-      await run(`rm -rf -- ${quote(remoteDir)}`);
+      try { await engine.dispose(); } finally {
+        await killTestServer(transport, host);
+        await run(`rm -rf -- ${quote(remoteDir)}`).catch(() => {});
+        await rm(dataDir, { recursive: true, force: true });
+      }
     });
     await engine.init(false);
     if (host !== 'local') {

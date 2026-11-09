@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { HarborEngine } from '../src/engine/engine';
 import { AgentBridge } from '../src/engine/bridge';
 import { Transport, quote } from '../src/engine/transport';
+import { killTestServer } from './helpers/tmux';
 import { forkBlocker, forkName, placeFork } from '../src/shared/fork';
 import { dropPane, leaf, paneIds } from '../src/shared/panes';
 import type { Connection, Session } from '../src/shared/types';
@@ -84,7 +85,7 @@ for(const launcher of ['claude','codex'] as const)test(`real ${launcher}: a fork
  const word='zebra'+Math.random().toString(36).slice(2,8);const conversations=new Set<string>();
  t.after(async()=>{
   for(const s of engine.snapshot().sessions){await engine.terminate(s.id).catch(()=>{});if(s.conversationId)conversations.add(s.conversationId);}
-  await engine.dispose();await transport.run('local',transport.setup()+transport.tmux(['kill-server'])).catch(()=>{});
+  await engine.dispose();await killTestServer(transport, 'local');
   // Remove only this test's throwaway conversations.
   if(launcher==='codex')for(const id of [...conversations].reverse())await transport.run('local',transport.setup()+`codex delete --force ${quote(id)} </dev/null`).catch(()=>{}); // Forks first: Codex refuses to delete a fork's source.
   else await rm(path.join(homedir(),'.claude/projects',(await transport.run('local',`cd ${quote(dir)} && pwd -P`)).trim().replace(/[^a-zA-Z0-9]/g,'-')),{recursive:true,force:true});

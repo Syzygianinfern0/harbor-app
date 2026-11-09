@@ -6,10 +6,13 @@ import path from 'node:path';
 import { HarborEngine } from '../src/engine/engine';
 import { AgentBridge } from '../src/engine/bridge';
 import { Transport, quote } from '../src/engine/transport';
+import { killTestServer, useTestShell } from './helpers/tmux';
+
+useTestShell();
 async function until<T>(read:()=>Promise<T>,accept:(v:T)=>boolean,timeout=60000):Promise<T>{const end=Date.now()+timeout;while(Date.now()<end){const value=await read();if(accept(value))return value;await new Promise(r=>setTimeout(r,250));}throw new Error('Timed out waiting for the external CLI');}
 for(const launcher of ['codex','claude'] as const)test(`imports a chat created by standalone ${launcher}, blocks an active writer, and resumes the exact history`,{skip:!process.env.HARBOR_TEST_AGENTS,timeout:120000},async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'harbor-outside-'+launcher+'-'));const data=await mkdtemp(path.join(tmpdir(),'harbor-outside-index-'));const transport=new Transport('harbor-outside-'+launcher+'-'+Date.now());const bridge=new AgentBridge(transport);const engine=new HarborEngine(data,transport);await engine.init(false);
- t.after(async()=>{for(const s of engine.snapshot().sessions)await engine.terminate(s.id).catch(()=>{});await engine.dispose();await transport.run('local',transport.setup()+transport.tmux(['kill-server'])).catch(()=>{});});
+ t.after(async()=>{for(const s of engine.snapshot().sessions)await engine.terminate(s.id).catch(()=>{});await engine.dispose();await killTestServer(transport, 'local');});
  // The source conversation runs the unmodified standalone CLI, without Harbor's wrapper or hooks.
  await transport.run('local',transport.setup()+`cd ${quote(dir)}\n${transport.tmux(['new-session','-d','-s','outside','-x','120','-y','35',`exec ${launcher}`])}`);
  const capture=()=>transport.run('local',transport.setup()+transport.tmux(['capture-pane','-p','-t','outside']));
@@ -33,7 +36,7 @@ for(const launcher of ['codex','claude'] as const)test(`imports a chat created b
 });
 for(const launcher of ['codex','claude'] as const)test(`an empty ${launcher} chat can be closed and opened again`,{skip:!process.env.HARBOR_TEST_AGENTS,timeout:45000},async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'harbor-empty-'+launcher+'-'));const transport=new Transport('harbor-empty-'+launcher+'-'+Date.now());const engine=new HarborEngine(dir,transport);await engine.init(false);
- t.after(async()=>{for(const s of engine.snapshot().sessions)await engine.terminate(s.id).catch(()=>{});await engine.dispose();await transport.run('local',transport.setup()+transport.tmux(['kill-server'])).catch(()=>{});});
+ t.after(async()=>{for(const s of engine.snapshot().sessions)await engine.terminate(s.id).catch(()=>{});await engine.dispose();await killTestServer(transport, 'local');});
  const session=await engine.create({name:'New chat',host:'local',cwd:dir,launcher});
  await until(async()=>{await engine.refresh();return engine.snapshot().sessions[0];},s=>!!s.conversationId,20000);
  await engine.terminate(session.id);const resumed=await engine.resume(session.id);assert.notEqual(resumed.tmuxName,session.tmuxName);
