@@ -8,7 +8,8 @@ export interface LineInfo {kind:'blank'|'heading'|'item'|'text'|'fence'|'code';i
 /** A list item and its subtree: lines [line, end) of the note, children nested by indentation. */
 export interface ListNode {line:number;end:number;indent:number;ordered:boolean;num:number;task:boolean;checked:boolean;priority:Priority;content:string;more:string[];children:ListNode[]}
 export interface List {t:'list';ordered:boolean;start:number;items:ListNode[]}
-export type Block={t:'heading';level:1|2|3;text:string}|{t:'para';lines:string[]}|{t:'code';v:string}|List;
+/** Headings, paragraphs and code blocks also carry their lines [line, end) of the note (a code block's include its fences). */
+export type Block=({t:'heading';level:1|2|3;text:string}|{t:'para';lines:string[]}|{t:'code';v:string})&{line:number;end:number}|List;
 
 const ITEM=/^([ \t]*)([-*+]|(\d{1,9})([.)]))(?:[ \t]+|$)(.*)$/,TASK=/^\[([ xX])\](?:[ \t]+|$)/,PRIORITY=/(?:^|[ \t])!p([1-4])[ \t]*$/i;
 export const indentOf=(line:string)=>{let n=0;for(const ch of line){if(ch===' ')n++;else if(ch==='\t')n+=4-n%4;else break;}return n;};
@@ -65,12 +66,12 @@ export function parseBlocks(text:string):Block[] {
   for(let i=0;i<lines.length;){
     const l=lines[i];
     if(l.kind==='blank'){i++;continue;}
-    if(l.kind==='heading'){blocks.push({t:'heading',level:l.level as 1|2|3,text:l.content});i++;continue;}
-    if(l.kind==='fence'){const body:string[]=[];for(i++;i<lines.length&&lines[i].kind==='code';i++)body.push(raw[i]);if(lines[i]?.kind==='fence')i++;blocks.push({t:'code',v:body.join('\n')});continue;}
+    if(l.kind==='heading'){blocks.push({t:'heading',level:l.level as 1|2|3,text:l.content,line:i,end:i+1});i++;continue;}
+    if(l.kind==='fence'){const line=i,body:string[]=[];for(i++;i<lines.length&&lines[i].kind==='code';i++)body.push(raw[i]);if(lines[i]?.kind==='fence')i++;blocks.push({t:'code',v:body.join('\n'),line,end:i});continue;}
     if(l.kind==='code'){i++;continue;}
     const region=regions.get(i);
     if(region){blocks.push(...groupLists(region.roots));i=region.end;continue;}
-    const para:string[]=[];for(;i<lines.length&&lines[i].kind==='text';i++)para.push(lines[i].content);blocks.push({t:'para',lines:para});
+    const line=i,para:string[]=[];for(;i<lines.length&&lines[i].kind==='text';i++)para.push(lines[i].content);blocks.push({t:'para',lines:para,line,end:i});
   }
   return blocks;
 }

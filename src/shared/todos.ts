@@ -125,10 +125,13 @@ export function deleteTask(text:string,line:number):string {
   const found=find(text,line);if(!found)return text;const {node,siblings}=found,lines=text.split('\n');
   const k=siblings.indexOf(node),prev=siblings[k-1],follow=siblings[k+1],num=NUM.exec(lines[node.line]);
   if(num&&follow&&!(prev&&NUM.test(lines[prev.line]))&&NUM.test(lines[follow.line]))lines[follow.line]=lines[follow.line].replace(NUM,`$1${num[2]}$3`);
-  lines.splice(node.line,node.end-node.line);
-  const at=node.line,blank=(i:number)=>i<0||i>=lines.length||!lines[i].trim();
-  if(lines.length>1&&blank(at-1)&&blank(at))lines.splice(at<lines.length?at:at-1,1);
+  cut(lines,node.line,node.end-node.line);
   return renumber(lines.join('\n'));
+}
+/** Remove lines [at, at+count), dropping a blank line the cut leaves doubled (or leading/trailing the note). */
+function cut(lines:string[],at:number,count:number) {
+  lines.splice(at,count);const blank=(i:number)=>i<0||i>=lines.length||!lines[i].trim();
+  if(lines.length>1&&blank(at-1)&&blank(at))lines.splice(at<lines.length?at:at-1,1);
 }
 
 /** Move an item one place up or down among its siblings, with its subtree. Undefined at either end. */
@@ -162,4 +165,37 @@ export function outdentTask(text:string,line:number):Placed|undefined {
   const found=find(text,line);if(!found?.parent)return;const {node,parent}=found;
   const next=moveTask(text,line,parent.line,true);
   return next===undefined?undefined:{text:next,line:parent.end-(node.end-node.line)};
+}
+
+// Headings, paragraphs and code blocks edit as a whole: the view shows a block's source (`blockSource`) and writes the
+// edited text back once, with `editBlock`, since typing `- [ ] ` or `# ` turns a paragraph into another kind of block.
+const HASHES=/^[ \t]{0,3}#{1,6}/;
+/** What a block edits as: a heading's text, a code block's body (no fences), or a paragraph's lines. */
+export function blockSource(text:string,line:number,end:number):string {
+  const lines=text.split('\n'),info=scanLines(text),first=info[line];
+  if(first?.kind==='heading')return first.content;
+  if(first?.kind==='fence')return lines.slice(line+1,end-1>line&&info[end-1]?.kind==='fence'?end-1:end).join('\n');
+  return lines.slice(line,end).join('\n');
+}
+/** Write back a block [line, end) from its edited source; empty source deletes it. A heading keeps its own `#` run, a
+ *  code block its fences. Returns the new text and where the block now ends. */
+export function editBlock(text:string,line:number,end:number,source:string):{text:string;end:number} {
+  const lines=text.split('\n'),info=scanLines(text),first=info[line];let next:string[]=[];
+  if(first?.kind==='heading'){const body=oneLine(source).trim();if(body)next=[`${HASHES.exec(lines[line])![0]} ${body}`];}
+  else if(first?.kind==='fence'){if(source)next=[lines[line],...source.split('\n'),...(end-1>line&&info[end-1]?.kind==='fence'?[lines[end-1]]:[])];}
+  else if(source.trim())next=source.replace(/^(?:[ \t]*\n)+/,'').replace(/\s+$/,'').split('\n');
+  if(!next.length){cut(lines,line,end-line);return {text:lines.join('\n'),end:line};}
+  lines.splice(line,end-line,...next);
+  return {text:lines.join('\n'),end:line+next.length};
+}
+/** A new paragraph at line `at` (past the end appends it), set off by blank lines so it never runs into a list or the
+ *  paragraph beside it. */
+export function insertParagraph(text:string,at:number,content:string):Placed&{end:number} {
+  const body=content.replace(/^(?:[ \t]*\n)+/,'').replace(/\s+$/,'').split('\n');
+  if(!text.trim())return {text:body.join('\n'),line:0,end:body.length};
+  const lines=text.split('\n');
+  if(at>=lines.length){while(!lines.at(-1)!.trim())lines.pop();at=lines.length;}
+  const before=at>0&&lines[at-1].trim()?['']:[],after=at<lines.length&&lines[at].trim()?['']:[];
+  lines.splice(at,0,...before,...body,...after);
+  return {text:lines.join('\n'),line:at+before.length,end:at+before.length+body.length};
 }
