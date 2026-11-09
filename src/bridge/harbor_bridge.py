@@ -1201,8 +1201,9 @@ def claude_activity(event):
     if kind == 'Notification':
         notification = event.get('notification_type')
         if notification == 'permission_prompt': activity, reason = 'attention', 'Approval requested'
-        elif notification in ('elicitation_dialog','elicitation_url_dialog','agent_needs_input'): activity, reason = 'attention', 'Input requested'
-        elif notification in ('idle_prompt','agent_completed'): activity = 'idle'
+        elif notification in ('elicitation_dialog','elicitation_url_dialog'): activity, reason = 'attention', 'Input requested'
+        elif notification == 'idle_prompt': activity = 'idle'
+        # agent_needs_input and agent_completed report other agent sessions (background agents), not this chat.
     return activity, reason
 
 def run(args):
