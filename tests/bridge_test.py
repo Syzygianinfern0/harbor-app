@@ -13,7 +13,8 @@ class BridgeTests(unittest.TestCase):
  def test_claude_completion_is_distinct_from_input_and_errors(self):
   event=lambda name,**kw: bridge.claude_activity({'hook_event_name':name,**kw})
   self.assertEqual(event('Notification',notification_type='idle_prompt')[0],'idle')
-  self.assertEqual(event('Notification',notification_type='agent_completed')[0],'idle')
+  self.assertIsNone(event('Notification',notification_type='agent_completed')[0])
+  self.assertIsNone(event('Notification',notification_type='agent_needs_input')[0])
   self.assertEqual(event('Notification',notification_type='permission_prompt')[0],'attention')
   self.assertEqual(event('Notification',notification_type='elicitation_url_dialog')[0],'attention')
   self.assertEqual(event('PreToolUse',tool_name='AskUserQuestion')[0],'attention')
