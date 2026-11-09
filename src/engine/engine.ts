@@ -8,6 +8,7 @@ import { discoverHosts } from './hosts';
 import { checkAgentUpdates, updateMachines, installAgentUpdate } from './updates';
 import { validateMode } from '../shared/agentModes';
 import { forkBlocker, forkName } from '../shared/fork';
+import { cleanChatName, injectedChatName } from '../shared/chatName';
 import { onlyArtifactWatches, tracksActivity } from '../shared/chatStatus';
 import { defaultTerminalName, legacyTerminalName, needsTerminalNumber, nextTerminalNumber, terminalName } from '../shared/terminalName';
 import { UpdateManager } from './updateManager';
@@ -92,6 +93,11 @@ export class HarborEngine extends EventEmitter {
     for (const session of [...this.sessions].sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))) {
       if (session.status === 'closed' || !legacyTerminalName(session)) continue;
       session.name = terminalName(nextTerminalNumber(this.sessions, session.projectId, session.id)); migrated = true;
+    }
+    // Older bridges could name a chat after a slash-command caveat or injected context; fall back until a real title arrives.
+    for (const session of this.sessions) {
+      if (session.nameSource === 'manual' || (session.launcher !== 'codex' && session.launcher !== 'claude') || !injectedChatName(session.name)) continue;
+      session.name = cleanChatName(session.name) ?? 'Untitled chat'; migrated = true;
     }
     if (migrated) await this.persist();
     await this.updates.load();
@@ -258,9 +264,9 @@ export class HarborEngine extends EventEmitter {
         if (!/^[a-f0-9-]{36}$/i.test(conversation.conversationId)) continue;
         const matches = this.sessions.filter(s=>s.conversationId === conversation.conversationId && s.launcher === conversation.launcher && JSON.stringify(this.connection(s))===JSON.stringify(project.connection));
         const existing = matches.find(s=>!s.imported) ?? matches[0];
-        if (existing) { this.dropDuplicates(existing); if(existing.projectRemoved){existing.projectId=projectId;existing.projectRemoved=false;} if(typeof conversation.hasMessages==='boolean'&&existing.hasMessages!==true)existing.hasMessages=conversation.hasMessages; if (existing.nameSource !== 'manual') existing.name=conversation.name; if (existing.status === 'closed') existing.externalActive=conversation.externalActive; continue; }
+        if (existing) { this.dropDuplicates(existing); if(existing.projectRemoved){existing.projectId=projectId;existing.projectRemoved=false;} if(typeof conversation.hasMessages==='boolean'&&existing.hasMessages!==true)existing.hasMessages=conversation.hasMessages; const name=cleanChatName(conversation.name); if (existing.nameSource !== 'manual' && name) existing.name=name; if (existing.status === 'closed') existing.externalActive=conversation.externalActive; continue; }
         const id=randomUUID(); const connection=project.connection;
-        this.sessions.push({id,tmuxName:`harbor-${id}`,paneId:'%0',projectId,name:conversation.name,nameSource:'auto',host:typeof connection==='string'?connection:connection.target,hostId:project.hostId,hostLabel:project.hostLabel,...(typeof connection==='object'?{connection:structuredClone(connection)}:{}),cwd:conversation.cwd,launcher:conversation.launcher,command:conversation.launcher,group:project.name,tags:[],pinned:false,archived:false,createdAt:new Date(conversation.createdAt*1000).toISOString(),updatedAt:new Date(conversation.updatedAt*1000).toISOString(),status:'closed',activity:'closed',conversationId:conversation.conversationId,resumable:true,hasMessages:conversation.hasMessages,imported:true,externalActive:conversation.externalActive});
+        this.sessions.push({id,tmuxName:`harbor-${id}`,paneId:'%0',projectId,name:cleanChatName(conversation.name)??'Untitled chat',nameSource:'auto',host:typeof connection==='string'?connection:connection.target,hostId:project.hostId,hostLabel:project.hostLabel,...(typeof connection==='object'?{connection:structuredClone(connection)}:{}),cwd:conversation.cwd,launcher:conversation.launcher,command:conversation.launcher,group:project.name,tags:[],pinned:false,archived:false,createdAt:new Date(conversation.createdAt*1000).toISOString(),updatedAt:new Date(conversation.updatedAt*1000).toISOString(),status:'closed',activity:'closed',conversationId:conversation.conversationId,resumable:true,hasMessages:conversation.hasMessages,imported:true,externalActive:conversation.externalActive});
       }
       await this.persist(); this.changed();
     } catch(error) { project.historyError=(error as Error).message; this.changed(); }
@@ -281,7 +287,7 @@ export class HarborEngine extends EventEmitter {
           if(meta.hasMessages===true || (meta.hasMessages===false&&session.hasMessages!==true))session.hasMessages=meta.hasMessages;
           if(meta.resumable!==undefined) session.resumable=meta.resumable;
           const billing=cleanBilling(meta.billing&&{...meta.billing,limits:meta.limits});if(billing)this.chatBilling.set(session.id,billing);
-          if(meta.name && session.nameSource!=='manual') session.name=meta.name.slice(0,100);
+          const name=cleanChatName(meta.name); if(name && session.nameSource!=='manual') session.name=name;
           let {activity,reason,completedAt}=meta;
           // Older bridges record a watch-only wait as background and bump updatedAt every poll, so the finish time is fixed once
           // when the wait begins, and only a turn seen running announces it; a wait already on screen or settled is not a new finish.
