@@ -893,6 +893,7 @@ def claude_plan(environ=None, cwd=None):
     return {'mode': 'unknown'}
 
 SAME_WINDOW = 120  # resetsAt within 2 minutes: the same limit window
+CLOSE_READINGS = 600  # readings of one window taken within 10 minutes keep the higher percentage
 # Versioned because chats launched by an older Harbor keep running their old bridge, whose status line
 # rewrites limits/claude.json wholesale with a cached reading stamped "now". Those entries are ignored.
 def claude_limits_file():
@@ -900,8 +901,10 @@ def claude_limits_file():
 
 def merge_limits(old, new):
     """Merge two snapshots window by window, so an idle chat's cached reading never overwrites a newer one:
-    a later reset is a newer window; within the same window usage only grows, so the higher percentage
-    wins; a window missing from one snapshot is kept from the other. Each window keeps its own time."""
+    a later reset is a newer window; within the same window, readings taken close together keep the higher
+    percentage (usage only grows), while a reading taken well after the other wins even when lower, so an
+    early reset (same resetsAt, less used) shows. Times are compared only when both windows carry their own
+    or neither does. A window missing from one snapshot is kept from the other. Each window keeps its own time."""
     if not isinstance(old, dict) or not isinstance(old.get('windows'), list): return new
     if not isinstance(new, dict) or not isinstance(new.get('windows'), list): return old
     def windows(snapshot):
@@ -917,6 +920,7 @@ def merge_limits(old, new):
             untimed['at'] = min(untimed['at'], timed['at'])
         a, b = kept.get('resetsAt'), window.get('resetsAt')
         if a and b and abs(a - b) > SAME_WINDOW: merged[key] = window if b > a else kept
+        elif a and b and window['timed'] == kept['timed'] and abs(window['at'] - kept['at']) > CLOSE_READINGS: merged[key] = window if window['at'] > kept['at'] else kept
         elif a and b: merged[key] = {**kept, 'usedPercent': max(kept['usedPercent'], window['usedPercent']), 'resetsAt': max(a, b), 'at': max(kept['at'], window['at']), 'timed': kept['timed'] or window['timed']}
         else: merged[key] = window if window['at'] > kept['at'] or (window['at'] == kept['at'] and window['timed']) else kept
     for window in merged.values(): window.pop('timed', None)

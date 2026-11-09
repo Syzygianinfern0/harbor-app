@@ -274,6 +274,20 @@ class ClaudeReadings(unittest.TestCase):
             meta = json.loads((h.root / 'chats' / CHAT / 'metadata.json').read_text())['limits']['windows']
             self.assertEqual([(w['usedPercent'], w['resetsAt']) for w in meta], [(2.0, 1900018000.0)])
 
+    def test_an_early_reset_shows_once_a_later_reading_arrives(self):
+        """Within one window, readings close in time keep the higher percentage; a much later one wins."""
+        with Homes() as h:
+            h.write(h.claude / '.claude.json', {'oauthAccount': {'organizationType': 'claude_max', 'accountUuid': 'raw-acct'}}); account = bridge.claude_plan({})['account']
+            transcript = self.chat(h, CHAT, account, 1800)
+            store = lambda used: bridge.store_claude_limits(CHAT, GEN, {'transcript_path': transcript, 'rate_limits': {'seven_day': {'used_percentage': used, 'resets_at': 1900300000}}})
+            store(93)
+            os.utime(transcript, (time.time() - 1500,) * 2); store(60)  # 5 minutes later: still the higher copy
+            self.assertEqual(self.windows()[10080]['usedPercent'], 93.0)
+            os.utime(transcript, (time.time(),) * 2); store(4)  # 30 minutes later, same reset time: reset early
+            self.assertEqual(self.windows()[10080]['usedPercent'], 4.0)
+            meta = json.loads((h.root / 'chats' / CHAT / 'metadata.json').read_text())['limits']['windows']
+            self.assertEqual([w['usedPercent'] for w in meta], [4.0])
+
     def test_bridges_from_an_older_harbor_cannot_flip_the_reading(self):
         """Chats launched before an update keep running their old bridge, which rewrites limits/claude.json
         and its chat's metadata wholesale with a cached reading stamped now and no per-window times."""

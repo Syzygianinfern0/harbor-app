@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { STALE_AFTER_MS, asOfText, buildAccounts, chatPlan, cleanBilling, cleanLimits, cleanPlans, currentWindows, footerSummary, isStale, mergeLimits, windowStale, leftText, resetText, staleUsedText, tightest, toneOf, windowLabel } from '../src/shared/usagePlans';
+import { STALE_AFTER_MS, asOfText, buildAccounts, chatPlan, cleanBilling, cleanLimits, cleanPlans, currentWindows, footerSummary, isStale, limitReached, mergeLimits, resetTimes, windowStale, leftText, resetText, staleUsedText, tightest, toneOf, windowLabel } from '../src/shared/usagePlans';
 import { usageSourceFromEnv, fixtureLimits } from '../src/engine/usageSource';
 import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../src/shared/usageTokens';
 import type { AgentUsage, HostUsage, UsageLimits } from '../src/shared/types';
@@ -131,4 +131,36 @@ test('an older bridge\'s untimed reading never replaces or freshens a timed wind
   const legacy = { windows: [{ usedPercent: 80, windowMinutes: 10080, resetsAt: sec + 300000 }, { usedPercent: 10, windowMinutes: 60 }], at: sec };
   for (const merged of [mergeLimits(known, legacy)!, mergeLimits(legacy, known)!])
     assert.deepEqual(merged.windows.map(w => [w.windowMinutes, w.usedPercent, w.at]), [[60, 40, sec - 900], [300, 3, sec - 30], [10080, 86, sec - 30]]);
+});
+
+test('within one window, a reading taken well after the other wins even when lower (an early reset)', () => {
+  const at = (minutesAgo: number, used: number, resetsAt = sec + 9000) => ({ windows: [{ usedPercent: used, windowMinutes: 10080, resetsAt, at: sec - minutesAgo * 60 }], at: sec - minutesAgo * 60 });
+  // Close together: usage only grows, so the higher copy stays, whichever came first.
+  for (const merged of [mergeLimits(at(3, 92), at(1, 60))!, mergeLimits(at(1, 60), at(3, 92))!]) assert.deepEqual([merged.windows[0].usedPercent, merged.windows[0].at], [92, sec - 60]);
+  // Far apart: the newer reading is the truth, in either order.
+  for (const merged of [mergeLimits(at(45, 92), at(1, 5, sec + 9060))!, mergeLimits(at(1, 5, sec + 9060), at(45, 92))!]) assert.deepEqual([merged.windows[0].usedPercent, merged.windows[0].at], [5, sec - 60]);
+  // An untimed reading (an older bridge) beside a timed one still never wins by being lower.
+  const untimed = { windows: [{ usedPercent: 92, windowMinutes: 10080, resetsAt: sec + 9000 }], at: sec - 3600 };
+  assert.equal(mergeLimits(untimed, at(1, 5))!.windows[0].usedPercent, 92);
+  // Two untimed snapshots (Codex) are ordered by their snapshot time.
+  assert.equal(mergeLimits(untimed, { ...untimed, windows: [{ ...untimed.windows[0], usedPercent: 3 }], at: sec - 60 })!.windows[0].usedPercent, 3);
+});
+
+test('Codex\'s "limit reached" stops counting once the fullest window has reset', () => {
+  const limits = { windows: [{ usedPercent: 100, windowMinutes: 300, resetsAt: sec + 60 }, { usedPercent: 44, windowMinutes: 10080, resetsAt: sec + 300000 }], at: sec - 30, reached: 'primary' };
+  assert.equal(limitReached(limits, now), true);
+  assert.equal(limitReached(limits, now + 61_000), false);
+  assert.equal(limitReached({ ...limits, windows: [{ ...limits.windows[0], usedPercent: 97 }] }, now), true); // the flag alone counts until then
+  assert.equal(limitReached({ ...limits, reached: undefined, windows: [limits.windows[1]] }, now), false);
+  assert.equal(limitReached(undefined, now), false);
+  const plans: UsageLimits = { chats: {}, hosts: [{ hostId: local, hostLabel: 'This Mac', checkedAt: '', agents: [{ agent: 'codex', mode: 'subscription', account: 'bbbbbbbbbbbbbbbb', limits }] }] };
+  const session = { id: 'c', launcher: 'codex', host: 'local' };
+  assert.equal(chatPlan(session, plans, buildAccounts(undefined, plans), now)!.reached, true);
+  assert.equal(chatPlan(session, plans, buildAccounts(undefined, plans), now + 61_000)!.reached, false);
+});
+
+test('reset times are collected from hosts and chats, once each', () => {
+  const plans: UsageLimits = { hosts: [limits.hosts[0]], chats: { x: { mode: 'subscription', limits: { windows: [{ usedPercent: 1, resetsAt: sec + 6000 }, { usedPercent: 2, resetsAt: sec + 42 }], at: sec } } } };
+  assert.deepEqual(resetTimes(plans).sort(), [sec + 42, sec + 6000, sec + 300000].sort());
+  assert.deepEqual(resetTimes(undefined), []);
 });
