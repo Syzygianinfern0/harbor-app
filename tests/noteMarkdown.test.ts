@@ -22,3 +22,13 @@ test('structure: headings, nested lists, tasks with priorities, ordered start',(
   const live=html('- [ ] t',true);assert.match(live,/<button type="button" role="checkbox"/);assert.match(live,/draggable="true"/);assert.match(live,/aria-label="Priority 4 · change priority"/);
   assert.deepEqual(taskCounts('- [x] a\n  - [ ] b\n* [X] c\n- d\n1. [ ] e\n[ ] no'),[2,4]);
 });
+
+test('in the editable view headings, paragraphs and code are click-to-edit, and an empty note invites writing',()=>{
+  const live=html('# Plan\nSome text\n\n```\ncode\n```',true);
+  assert.match(live,/<h3 data-line="0" tabindex="0" title="Click to edit" class="note-h1 note-block">Plan<\/h3>/);
+  assert.match(live,/<p data-line="1" tabindex="0" title="Click to edit" class="note-block">Some text<\/p>/);
+  assert.match(live,/<pre data-line="3" tabindex="0" title="Click to edit" class="note-block">/);
+  assert.match(live,/Add a to-do/);assert.match(live,/Add text/);
+  assert.doesNotMatch(html('# Plan\nSome text'),/data-line|tabindex|Add text/);
+  const empty=html('',true);assert.match(empty,/class="note-write"[^>]*>Nothing yet\. Click to write…/);assert.doesNotMatch(empty,/Add text/);
+});

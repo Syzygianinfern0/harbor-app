@@ -6,10 +6,10 @@ const shape=(n:ListNode):unknown=>({line:n.line,end:n.end,content:n.content,...(
 
 test('headings, paragraphs and fenced code',()=>{
   assert.deepEqual(parseBlocks('# Title\n## Sub ##\n### Third\n#### Deep\n#nottag\n\nOne line\nsecond line\n\n```\n- not a list\n# not a heading\n```\nafter'),[
-    {t:'heading',level:1,text:'Title'},{t:'heading',level:2,text:'Sub'},{t:'heading',level:3,text:'Third'},{t:'heading',level:3,text:'Deep'},
-    {t:'para',lines:['#nottag']},{t:'para',lines:['One line','second line']},{t:'code',v:'- not a list\n# not a heading'},{t:'para',lines:['after']}]);
-  assert.deepEqual(parseBlocks('# C#'),[{t:'heading',level:1,text:'C#'}]);
-  assert.deepEqual(parseBlocks('```\nunclosed'),[{t:'code',v:'unclosed'}]);
+    {t:'heading',level:1,text:'Title',line:0,end:1},{t:'heading',level:2,text:'Sub',line:1,end:2},{t:'heading',level:3,text:'Third',line:2,end:3},{t:'heading',level:3,text:'Deep',line:3,end:4},
+    {t:'para',lines:['#nottag'],line:4,end:5},{t:'para',lines:['One line','second line'],line:6,end:8},{t:'code',v:'- not a list\n# not a heading',line:9,end:13},{t:'para',lines:['after'],line:13,end:14}]);
+  assert.deepEqual(parseBlocks('# C#'),[{t:'heading',level:1,text:'C#',line:0,end:1}]);
+  assert.deepEqual(parseBlocks('```\nunclosed'),[{t:'code',v:'unclosed',line:0,end:2}]);
 });
 
 test('inline bold, italic and code, with literal fallbacks',()=>{
@@ -23,7 +23,7 @@ test('inline bold, italic and code, with literal fallbacks',()=>{
 
 test('HTML in notes stays text',()=>{
   const blocks=parseBlocks('<script>alert(1)</script>\n- <img src=x onerror=alert(1)>');
-  assert.deepEqual(blocks[0],{t:'para',lines:['<script>alert(1)</script>']});
+  assert.deepEqual(blocks[0],{t:'para',lines:['<script>alert(1)</script>'],line:0,end:1});
   assert.equal((blocks[1] as List).items[0].content,'<img src=x onerror=alert(1)>');
 });
 

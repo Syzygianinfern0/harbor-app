@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addTask, deleteTask, editTask, indentTask, insertTask, itemLines, outdentTask, moveTask, nudgeTask, renumber, setPriority, toggleTask } from '../src/shared/todos';
+import { addTask, blockSource, deleteTask, editBlock, editTask, insertParagraph, indentTask, insertTask, itemLines, outdentTask, moveTask, nudgeTask, renumber, setPriority, toggleTask } from '../src/shared/todos';
 
 const note=(...lines:string[])=>lines.join('\n');
 
@@ -132,4 +132,27 @@ test('Tab nests an item under the one above; Shift-Tab lifts it out after its pa
   assert.equal(outdentTask(text,0),undefined);
   // Round trip.
   assert.equal(outdentTask(indentTask(text,1)!.text,1)!.text,text);
+});
+
+test('headings, paragraphs and code edit as their source and write back in one piece',()=>{
+  const text=note('#### Deep  ##','Para one','para two','- [ ] a','','```js','x = 1','```','tail');
+  assert.equal(blockSource(text,0,1),'Deep');assert.equal(blockSource(text,1,3),'Para one\npara two');assert.equal(blockSource(text,5,8),'x = 1');
+  // A heading keeps its own # run (deeper than the three levels it renders), newlines become spaces.
+  assert.deepEqual(editBlock(text,0,1,'Deeper\nstill'),{text:text.replace('#### Deep  ##','#### Deeper still'),end:1});
+  assert.deepEqual(editBlock(text,1,3,'One\n\n'),{text:note('#### Deep  ##','One','- [ ] a','','```js','x = 1','```','tail'),end:2});
+  // Typing a list marker into a paragraph makes it a list; code keeps its fences.
+  assert.equal(editBlock(text,8,9,'- [ ] b').text,note('#### Deep  ##','Para one','para two','- [ ] a','','```js','x = 1','```','- [ ] b'));
+  assert.deepEqual(editBlock(text,5,8,'x = 2\ny = 3'),{text:note('#### Deep  ##','Para one','para two','- [ ] a','','```js','x = 2','y = 3','```','tail'),end:9});
+  assert.equal(editBlock(note('```','open'),0,2,'still open').text,note('```','still open'));
+  // Emptying a block deletes it and the blank line it leaves doubled.
+  assert.equal(editBlock(note('Intro','','# Gone','','after'),2,3,'  ').text,note('Intro','','after'));
+  assert.equal(editBlock(text,5,8,'').text,note('#### Deep  ##','Para one','para two','- [ ] a','','tail'));
+  assert.equal(editBlock('Only',0,1,'').text,'');
+});
+
+test('a new paragraph is set off by blank lines so it never joins a list',()=>{
+  assert.deepEqual(insertParagraph('',0,'Hello\n'),{text:'Hello',line:0,end:1});
+  assert.deepEqual(insertParagraph(note('- [ ] a','- [ ] b',''),3,'After'),{text:note('- [ ] a','- [ ] b','','After'),line:3,end:4});
+  assert.deepEqual(insertParagraph(note('# H','text'),1,'New'),{text:note('# H','','New','','text'),line:2,end:3});
+  assert.deepEqual(insertParagraph(note('One','','Two'),1,'Mid\nline'),{text:note('One','','Mid','line','','Two'),line:2,end:4});
 });

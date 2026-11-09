@@ -120,6 +120,78 @@ test('the Formatted view is an editable checklist: add, edit, split, delete, reo
   }finally{await app.close();await rm(dir,{recursive:true,force:true});}
 });
 
+test('the Formatted view writes ordinary notes: headings, paragraphs and code edit in place and save as Markdown',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'harbor-note-writing-'));
+  const createdAt=new Date().toISOString();
+  const projects=[{id:'project',name:'Notes project',cwd:dir,connection:'local',hostLabel:'This Mac',createdAt}];
+  const session=(id:string,name:string,note?:string)=>({id,name,projectId:'project',cwd:dir,host:'local',launcher:'codex',hasMessages:true,status:'closed',activity:'closed',tmuxName:`harbor-${id}`,paneId:'%9999',tags:[],group:'',pinned:false,archived:false,createdAt,updatedAt:createdAt,...(note?{note}:{})});
+  const CODE=['# Setup','Run this:','','```sh','npm ci','```','','- [ ] Verify'].join('\n');
+  await writeFile(path.join(dir,'sessions.json'),JSON.stringify({version:2,projects,sessions:[session('bbbb','Blank chat'),session('dddd','Code chat',CODE)]}));
+  const app=await electron.launch({executablePath:process.env.HARBOR_TEST_APP,args:process.env.HARBOR_TEST_APP?[]:['.'],env:{...process.env,HARBOR_DATA_DIR:dir}});
+  const saved=async(id:string)=>JSON.parse(await readFile(path.join(dir,'sessions.json'),'utf8')).sessions.find((s:any)=>s.id===id)?.note;
+  try {
+    const page=await app.firstWindow();
+    await app.evaluate(({ipcMain})=>{
+      ipcMain.removeHandler('harbor:checkReachability');ipcMain.handle('harbor:checkReachability',()=>({}));
+      ipcMain.removeHandler('harbor:importHistory');ipcMain.handle('harbor:importHistory',()=>{});
+    });
+    await mkdir('test-results/screenshots',{recursive:true});
+    const sidebar=page.locator('.sidebar');
+
+    // An empty note is click-to-write; Enter starts the next paragraph, ⇧Enter adds a line, and Markdown typed into a
+    // paragraph (# heading, - [ ] to-do) becomes that block once it is finished.
+    await sidebar.getByRole('button',{name:'Blank chat Closed',exact:true}).hover();
+    await sidebar.getByRole('button',{name:'Blank chat Closed',exact:true}).locator('.chat-note').click();
+    const editor=page.getByRole('dialog',{name:'Note for Blank chat'});
+    await editor.getByRole('radio',{name:'Formatted'}).click();
+    const view=editor.locator('.chat-note-rendered'),para=view.getByRole('textbox',{name:'Paragraph'});
+    await view.getByRole('button',{name:'Nothing yet. Click to write…'}).click();await expect(para).toBeFocused();
+    await page.keyboard.type('# Plan');await page.keyboard.press('Enter');
+    await expect(view.locator('h3.note-h1')).toHaveText('Plan');await expect(para).toHaveValue('');
+    await page.keyboard.type('First line');await page.keyboard.press('Shift+Enter');await page.keyboard.type('second line');await page.keyboard.press('Enter');
+    await page.keyboard.type('- [ ] Follow up');await page.keyboard.press('Escape');await expect(editor).toBeVisible();
+    await expect(view.locator('p.note-block')).toHaveText('First line\nsecond line');
+    await expect(view.getByRole('checkbox',{name:'Follow up'})).toBeVisible();
+    // Enter on an empty new paragraph finishes without adding anything.
+    await view.getByRole('button',{name:'Add text'}).click();await expect(para).toBeFocused();await page.keyboard.press('Enter');await expect(para).toHaveCount(0);
+
+    // Clicking a block edits its source in place; ↑/↓ at either end move between blocks and items.
+    await view.locator('p.note-block').click();await expect(para).toHaveValue('First line\nsecond line');
+    await page.keyboard.type(' (edited)');await page.keyboard.press('ArrowDown');
+    await expect(view.getByRole('textbox',{name:'Item text'})).toHaveValue('Follow up');
+    await page.keyboard.press('Home');await page.keyboard.press('ArrowUp');await expect(para).toHaveValue('First line\nsecond line (edited)');
+    await page.screenshot({path:'test-results/screenshots/86-note-block-editing.png'});
+    await view.locator('h3.note-h1').click();const heading=view.getByRole('textbox',{name:'Heading'});await expect(heading).toHaveValue('Plan');
+    await page.keyboard.type(' B');await page.keyboard.press('Escape');await expect(view.locator('h3.note-h1')).toHaveText('Plan B');
+    // Backspace on an emptied paragraph deletes it and returns to the block above.
+    await view.getByRole('button',{name:'Add text'}).click();await page.keyboard.type('x');await page.keyboard.press('Backspace');await page.keyboard.press('Backspace');
+    await expect(view.getByRole('textbox',{name:'Item text'})).toHaveValue('Follow up');await page.keyboard.press('Escape');
+    await page.keyboard.press('Meta+Enter');await expect(editor).toHaveCount(0);
+    await expect.poll(()=>saved('bbbb')).toBe('# Plan B\n\nFirst line\nsecond line (edited)\n\n- [ ] Follow up');
+
+    // Code edits as its body, keeping the fences: Enter adds a line, Esc finishes. ⌘E keeps a block still being edited.
+    await sidebar.getByRole('button',{name:'Code chat Closed',exact:true}).locator('.chat-note').click();
+    const code=page.getByRole('dialog',{name:'Note for Code chat'}),rendered=code.locator('.chat-note-rendered');
+    await expect(code.getByRole('radio',{name:'Formatted'})).toHaveAttribute('aria-checked','true');
+    await rendered.locator('pre.note-block').click();const body=rendered.getByRole('textbox',{name:'Code'});await expect(body).toHaveValue('npm ci');
+    await page.keyboard.press('Enter');await page.keyboard.type('npm test');await page.keyboard.press('Escape');
+    await expect(rendered.locator('pre.note-block')).toHaveText('npm ci\nnpm test');
+    await rendered.locator('p.note-block').click();await page.keyboard.type(' now');await page.keyboard.press('Meta+e');
+    await expect(code.getByRole('textbox',{name:'Note'})).toHaveValue(['# Setup','Run this: now','','```sh','npm ci','npm test','```','','- [ ] Verify'].join('\n'));
+    await page.keyboard.press('Meta+e');await page.locator('.project-overview h1').click();await expect(code).toHaveCount(0);
+    await expect.poll(()=>saved('dddd')).toBe(['# Setup','Run this: now','','```sh','npm ci','npm test','```','','- [ ] Verify'].join('\n'));
+
+    // On the project page blocks edit in place too (a double-click never opens the full editor), saving as you go.
+    await sidebar.getByRole('button',{name:'Notes project',exact:true}).click();
+    const card=page.locator('.project-notes').getByRole('article',{name:'Note for Code chat'});
+    await card.locator('p.note-block').dblclick();await expect(card.getByRole('dialog')).toHaveCount(0);
+    await expect(card.getByRole('textbox',{name:'Paragraph'})).toBeFocused();
+    await page.keyboard.press('Meta+a');await page.keyboard.type('Run these:');await page.locator('.project-overview h1').click();
+    await expect.poll(()=>saved('dddd')).toContain('# Setup\nRun these:\n\n```sh');
+    await card.screenshot({path:'test-results/screenshots/87-project-note-blocks.png'});
+  }finally{await app.close();await rm(dir,{recursive:true,force:true});}
+});
+
 test('items reorder by dragging with the mouse, with tab-style cues: a line where it lands, the source dimmed, rows sliding into place',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'harbor-note-drag-'));
   const createdAt=new Date().toISOString();

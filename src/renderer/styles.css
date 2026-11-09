@@ -292,7 +292,6 @@
 .chat-note-editor textarea:focus-visible{outline:0;border-color:#4a5a52}
 .chat-note-rendered{min-height:160px;max-height:calc(100vh - 150px);overflow:auto;padding:10px 12px 10px 4px;border:1px solid #2c333d;border-radius:6px;background:#15191f}
 .chat-note-editor.inline .chat-note-rendered{max-height:70vh}
-.chat-note-empty{font-size:11px;padding-left:12px}
 .chat-note-editor .form-error{margin:6px 2px 0;font-size:10px}
 .chat-note-editor footer{display:flex;align-items:center;gap:4px;margin-top:7px}
 .chat-note-editor footer small{flex:1;padding-left:2px;font-size:9px;color:#5f6b78}
@@ -356,6 +355,14 @@ button.note-check:hover{color:#8d98a6}
 .note-completed-toggle{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:inherit;color:#6f7a88}
 .note-completed-toggle svg{width:14px;min-width:14px;transition:transform .12s}.note-completed-toggle[aria-expanded=true] svg{transform:rotate(90deg)}
 .note-completed-toggle:hover,.note-completed-toggle:focus-visible{color:#c3ccd7}.note-completed>.note-list{margin:3px 0 0}
+.note-add-row{display:flex;flex-wrap:wrap;column-gap:16px}.note-add-row:empty{display:none}
+/* Headings, paragraphs and code edit in place as their source, in a field styled like the block it replaces. */
+.note-block[tabindex]{cursor:text;border-radius:3px}.note-block[tabindex]:focus-visible{outline:none;background:#232a33;box-shadow:0 0 0 2px #232a33}
+.note-markdown .note-block-input,.chat-note-editor .note-markdown .note-block-input{display:block;width:100%;min-height:0;height:auto;margin:0 0 7px;padding:0;border:0;border-radius:3px;outline:none;resize:none;overflow:hidden;background:#1d232b;box-shadow:0 0 0 3px #1d232b;color:#e1e7ee;font:inherit;line-height:inherit;letter-spacing:inherit;white-space:pre-wrap;caret-color:var(--mint)}
+.note-markdown .note-block-input.heading,.chat-note-editor .note-markdown .note-block-input.heading{margin:12px 0 5px;font-weight:600;letter-spacing:-.1px}
+.note-markdown .note-block-input.code,.chat-note-editor .note-markdown .note-block-input.code{padding:8px 10px;border:1px solid #3a4350;border-radius:5px;background:#12151a;box-shadow:none;font-family:Menlo,monospace;font-size:.9em;color:#c9d1db;white-space:pre;overflow-x:auto;tab-size:4}
+.note-markdown .note-block-input::placeholder{color:#5f6b78}
+.note-write{display:block;width:100%;margin:0 0 9px;padding:2px 0;text-align:left;font-size:inherit;color:#7e8a99;cursor:text}.note-write:hover,.note-write:focus-visible{color:#c3ccd7}
 .note-add svg{width:14px;min-width:14px}.note-add:hover{color:#c3ccd7}.note-add:focus-visible{color:#c3ccd7;outline:1px solid #4a5563;outline-offset:2px;border-radius:3px}
 /* Project page notes. */
 .project-notes{max-width:840px;margin:0 0 26px}
