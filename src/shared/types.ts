@@ -30,7 +30,7 @@ export interface UsageLimits { hosts: HostPlans[]; chats: Record<string, ChatBil
 export interface ChatPreview { messageCount?: number; messages: {role: string; text: string}[]; error?: string }
 export interface Conversation { conversationId: string; launcher: 'codex' | 'claude'; name: string; cwd: string; updatedAt: number; createdAt: number; externalActive?: boolean; transcript?: string; hasMessages?: boolean }
 export interface AgentUpdate { hostId: string; hostLabel: string; agent: 'codex' | 'claude'; installed?: string; latest?: string; status: 'current' | 'available' | 'missing' | 'unknown'; error?: string; checkedAt: string }
-export interface AgentUpdateState { updates: AgentUpdate[]; checking: boolean; updatingAll: boolean; checkedAt?: number; running?: string; completed?: number; total?: number; error?: string; results: Record<string, {message: string; output?: string}> }
+export interface AgentUpdateState { updates: AgentUpdate[]; checking: boolean; updatingAll: boolean; checkedAt?: number; /** `host:agent` keys installing now. */ installing: string[]; /** Keys Update all will install next. */ queued: string[]; completed?: number; total?: number; error?: string; results: Record<string, {message: string; output?: string}> }
 export type SessionStatus = 'checking' | 'running' | 'exited' | 'unreachable' | 'missing' | 'closed';
 export interface Host { id: string; label: string; source: 'local' | 'ssh-config' | 'manual' }
 export interface SshConnection { target: string; hostname?: string; user?: string; port?: number; identityFile?: string }
