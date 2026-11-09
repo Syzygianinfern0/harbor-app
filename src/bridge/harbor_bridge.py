@@ -56,6 +56,24 @@ def home_for(agent):
 def title(value):
     return ' '.join(str(value or '').split())[:100]
 
+# Blocks the agents inject into user turns (slash-command echoes, shell escapes, hook output, Codex context).
+# Keep in sync with INJECTED_TAGS in src/shared/chatName.ts.
+INJECTED_TAGS = ('local-command-caveat','local-command-stdout','local-command-stderr','command-name','command-message','command-args','command-stdout','command-stderr','command-contents','bash-input','bash-stdout','bash-stderr','system-reminder','user-prompt-submit-hook','task-notification','environment_context','user_instructions','user_shell_command','turn_aborted','INSTRUCTIONS')
+_INJECTED = re.compile(r'<(' + '|'.join(INJECTED_TAGS) + r')(?:\s[^>]*)?>.*?(?:</\1\s*>|\Z)', re.S)
+_NOISE = re.compile(r'(Caveat: The messages below|\[Request interrupted|This session is being continued|# AGENTS\.md instructions for)')
+
+def user_text(content):
+    """What the person typed in a user turn, or '' when the turn is only injected context or a bare slash command."""
+    if isinstance(content, list): content = '\n'.join(c.get('text') or '' for c in content if isinstance(c, dict) and c.get('type') in ('text', 'input_text'))
+    if not isinstance(content, str): return ''
+    text = _INJECTED.sub(' ', content).strip()
+    if _NOISE.match(text) or re.fullmatch(r'/[\w:.-]+', text): return ''
+    return text
+
+def claude_user_text(record):
+    if record.get('type') != 'user' or record.get('isMeta') or record.get('isCompactSummary') or record.get('toolUseResult') is not None: return ''
+    return user_text(record.get('message', {}).get('content', ''))
+
 def live_claude():
     results = {}
     rows = subprocess.check_output(['ps','-axo','pid,stat,comm'], text=True).splitlines()[1:]
@@ -92,7 +110,7 @@ def claude_has_messages(file):
                 if not line.strip(): continue
                 try: record = json.loads(line)
                 except ValueError: malformed = True; continue
-                if record.get('type') in ('user', 'assistant') and record.get('message', {}).get('content'):
+                if (record.get('type') == 'assistant' and record.get('message', {}).get('content')) or claude_user_text(record):
                     found = True; break
         result = True if found else None if malformed else False
         if len(_message_cache) > 2048: _message_cache.clear()
@@ -185,7 +203,7 @@ def history(agent, cwd, identity=None):
                 for row in db.execute('select id,cwd,title,created_at,updated_at,source,rollout_path' + ''.join(','+field for field in ('name','has_user_event','first_user_message','preview') if field in columns) + ' from threads where cwd=?' + (' and id=?' if identity else '') + ' order by updated_at desc limit 500', (cwd,identity) if identity else (cwd,)):
                     r = dict(row)
                     if 'subagent' in r['source'].lower(): continue
-                    result.append({'conversationId': r['id'], 'launcher': agent, 'name': title(r.get('name') or r['title']) or 'Untitled chat', 'cwd': cwd, 'updatedAt': r['updated_at'], 'createdAt': r['created_at'], 'hasMessages': codex_has_messages(r), 'transcript': r['rollout_path'], 'externalActive': conversation_busy('codex', r['id'])})
+                    result.append({'conversationId': r['id'], 'launcher': agent, 'name': title(r.get('name') or user_text(r['title']) or user_text(r.get('first_user_message')) or user_text(r.get('preview'))) or 'Untitled chat', 'cwd': cwd, 'updatedAt': r['updated_at'], 'createdAt': r['created_at'], 'hasMessages': codex_has_messages(r), 'transcript': r['rollout_path'], 'externalActive': conversation_busy('codex', r['id'])})
     else:
         live = live_claude()
         project_dir = home_for(agent) / 'projects' / re.sub(r'[^a-zA-Z0-9]', '-', cwd)
@@ -198,10 +216,7 @@ def history(agent, cwd, identity=None):
             for r in records:
                 if r.get('type') in ('custom-title', 'ai-title', 'summary'):
                     name = title(r.get('customTitle') or r.get('aiTitle') or r.get('summary')) or name
-                if r.get('type') == 'user' and not first:
-                    content = r.get('message', {}).get('content', '')
-                    if isinstance(content, str): first = title(content)
-                    elif isinstance(content, list): first = title(' '.join(c.get('text', '') for c in content if c.get('type') == 'text'))
+                if not first: first = title(claude_user_text(r))
             current = live.get(file.stem, {})
             result.append({'conversationId': file.stem, 'launcher': agent, 'name': title(current.get('name')) if current.get('nameSource') in ('user', 'generated', 'ai') else name or first or 'Untitled chat', 'cwd': cwd, 'updatedAt': file.stat().st_mtime, 'createdAt': created, 'externalActive': bool(current), 'transcript': str(file), 'hasMessages': claude_has_messages(file)})
     return result
@@ -226,6 +241,7 @@ def transcript_preview(file, agent):
                 if role not in ('user','assistant'): continue
                 content = message.get('content', '')
                 text = content if isinstance(content, str) else '\n'.join(c.get('text','') for c in content if isinstance(c,dict) and c.get('type') in ('text','input_text','output_text')) if isinstance(content,list) else ''
+                if role == 'user': text = claude_user_text(record) if agent == 'claude' else user_text(content)
                 if not text.strip(): continue
                 if identity and identity in seen: continue
                 if identity: seen.add(identity)
@@ -1252,7 +1268,7 @@ def run(args):
                             except (RuntimeError, TimeoutError): terminals = []  # Older Codex without the experimental method.
                             # Codex does not resume the turn when these exit, so this is "finished, still running" rather than a pending wake-up.
                             if terminals: activity, reason = 'background', background_reason(terminals, resumes=False)
-                        update(hasMessages=bool(record.get('preview')) or bool(meta.get('hasMessages')), conversationId=record['id'], name=title(record.get('name') or record.get('preview')), activity=activity, reason=reason, resumable=bool(args.resume or (record.get('path') and pathlib.Path(record['path']).exists())))
+                        update(hasMessages=bool(record.get('preview')) or bool(meta.get('hasMessages')), conversationId=record['id'], name=title(record.get('name') or user_text(record.get('preview'))), activity=activity, reason=reason, resumable=bool(args.resume or (record.get('path') and pathlib.Path(record['path']).exists())))
                     except (OSError, ValueError, EOFError, RuntimeError, KeyError): update(activity='unknown', reason='Codex runtime status could not be read')
             threading.Thread(target=monitor, daemon=True).start()
             threading.Thread(target=codex_limits_monitor, args=(endpoint, stop, lambda billing: update(billing=billing)), daemon=True).start()
