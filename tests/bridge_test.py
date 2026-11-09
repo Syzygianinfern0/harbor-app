@@ -153,6 +153,10 @@ class CostTests(unittest.TestCase):
   return {'models':{'model-a':{'input_cost_per_token':2e-6,'output_cost_per_token':10e-6,'cache_read_input_token_cost':0.2e-6,'cache_creation_input_token_cost':2.5e-6,'cache_creation_input_token_cost_above_1hr':4e-6},'model-b':{'input_cost_per_token':4e-6,'output_cost_per_token':20e-6}}}
  def event(self):
   return {'at':1800000000,'model':'model-a','tokens':{'inputTokens':1000,'outputTokens':100,'cacheReadTokens':500,'cacheWriteTokens':200,'totalTokens':1100}}
+ def test_bundled_catalog_prices_fable_5_2(self):
+  catalog=json.loads((pathlib.Path(__file__).parents[1]/'src/engine/pricing-snapshot.json').read_text())
+  event=self.event();event['model']='claude-fable-5-2';event['cacheWrite1h']=100
+  cost,kind=bridge.event_cost(event,catalog);self.assertEqual(kind,'estimated');self.assertAlmostEqual(cost,.0091)
  def test_cache_prices_recorded_cost_and_unknown_rates(self):
   event=self.event();event['cacheWrite1h']=100
   cost,kind=bridge.event_cost(event,self.catalog());self.assertAlmostEqual(cost,.00235);self.assertEqual(kind,'estimated')
