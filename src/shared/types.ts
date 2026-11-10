@@ -18,14 +18,16 @@ export interface HostUsage { pricingUpdatedAt?: string; hostId: string; hostLabe
 /** How an agent's usage is paid for: a plan with rolling limits, or per token. */
 export type BillingMode = 'subscription' | 'api' | 'unknown';
 /** One rolling limit window. Percentages are "used" as reported upstream; times are seconds since the epoch. */
-/** `at`: when this window was read (seconds), if it differs from its snapshot's. */
-export interface LimitWindow { usedPercent: number; windowMinutes?: number; resetsAt?: number; at?: number }
+/** `at`: when this window was read (seconds), if it differs from its snapshot's. `scope`: the model a window
+ * limits (Claude's per-model weekly limits, such as "Fable"); without it the window covers every model. */
+export interface LimitWindow { usedPercent: number; windowMinutes?: number; resetsAt?: number; at?: number; scope?: string }
 export interface LimitSnapshot { windows: LimitWindow[]; at: number; source?: 'app-server' | 'live' | 'log' | 'statusline'; reached?: string }
 /** An agent's sign-in on one host. `account` is a hash computed on the host, never a raw account ID. */
 export interface AgentPlan { agent: 'codex' | 'claude'; mode: BillingMode; plan?: string; account?: string; limits?: LimitSnapshot; error?: string }
 export interface HostPlans { hostId: string; hostLabel: string; checkedAt: string; agents: AgentPlan[]; error?: string; unreachable?: boolean }
-/** What a running chat reported about its own billing (recorded at launch, refined by the agent). */
-export interface ChatBilling { mode: BillingMode; plan?: string; account?: string; limits?: LimitSnapshot }
+/** What a running chat reported about its own billing (recorded at launch, refined by the agent). `model` is the
+ * chat's current model as its agent names it, so a model-scoped limit applies only to chats using that model. */
+export interface ChatBilling { mode: BillingMode; plan?: string; account?: string; limits?: LimitSnapshot; model?: string }
 export interface UsageLimits { hosts: HostPlans[]; chats: Record<string, ChatBilling>; disabled?: string }
 export interface ChatPreview { messageCount?: number; messages: {role: string; text: string}[]; error?: string }
 export interface Conversation { conversationId: string; launcher: 'codex' | 'claude'; name: string; cwd: string; updatedAt: number; createdAt: number; externalActive?: boolean; transcript?: string; hasMessages?: boolean }

@@ -20,6 +20,8 @@ const blank = (): CostAmount => ({ usd: 0, estimated: 0, recorded: 0, unpriced: 
 const add = (a: CostAmount, b?: CostAmount): CostAmount => b ? { usd: a.usd + b.usd, estimated: a.estimated + b.estimated, recorded: a.recorded + b.recorded, unpriced: a.unpriced + b.unpriced } : a;
 const finite = (value: unknown, min = 0, max = Infinity): value is number => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 const text = (value: unknown, max = 40) => typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : undefined;
+/** A model name or limit scope from another machine: plain display text only (as the bridge's `label`). */
+const label = (value: unknown, max = 30) => { const clean = typeof value === 'string' ? value.replace(/[^A-Za-z0-9 ._+()-]/g, '').trim().slice(0, max).trim() : ''; return clean || undefined; };
 export const hostKey = (connection: Connection) => JSON.stringify(connection);
 export const AGENT_NAMES: Record<Agent, string> = { claude: 'Claude Code', codex: 'Codex' };
 export const SHORT_NAMES: Record<Agent, string> = { claude: 'Claude', codex: 'Codex' };
@@ -28,7 +30,7 @@ export const SHORT_NAMES: Record<Agent, string> = { claude: 'Claude', codex: 'Co
 export function cleanLimits(value: unknown): LimitSnapshot | undefined {
   const raw = value as LimitSnapshot | undefined;
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.windows) || !finite(raw.at, 1)) return undefined;
-  const windows = raw.windows.slice(0, 6).filter(w => w && finite(w.usedPercent, 0, 100)).map(w => ({ usedPercent: w.usedPercent, ...(finite(w.windowMinutes, 1) ? { windowMinutes: w.windowMinutes } : {}), ...(finite(w.resetsAt, 1) ? { resetsAt: w.resetsAt } : {}), ...(finite(w.at, 1) ? { at: w.at } : {}) }));
+  const windows = raw.windows.slice(0, 8).filter(w => w && finite(w.usedPercent, 0, 100)).map(w => { const scope = label(w.scope); return { usedPercent: w.usedPercent, ...(finite(w.windowMinutes, 1) ? { windowMinutes: w.windowMinutes } : {}), ...(finite(w.resetsAt, 1) ? { resetsAt: w.resetsAt } : {}), ...(finite(w.at, 1) ? { at: w.at } : {}), ...(scope ? { scope } : {}) }; });
   const reached = text(raw.reached, 60);
   if (!windows.length && !reached) return undefined;
   return { windows, at: raw.at, ...(raw.source && ['app-server', 'live', 'log', 'statusline'].includes(raw.source) ? { source: raw.source } : {}), ...(reached ? { reached } : {}) };
@@ -36,8 +38,8 @@ export function cleanLimits(value: unknown): LimitSnapshot | undefined {
 export function cleanBilling(value: unknown): ChatBilling | undefined {
   const raw = value as ChatBilling | undefined;
   if (!raw || typeof raw !== 'object' || !MODES.has(raw.mode)) return undefined;
-  const plan = text(raw.plan); const limits = cleanLimits(raw.limits);
-  return { mode: raw.mode, ...(plan ? { plan } : {}), ...(typeof raw.account === 'string' && /^[a-f0-9]{16}$/.test(raw.account) ? { account: raw.account } : {}), ...(limits ? { limits } : {}) };
+  const plan = text(raw.plan); const limits = cleanLimits(raw.limits); const model = label(raw.model, 40);
+  return { mode: raw.mode, ...(plan ? { plan } : {}), ...(typeof raw.account === 'string' && /^[a-f0-9]{16}$/.test(raw.account) ? { account: raw.account } : {}), ...(limits ? { limits } : {}), ...(model ? { model } : {}) };
 }
 export function cleanPlans(value: unknown): AgentPlan[] {
   const agents = (value as { agents?: unknown[] } | undefined)?.agents;
@@ -50,7 +52,16 @@ export function cleanPlans(value: unknown): AgentPlan[] {
 
 /** A window whose reset time has passed has started over. */
 export function currentWindows(limits: LimitSnapshot | undefined, now = Date.now()): LimitWindow[] {
-  return (limits?.windows ?? []).map(w => ({ ...(w.resetsAt && w.resetsAt * 1000 <= now ? { usedPercent: 0, ...(w.windowMinutes ? { windowMinutes: w.windowMinutes } : {}) } : w), at: w.at ?? limits!.at }));
+  return (limits?.windows ?? []).map(w => ({ ...(w.resetsAt && w.resetsAt * 1000 <= now ? { usedPercent: 0, ...(w.windowMinutes ? { windowMinutes: w.windowMinutes } : {}), ...(w.scope ? { scope: w.scope } : {}) } : w), at: w.at ?? limits!.at }));
+}
+const words = (value: string) => value.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+/** Whether a model-scoped limit ("Fable") applies to a model named by its agent ("Fable", "claude-fable-…").
+ * A window without a scope applies to every model; a scoped one never applies to a chat whose model is unknown. */
+export function appliesTo(window: LimitWindow, model: string | undefined) {
+  if (!window.scope) return true;
+  if (!model) return false;
+  const have = new Set(words(model)); const need = words(window.scope);
+  return need.length > 0 && need.every(word => have.has(word));
 }
 /** The window closest to its limit; on a tie, the one that resets sooner. */
 export function tightest(windows: LimitWindow[]): LimitWindow | undefined {
@@ -62,18 +73,19 @@ const SAME_WINDOW = 120; // seconds: resetsAt this close is the same limit windo
 export function mergeLimits(a?: LimitSnapshot, b?: LimitSnapshot): LimitSnapshot | undefined {
   if (!a || !b) return a ?? b;
   type Timed = LimitWindow & { at: number; timed: boolean };
-  const merged = new Map<number | undefined, Timed>();
+  // A model-scoped window (Claude's weekly Fable limit) is a separate limit from the all-models one of the same length.
+  const merged = new Map<string, Timed>();
   for (const snapshot of [a, b]) for (const raw of snapshot.windows) {
-    const window: Timed = { ...raw, at: raw.at ?? snapshot.at, timed: raw.at !== undefined }; const kept = merged.get(window.windowMinutes);
-    if (!kept) { merged.set(window.windowMinutes, window); continue; }
+    const window: Timed = { ...raw, at: raw.at ?? snapshot.at, timed: raw.at !== undefined }; const key = `${window.windowMinutes ?? ''}|${window.scope ?? ''}`; const kept = merged.get(key);
+    if (!kept) { merged.set(key, window); continue; }
     // A window without its own time (an older bridge's whole-snapshot stamp) is never fresher than a timed one.
     if (window.timed !== kept.timed) { const untimed = window.timed ? kept : window, timed = window.timed ? window : kept; untimed.at = Math.min(untimed.at, timed.at); }
     const x = kept.resetsAt, y = window.resetsAt;
-    if (x && y && Math.abs(x - y) > SAME_WINDOW) merged.set(window.windowMinutes, y > x ? window : kept);
-    else if (x && y) merged.set(window.windowMinutes, { ...kept, usedPercent: Math.max(kept.usedPercent, window.usedPercent), resetsAt: Math.max(x, y), at: Math.max(kept.at, window.at), timed: kept.timed || window.timed });
-    else merged.set(window.windowMinutes, window.at > kept.at || (window.at === kept.at && window.timed) ? window : kept);
+    if (x && y && Math.abs(x - y) > SAME_WINDOW) merged.set(key, y > x ? window : kept);
+    else if (x && y) merged.set(key, { ...kept, usedPercent: Math.max(kept.usedPercent, window.usedPercent), resetsAt: Math.max(x, y), at: Math.max(kept.at, window.at), timed: kept.timed || window.timed });
+    else merged.set(key, window.at > kept.at || (window.at === kept.at && window.timed) ? window : kept);
   }
-  const windows = [...merged.values()].map(({ timed: _timed, ...window }) => window).sort((x, y) => (x.windowMinutes ?? 0) - (y.windowMinutes ?? 0));
+  const windows = [...merged.values()].map(({ timed: _timed, ...window }) => window).sort((x, y) => (x.windowMinutes ?? 0) - (y.windowMinutes ?? 0) || (x.scope ?? '').localeCompare(y.scope ?? ''));
   const newer = b.at >= a.at ? b : a;
   return { ...newer, windows, at: Math.max(a.at, b.at) };
 }
@@ -142,19 +154,23 @@ export function chatPlan(session: { id: string; launcher: string; host: string; 
   const accountId = billing?.account ?? fallback?.account;
   const account = accounts.find(a => a.kind === 'subscription' && a.agent === agent && (accountId ? a.key === `${agent}:${accountId}` : a.hosts.some(h => h.id === id)));
   const snapshot = mergeLimits(account?.limits, billing?.limits);
-  const window = tightest(currentWindows(snapshot, now));
+  // A per-model limit counts only for a chat known to use that model: a Fable limit never rings a Sonnet chat.
+  const window = tightest(currentWindows(snapshot, now).filter(w => appliesTo(w, billing?.model)));
   return { kind, agent, plan: billing?.plan ?? fallback?.plan ?? account?.plan, window, account, limits: snapshot, reached: !!window && window.usedPercent >= 100 };
 }
 
 export const level = (used: number) => used >= 90 ? 'danger' : used >= 75 ? 'warn' : '';
-export function windowLabel(window: LimitWindow) {
-  const minutes = window.windowMinutes;
+function periodLabel(minutes: number | undefined) {
   if (!minutes) return 'Limit';
   if (minutes === 10080) return 'Weekly';
   if (minutes === 1440) return 'Daily';
   if (minutes < 1440 && minutes % 60 === 0) return `${minutes / 60}-hour`;
   return minutes < 1440 ? `${minutes}-minute` : `${Math.round(minutes / 1440)}-day`;
 }
+/** "Weekly", or "Weekly (Fable)" for a window that limits one model. */
+export const windowLabel = (window: LimitWindow) => periodLabel(window.windowMinutes) + (window.scope ? ` (${window.scope})` : '');
+/** Mid-sentence form: "weekly", "weekly (Fable)". */
+export const windowName = (window: LimitWindow) => periodLabel(window.windowMinutes).toLowerCase() + (window.scope ? ` (${window.scope})` : '');
 export const leftText = (window: LimitWindow) => window.usedPercent >= 100 ? 'Limit reached' : `${Math.max(0, Math.floor(100 - window.usedPercent))}% left`;
 export function resetText(resetsAt: number | undefined, now = Date.now()) {
   if (!resetsAt) return undefined;

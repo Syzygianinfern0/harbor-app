@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronRight, DollarSign, Gauge, Info, RefreshCw, X } from 'lucide-react';
 import type { ChatUsage, CostAmount, CostModel, HostUsage, LimitWindow, Session, TokenUsage, UsageLimits, UsagePeriod } from '../shared/types';
-import { AGENT_NAMES, SHORT_NAMES, STALE_HINT, agoText, asOfText, buildAccounts, chatPlan, currentWindows, footerSummary, leftText, level, resetText, staleUsedText, tightest, toneOf, windowLabel, windowStale, type AccountKind, type UsageAccount } from '../shared/usagePlans';
+import { AGENT_NAMES, SHORT_NAMES, STALE_HINT, agoText, asOfText, buildAccounts, chatPlan, currentWindows, footerSummary, leftText, level, resetText, staleUsedText, tightest, toneOf, windowLabel, windowName, windowStale, type AccountKind, type UsageAccount } from '../shared/usagePlans';
 import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../shared/usageTokens';
 import { AgentIcon } from './AgentIcon';
 import './usage.css';
@@ -83,7 +83,8 @@ export function AccountCard({account,now,period='day',compact=false}:{account:Us
   const windows=currentWindows(account.limits,now);const worst=tightest(windows);
   const hosts=account.hosts.map(h=>h.label).join(', ');
   const name=account.agent?SHORT_NAMES[account.agent]:'';
-  const reached=!!worst&&(worst.usedPercent>=100||!!account.limits?.reached);
+  // A per-model limit (Weekly (Fable)) pauses only that model, so it never says the whole account is paused.
+  const out=windows.filter(w=>w.usedPercent>=100);const reached=!!worst&&(out.some(w=>!w.scope)||!!account.limits?.reached);const modelOut=reached?undefined:out.find(w=>w.scope);
   // Each window has its own reading time; the card warns only from a current one.
   const stale=windowStale(worst,now);const staleWindows=windows.filter(w=>windowStale(w,now));const allStale=!!windows.length&&staleWindows.length===windows.length;
   const tone=account.kind==='down'?'warn':worst&&!stale?level(worst.usedPercent):'';
@@ -91,7 +92,7 @@ export function AccountCard({account,now,period='day',compact=false}:{account:Us
   if(account.kind==='subscription') body=<>{windows.map((w,i)=><Meter key={i} window={w} now={now} staleAt={windowStale(w,now)?w.at:undefined}/>)}
     {!account.limits&&<div className="usage-callout info"><Info size={13}/><span>{account.agent==='claude'?'Signed in with a subscription. Usage appears after the next reply in a Harbor-launched Claude chat.':'Signed in with ChatGPT. Usage appears after the next Codex reply.'}</span></div>}
     {stale?(worst&&(reached||worst.usedPercent>=90)?<div className="usage-callout info"><Info size={13}/><span>{windowLabel(worst)} was {worst.usedPercent>=100?'at the limit':`at ${Math.round(worst.usedPercent)}%`}, {asOfText(worst.at!,now)}.</span></div>:null)
-    :reached?<div className="usage-callout danger"><AlertTriangle size={13}/><span>{name} is paused{worst?.resetsAt?` until ${resetText(tightest(windows.filter(w=>w.usedPercent>=100))?.resetsAt??worst.resetsAt,now)}`:''}. Chats on this account will wait.</span></div>:worst&&worst.usedPercent>=90?<div className="usage-callout warn"><AlertTriangle size={13}/><span>Almost out.{worst.resetsAt?` Resets ${resetText(worst.resetsAt,now)}.`:''}</span></div>:null}
+    :reached?<div className="usage-callout danger"><AlertTriangle size={13}/><span>{name} is paused{worst?.resetsAt?` until ${resetText(tightest(out.filter(w=>!w.scope))?.resetsAt??worst.resetsAt,now)}`:''}. Chats on this account will wait.</span></div>:modelOut?<div className="usage-callout warn"><AlertTriangle size={13}/><span>{modelOut.scope} limit reached{modelOut.resetsAt?`, resets ${resetText(modelOut.resetsAt,now)}`:''}. Chats on other models keep working.</span></div>:worst&&worst.usedPercent>=90?<div className="usage-callout warn"><AlertTriangle size={13}/><span>Almost out{worst.scope?` of ${worst.scope}`:''}.{worst.resetsAt?` Resets ${resetText(worst.resetsAt,now)}.`:''}</span></div>:null}
     <div className="account-foot">{account.costAvailable&&<span>≈ {money(account.cost.week.usd)} at API rates this week, not charged</span>}{account.limits&&<span className={staleWindows.length?'account-stale':''}>{allStale?`As of ${agoText(Math.max(...windows.map(w=>w.at!)),now)}`:`Updated ${agoText(account.limits.at,now)}${account.limits.source==='log'?' from saved logs':''}`}{staleWindows.length?` · ${STALE_HINT[account.agent!]}`:''}{compact&&account.hosts.length>1?` · shared by ${account.hosts.length} hosts`:''}</span>}</div></>;
   else if(account.kind==='api') body=<><SpendRows account={account} period={period}/>{!compact&&<div className="account-foot"><span>Recorded or estimated at model API rates</span></div>}</>;
   else if(account.kind==='unknown') body=<><SpendRows account={account} period={period}/><div className="account-foot"><span>{account.agent==='codex'?`Couldn't tell whether this is an API key or a subscription. Update Codex on ${hosts} to see limits.`:`Couldn't detect the plan on ${hosts}.`}</span></div></>;
@@ -110,8 +111,8 @@ function footerValue({state,now}:{state:UsageState;now:number}) {
     const {account,window}=summary.worst;const stale=windowStale(window,now);const tone=toneOf(window,stale);
     const left=stale?staleUsedText(window):window.usedPercent>=100?'Limit reached':`${Math.max(0,Math.floor(100-window.usedPercent))}%`;
     const asOf=stale?` (${asOfText(window.at!,now)}; ${STALE_HINT[account.agent!].toLowerCase()})`:'';
-    if(summary.spend) return {icon:'gauge',label:'Usage',tone,value:<><span className={tone}>{left}</span> · {price(summary.spend)}{star}</>,title:`${SHORT_NAMES[account.agent!]} ${windowLabel(window).toLowerCase()}: ${stale?staleUsedText(window):leftText(window)}${asOf} · API spend in the last 24 hours: ${price(summary.spend)}`};
-    return {icon:'gauge',label:`${SHORT_NAMES[account.agent!]} ${windowLabel(window).toLowerCase()}`,tone,value:<><span className={tone}>{stale?staleUsedText(window):leftText(window)}</span>{star}</>,title:stale?`${AGENT_NAMES[account.agent!]} ${account.plan??''}: ${staleUsedText(window)} of the ${windowLabel(window).toLowerCase()} limit${asOf}`:`${AGENT_NAMES[account.agent!]} ${account.plan??''}: ${leftText(window)} of the ${windowLabel(window).toLowerCase()} limit`};
+    if(summary.spend) return {icon:'gauge',label:'Usage',tone,value:<><span className={tone}>{left}</span> · {price(summary.spend)}{star}</>,title:`${SHORT_NAMES[account.agent!]} ${windowName(window)}: ${stale?staleUsedText(window):leftText(window)}${asOf} · API spend in the last 24 hours: ${price(summary.spend)}`};
+    return {icon:'gauge',label:`${SHORT_NAMES[account.agent!]} ${windowName(window)}`,tone,value:<><span className={tone}>{stale?staleUsedText(window):leftText(window)}</span>{star}</>,title:stale?`${AGENT_NAMES[account.agent!]} ${account.plan??''}: ${staleUsedText(window)} of the ${windowName(window)} limit${asOf}`:`${AGENT_NAMES[account.agent!]} ${account.plan??''}: ${leftText(window)} of the ${windowName(window)} limit`};
   }
   if(summary.spend) return {icon:'dollar',label:'24h',tone:'',value:<>{summary.estimate&&!summary.spend.estimated?'≈ ':''}{price(summary.spend)}{star}</>,title:`API spend in the last 24 hours · ${price(summary.spend)}${summary.partial?' · partial coverage':''}`};
   const value=summary.pending?'Waiting…':state.limits?.disabled&&!state.hosts?.length?'Off':!state.hosts&&!state.limits?(state.error?'Unavailable':'…'):'—';

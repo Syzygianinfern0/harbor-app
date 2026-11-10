@@ -29,14 +29,20 @@ const SCENARIOS: Record<string, object> = {
   // except its weekly window, last read 90 minutes ago (each window carries its own reading time).
   stale: { usage: [{ hostId: local, hostLabel: 'This Mac', agents: [spend('claude', 2.48), spend('codex', 0.62)] }],
     limits: { hosts: [{ hostId: local, hostLabel: 'This Mac', agents: [{ agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: { ...windows(91, 40), ago: 7200, source: 'statusline' } }, { agent: 'codex', mode: 'subscription', plan: 'Plus', account: 'bbbbbbbbbbbbbbbb', limits: { windows: [{ usedPercent: 27, windowMinutes: 300, resetsIn: 8040 }, { usedPercent: 69, windowMinutes: 10080, resetsIn: 300000, ago: 5400 }], ago: 60, source: 'live' } }] }] }, chat },
+  // Claude's weekly Fable limit (from the get_usage read) beside the all-models windows; one chat runs Fable, one Opus.
+  scoped: { usage: [{ hostId: local, hostLabel: 'This Mac', agents: [spend('claude', 2.48)] }],
+    limits: { hosts: [{ hostId: local, hostLabel: 'This Mac', agents: [{ agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: { windows: [...windows(30, 40).windows, { usedPercent: 93, windowMinutes: 10080, resetsIn: 300000, scope: 'Fable' }], ago: 60, source: 'live' } }] }],
+      chats: { 'Fix tab folding': { mode: 'subscription', account: 'aaaaaaaaaaaaaaaa', model: 'Fable' }, 'Review the docs': { mode: 'subscription', account: 'aaaaaaaaaaaaaaaa', model: 'Opus 5.5' } } }, chat },
+  scopedOut: { usage: [{ hostId: local, hostLabel: 'This Mac', agents: [spend('claude', 2.48)] }],
+    limits: { hosts: [{ hostId: local, hostLabel: 'This Mac', agents: [{ agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: { windows: [...windows(30, 40).windows, { usedPercent: 100, windowMinutes: 10080, resetsIn: 300000, scope: 'Fable' }], ago: 60, source: 'live' } }] }] }, chat },
   // The sandbox's own fixture (npm run dev:sandbox), so its token counts stay renderable.
   sandbox: JSON.parse(readFileSync(path.resolve('tests/fixtures/usage-mixed.json'), 'utf8')),
 };
 
-async function launch(scenario?: string) {
+async function launch(scenario?: string, chats = [['claude', 'Fix tab folding'], ['codex', 'Write unit tests']]) {
   const dir = await mkdtemp(path.join(tmpdir(), 'harbor-usage-plans-')); const createdAt = new Date().toISOString();
   const projects = [{ id: 'app', name: 'harbor-app', cwd: dir, hostId: 'local', hostLabel: 'This Mac', connection: 'local', createdAt }];
-  const sessions = [['claude', 'Fix tab folding'], ['codex', 'Write unit tests']].map(([launcher, name], i) => ({ id: `chat-${i}`, tmuxName: `harbor-eeee${i}`, paneId: `%${i}`, name, host: 'local', cwd: dir, launcher, group: '', tags: [], pinned: false, archived: false, createdAt, updatedAt: new Date(Date.now() - i * 1000).toISOString(), status: 'closed', projectId: 'app', hasMessages: true }));
+  const sessions = chats.map(([launcher, name], i) => ({ id: `chat-${i}`, tmuxName: `harbor-eeee${i}`, paneId: `%${i}`, name, host: 'local', cwd: dir, launcher, group: '', tags: [], pinned: false, archived: false, createdAt, updatedAt: new Date(Date.now() - i * 1000).toISOString(), status: 'closed', projectId: 'app', hasMessages: true }));
   await writeFile(path.join(dir, 'sessions.json'), JSON.stringify({ version: 2, projects, sessions }));
   const env: Record<string, string> = { ...process.env as Record<string, string>, HARBOR_DATA_DIR: dir, HARBOR_TMUX_SOCKET: 'harbor-usage-e2e-' + process.pid };
   delete env.HARBOR_USAGE_FIXTURE; delete env.HARBOR_LIVE_USAGE;
@@ -183,5 +189,33 @@ test('stale readings are greyed lower bounds with a hint, and never warn as if c
     await expect(page.getByLabel('Plan usage')).toContainText('5-hour · ≥91% used · as of 2 h ago'); await expect(page.getByLabel('Plan usage')).toHaveClass(/stale/);
     const ring = page.getByRole('img', { name: 'Claude 5-hour: ≥91% used, as of 2 h ago' }); await expect(ring).toBeVisible(); await expect(ring).toHaveClass(/stale/);
     await shot(page, 'usage-stale-chat');
+  } finally { await app.close(); }
+});
+
+test('per-model weekly limits: shown on the card, and counted only for chats on that model', async () => {
+  const { app, page } = await launch('scoped', [['claude', 'Fix tab folding'], ['claude', 'Review the docs']]);
+  try {
+    await expect(footer(page)).toContainText('Claude weekly (Fable)'); await expect(footer(page)).toContainText('7% left');
+    await footer(page).click();
+    const card = page.getByRole('dialog', { name: 'Usage', exact: true }).getByRole('region', { name: 'Claude Code usage' });
+    await expect(card.getByRole('meter')).toHaveCount(3); await expect(card).toContainText('Weekly (Fable)'); await expect(card).toContainText('60% left');
+    await expect(card).toContainText('Almost out of Fable.'); await expect(card).not.toContainText('paused');
+    await shot(page, 'usage-scoped-popover'); await page.keyboard.press('Escape');
+    await openChat(page, 'Review the docs');
+    await expect(page.getByLabel('Plan usage')).toContainText('Weekly · 60% left'); await expect(page.locator('.limit-ring')).toHaveCount(0);
+    await openChat(page, 'Fix tab folding');
+    await expect(page.getByLabel('Plan usage')).toContainText('Weekly (Fable) · 7% left');
+    await expect(page.locator('.limit-ring')).toHaveCount(1); await expect(page.getByRole('img', { name: /^Claude weekly \(fable\): 7% left$/i })).toBeVisible();
+    await shot(page, 'usage-scoped-chat');
+  } finally { await app.close(); }
+});
+
+test('a reached per-model limit pauses only that model', async () => {
+  const { app, page } = await launch('scopedOut');
+  try {
+    await footer(page).click();
+    const card = page.getByRole('dialog', { name: 'Usage', exact: true }).getByRole('region', { name: 'Claude Code usage' });
+    await expect(card).toContainText('Fable limit reached, resets'); await expect(card).toContainText('Chats on other models keep working.');
+    await expect(card).not.toContainText('Claude is paused');
   } finally { await app.close(); }
 });

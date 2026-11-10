@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { STALE_AFTER_MS, asOfText, buildAccounts, chatPlan, cleanBilling, cleanLimits, cleanPlans, currentWindows, footerSummary, isStale, mergeLimits, windowStale, leftText, resetText, staleUsedText, tightest, toneOf, windowLabel } from '../src/shared/usagePlans';
+import { STALE_AFTER_MS, appliesTo, asOfText, buildAccounts, chatPlan, cleanBilling, cleanLimits, cleanPlans, currentWindows, footerSummary, isStale, mergeLimits, windowStale, leftText, resetText, staleUsedText, tightest, toneOf, windowLabel, windowName } from '../src/shared/usagePlans';
 import { usageSourceFromEnv, fixtureLimits } from '../src/engine/usageSource';
 import { addTokens, compactTokens, tokenBreakdown, tokenLine } from '../src/shared/usageTokens';
 import type { AgentUsage, HostUsage, UsageLimits } from '../src/shared/types';
@@ -131,4 +131,34 @@ test('an older bridge\'s untimed reading never replaces or freshens a timed wind
   const legacy = { windows: [{ usedPercent: 80, windowMinutes: 10080, resetsAt: sec + 300000 }, { usedPercent: 10, windowMinutes: 60 }], at: sec };
   for (const merged of [mergeLimits(known, legacy)!, mergeLimits(legacy, known)!])
     assert.deepEqual(merged.windows.map(w => [w.windowMinutes, w.usedPercent, w.at]), [[60, 40, sec - 900], [300, 3, sec - 30], [10080, 86, sec - 30]]);
+});
+
+test('per-model limits: kept apart from the all-models window, labelled, and counted only for chats on that model', () => {
+  const week = (usedPercent: number, scope?: string, at = sec - 60) => ({ usedPercent, windowMinutes: 10080, resetsAt: sec + 300000, at, ...(scope ? { scope } : {}) });
+  const probe = { windows: [{ usedPercent: 30, windowMinutes: 300, resetsAt: sec + 6000, at: sec - 60 }, week(40), week(93, 'Fable')], at: sec - 60, source: 'live' as const };
+  const status = { windows: [week(45, undefined, sec - 10)], at: sec - 10, source: 'statusline' as const };
+  const merged = mergeLimits(probe, status)!;
+  assert.deepEqual(merged.windows.map(w => [w.windowMinutes, w.scope, w.usedPercent]), [[300, undefined, 30], [10080, undefined, 45], [10080, 'Fable', 93]]);
+  assert.deepEqual(mergeLimits(status, probe)!.windows, merged.windows);
+  assert.equal(windowLabel(week(1, 'Fable')), 'Weekly (Fable)'); assert.equal(windowName(week(1, 'Fable')), 'weekly (Fable)'); assert.equal(windowName({ usedPercent: 1, windowMinutes: 300 }), '5-hour');
+  // A reset window keeps its scope.
+  assert.deepEqual(currentWindows({ windows: [{ ...week(93, 'Fable'), resetsAt: sec - 1 }], at: sec }, now), [{ usedPercent: 0, windowMinutes: 10080, scope: 'Fable', at: sec - 60 }]);
+  assert.ok(appliesTo(week(1, 'Fable'), 'Fable')); assert.ok(appliesTo(week(1, 'Fable'), 'claude-fable-1')); assert.ok(appliesTo(week(1), undefined));
+  assert.ok(!appliesTo(week(1, 'Fable'), 'Opus 5.5')); assert.ok(!appliesTo(week(1, 'Fable'), undefined)); assert.ok(!appliesTo(week(1, 'Fable'), 'Fabled'));
+  const scoped: UsageLimits = { hosts: [{ hostId: local, hostLabel: 'This Mac', checkedAt: '', agents: [{ agent: 'claude', mode: 'subscription', plan: 'Max', account: 'aaaaaaaaaaaaaaaa', limits: merged }] }],
+    chats: { fable: { mode: 'subscription', account: 'aaaaaaaaaaaaaaaa', model: 'Fable' }, opus: { mode: 'subscription', account: 'aaaaaaaaaaaaaaaa', model: 'Opus 5.5' } } };
+  const accounts = buildAccounts(undefined, scoped);
+  const plan = (id: string) => chatPlan({ id, launcher: 'claude', host: 'local' }, scoped, accounts, now)?.window;
+  assert.deepEqual([plan('fable')?.scope, plan('fable')?.usedPercent], ['Fable', 93]);
+  assert.deepEqual([plan('opus')?.scope, plan('opus')?.usedPercent], [undefined, 45]);
+  assert.equal(plan('unknown-model')?.usedPercent, 45, 'a chat whose model is not known yet never counts a per-model limit');
+  // The account itself (card, sidebar) shows every window, the Fable one included.
+  assert.equal(footerSummary(accounts, now).worst?.window.scope, 'Fable');
+});
+
+test('scopes and models from the bridge are plain, short text', () => {
+  const limits = cleanLimits({ windows: [{ usedPercent: 9, windowMinutes: 10080, scope: '<img src=x>Fable' }, { usedPercent: 9, windowMinutes: 10080, scope: 7 }, { usedPercent: 9, windowMinutes: 10080, scope: 'x'.repeat(80) }], at: sec });
+  assert.deepEqual(limits?.windows.map(w => w.scope), ['img srcxFable', undefined, 'x'.repeat(30)]);
+  assert.equal(cleanBilling({ mode: 'subscription', model: 'Opus 5.5 (1M context)' })?.model, 'Opus 5.5 (1M context)');
+  assert.equal(cleanBilling({ mode: 'subscription', model: '<>' })?.model, undefined);
 });
