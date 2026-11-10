@@ -24,6 +24,17 @@ async function fire(target:Locator,type:string,spot:Spot='middle') {
     return !el.dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:w.__transfer,clientX:x,clientY:y}));
   },[type,spot] as const);
 }
+/** Synthetic drag event at a window point, on whatever element is there (as a real drag would hit it). */
+async function fireAt(page:Page,type:string,x:number,y:number) {
+  return page.evaluate(([type,x,y])=>{const el=document.elementFromPoint(x,y)!;return !el.dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:(window as any).__transfer,clientX:x,clientY:y}));},[type,x,y] as const);
+}
+/** Drops at a spot and reports which sidebar projects started sliding, a frame later. */
+const dropSliding=(target:Locator,spot:Spot)=>target.evaluate(async(el,spot)=>{
+  const r=el.getBoundingClientRect(),y=spot==='top'?r.top+3:spot==='bottom'?r.bottom-3:r.top+r.height/2;
+  el.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:(window as any).__transfer,clientX:r.left+r.width/2,clientY:y}));
+  await new Promise(done=>requestAnimationFrame(done));
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-project-section]')).filter(s=>s.getAnimations().length).map(s=>s.dataset.projectSection);
+},spot);
 const caretX=(page:Page)=>page.locator('.tab-drop-caret').evaluate(e=>{const r=e.getBoundingClientRect();return r.left+r.width/2;});
 const layout=(page:Page)=>page.locator('.session-toolbar .tab-strip').evaluate(strip=>({scroll:strip.scrollWidth,items:Array.from(strip.children,c=>Math.round(c.getBoundingClientRect().left)+':'+Math.round(c.getBoundingClientRect().width))}));
 
@@ -86,7 +97,7 @@ test('drag cues mark exactly where tabs, groups, projects and panes land, and cl
     // A chat already in the group is not offered it again.
     await fire(tab('a2'),'dragstart');expect(await fire(custom,'dragover')).toBe(false);await expect(page.locator('.drop-into')).toHaveCount(0);await fire(tab('a2'),'dragend');
 
-    // Sidebar projects: a line above or below the whole project, by pointer half.
+    // Sidebar projects: a line above or below the whole project, by which half of its heading the pointer is on.
     const section=(name:string)=>page.locator('.sidebar .project-section',{has:page.locator('.project-name',{hasText:name})});
     const heading=(name:string)=>section(name).locator('.project-heading');
     await expect(page.locator('.sidebar .project-name')).toHaveText(['neurips-paper','Agent-Manager','tessera-api']);
@@ -96,9 +107,24 @@ test('drag cues mark exactly where tabs, groups, projects and panes land, and cl
     expect(await fire(section('Agent-Manager'),'dragover','top')).toBe(true);await expect(section('Agent-Manager')).toHaveClass(/drop-before/);
     expect(await section('Agent-Manager').evaluate(e=>getComputedStyle(e,'::before').height)).toBe('2px');
     await page.screenshot({animations:'disabled',path:'test-results/screenshots/63-drag-cue-sidebar-project.png'});
-    await fire(section('Agent-Manager'),'drop','top');await fire(heading('tessera-api'),'dragend');
+    // The drop lands at once, and the two projects that trade places slide rather than jump.
+    expect((await dropSliding(section('Agent-Manager'),'top')).sort()).toEqual(['api','app']);await fire(heading('tessera-api'),'dragend');
     await expect(page.locator('.sidebar .project-name')).toHaveText(['neurips-paper','tessera-api','Agent-Manager']);
     await expect(page.locator('.sidebar .drop-before,.sidebar .drop-after,.sidebar .drag-source')).toHaveCount(0);
+    // Below its heading, an expanded project means "after it", even over its first chat.
+    await page.waitForTimeout(300);await fire(heading('neurips-paper'),'dragstart');
+    expect(await fire(section('tessera-api').locator('.chat-row').first(),'dragover','top')).toBe(true);await expect(section('tessera-api')).toHaveClass(/drop-after/);
+    // The gap between two projects is a target too: the line stays in it, centered between them.
+    const [above,below]=await Promise.all([section('tessera-api').locator('.project-chats').boundingBox(),heading('Agent-Manager').boundingBox()]);
+    const gapY=(above!.y+above!.height+below!.y)/2;
+    expect(await fireAt(page,'dragover',below!.x+40,gapY)).toBe(true);await expect(section('tessera-api')).toHaveClass(/drop-after/);
+    const bar=await section('tessera-api').evaluate(e=>{const r=e.getBoundingClientRect(),cue=getComputedStyle(e,'::after');return r.bottom-parseFloat(cue.bottom)-parseFloat(cue.height)/2;});
+    expect(Math.abs(bar-gapY)).toBeLessThanOrEqual(1.5);
+    await page.screenshot({animations:'disabled',path:'test-results/screenshots/67-drag-cue-sidebar-gap.png'});
+    expect(await fireAt(page,'drop',below!.x+40,gapY)).toBe(true);await fire(heading('neurips-paper'),'dragend');
+    await expect(page.locator('.sidebar .project-name')).toHaveText(['tessera-api','neurips-paper','Agent-Manager']);
+    await page.waitForTimeout(300);await fire(heading('tessera-api'),'dragstart');await fire(heading('neurips-paper'),'dragover','bottom');await fire(heading('neurips-paper'),'drop','bottom');await fire(heading('tessera-api'),'dragend');
+    await expect(page.locator('.sidebar .project-name')).toHaveText(['neurips-paper','tessera-api','Agent-Manager']);
 
     // Panes: the hovered zone previews the half a split takes, or the whole pane for a move.
     const first=await page.locator('.workspace-pane').first().getAttribute('data-session-id');

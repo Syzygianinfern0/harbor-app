@@ -16,10 +16,11 @@ export function useDropCue<S,C>() {
 }
 
 /** A vertical list reordered by dragging: the source dims, a line marks the edge it will land on, and a drop that
- *  would change nothing shows nothing. `ids` is the order as shown; `onMove` applies the same move. */
-export function useListReorder(type:string,ids:string[],onMove:(source:string,target:string,after:boolean)=>void) {
+ *  would change nothing shows nothing. `ids` is the order as shown; `onMove` applies the same move. `edge` picks the part
+ *  of a target whose halves mean before/after (default: all of it); the rest of the target counts as after. */
+export function useListReorder(type:string,ids:string[],onMove:(source:string,target:string,after:boolean)=>void,edge?:(target:HTMLElement)=>Element|null) {
   const {source,setSource,cue,show,leave}=useDropCue<string,{id:string;after:boolean}>();
-  const after=(event:DragEvent)=>{const r=event.currentTarget.getBoundingClientRect();return dropSide(r,event.clientX,event.clientY,'y')==='after';};
+  const after=(event:DragEvent)=>{const el=event.currentTarget as HTMLElement,r=(edge?.(el)??el).getBoundingClientRect();return dropSide(r,event.clientX,event.clientY,'y')==='after';};
   return {
     source:(id:string)=>({draggable:true,
       onDragStart:(event:DragEvent)=>{event.dataTransfer.setData(type,id);event.dataTransfer.effectAllowed='move';setSource(id);},

@@ -98,7 +98,9 @@
 /* Projects and conversations */
 .projects-list{flex:1;min-height:0;overflow:auto;padding:0 10px 18px}
 .projects-list>.section-label{padding:7px 10px 14px;letter-spacing:1.4px;align-items:center}
-.project-section{margin-bottom:13px}
+/* Padding, not margin: the gap between projects belongs to the one above, so a drag over it still has a target.
+   Opaque like the sticky headings, so a project sliding past another covers it instead of mixing their rows. */
+.project-section{padding-bottom:13px;background:#191c23}
 .project-heading{display:flex;gap:2px;align-items:center;height:33px;border-radius:6px;padding:0 3px;color:#8e9bab}
 .project-heading.active{color:#c9d7d0}
 .project-name{display:flex;align-items:center;gap:7px;flex:1;min-width:0;text-align:left;padding:6px 1px;font-size:11px;font-weight:600}
@@ -487,7 +489,7 @@ button.note-check:hover{color:#8d98a6}
 .tab-group-chip.drop-into .chip-pill{background:color-mix(in srgb,var(--group-color) 34%,transparent);border-color:var(--group-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--group-color) 45%,transparent)}
 .project-section,.managed-project{position:relative}
 .drop-before::before,.drop-after::after{content:"";position:absolute;left:4px;right:4px;height:2px;border-radius:1px;background:var(--mint);box-shadow:0 0 0 1px #10121799;pointer-events:none;animation:drop-cue-in .09s ease-out}
-.project-section.drop-before::before{top:-7.5px}.project-section.drop-after::after{bottom:-7.5px}
+.project-section.drop-before::before{top:-7.5px}.project-section.drop-after::after{bottom:5.5px}
 .managed-project.drop-before::before{top:-6px}.managed-project.drop-after::after{bottom:-6px}
 /* Panes: the hovered zone previews the space the chat will take, a half for a split, the whole pane for a move. */
 .has-cue .pane-drop-zone{background:transparent;border-color:#8abda422;color:#d4efe066}.has-cue .pane-drop-zone.over{border-color:transparent;color:#effaf4;font-weight:600}
