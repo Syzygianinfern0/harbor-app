@@ -3,7 +3,7 @@ import { Check, ChevronRight, Flag, GripVertical, Plus, X } from 'lucide-react';
 import { groupLists, inlineText, parseBlocks, parseInline, scanLines, type Block, type Inline, type List, type ListNode, type Priority } from '../shared/markdown';
 import { addTask, deleteTask, editTask, indentTask, insertTask, moveTask, nudgeTask, outdentTask, setPriority, toggleTask, type Placed } from '../shared/todos';
 import { useDropCue } from './useDropCue';
-import { reducedMotion } from './useTabMotion';
+import { useListMotion } from './useListMotion';
 
 // Notes render from a parsed tree into React text nodes only; there is no HTML path, so nothing in a note can inject markup.
 export const PRIORITY_NAMES:Record<Priority,string>={1:'Priority 1',2:'Priority 2',3:'Priority 3',4:'Priority 4'};
@@ -78,26 +78,11 @@ function useItemDrag(root:RefObject<HTMLDivElement|null>,get:()=>string,onChange
   };
 }
 
-// FLIP for note rows, timed like the tab strip's: rows that move slide from where they were painted. A row is known by
-// its text (and which copy of that text it is), since its line number changes when it moves.
-const EASE='cubic-bezier(.2,0,0,1)',MOVE=170;
+// Rows that move slide into place. A row is known by its text (and which copy of that text it is), since its line number
+// changes when it moves.
 const rowKeys=(el:HTMLElement)=>{const seen=new Map<string,number>();return [...el.querySelectorAll<HTMLElement>('li.note-item>.note-item-row')].map(row=>{
   const text=row.querySelector<HTMLTextAreaElement>('.note-item-input')?.value??row.querySelector('.note-item-text')?.textContent??'',n=seen.get(text)??0;seen.set(text,n+1);
   return [`${text}\u0000${n}`,row] as const;});};
-function useRowMotion(root:RefObject<HTMLDivElement|null>,text:string) {
-  const shown=useRef(text),before=useRef<Map<string,DOMRect>|null>(null),running=useRef<Animation[]>([]);
-  // Measure the painted rows during the render that brings new text, before React commits it.
-  if(shown.current!==text&&!before.current&&root.current&&!reducedMotion())before.current=new Map(rowKeys(root.current).map(([k,row])=>[k,row.getBoundingClientRect()]));
-  shown.current=text;
-  useLayoutEffect(()=>{
-    const el=root.current,prev=before.current;before.current=null;if(!el||!prev)return;
-    running.current.forEach(a=>a.cancel());running.current=[];
-    for(const [key,row] of rowKeys(el)){
-      const old=prev.get(key);if(!old)continue;const now=row.getBoundingClientRect(),dx=old.left-now.left,dy=old.top-now.top;
-      if(Math.abs(dx)>.5||Math.abs(dy)>.5)running.current.push(row.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],{duration:MOVE,easing:EASE}));
-    }
-  },[text]);
-}
 
 function PriorityMenu({priority,onPick}:{priority:Priority;onPick:(p:Priority)=>void}) {
   const button=useRef<HTMLButtonElement>(null);const [at,setAt]=useState<{x:number;y:number}>();
@@ -231,7 +216,7 @@ export function NoteMarkdown({text,onChange,className='',id}:{text:string;onChan
   const [completedOpen,setCompletedOpen]=useCompletedOpen(id);
   const latest=useRef(text);latest.current=text;
   const root=useRef<HTMLDivElement>(null);const [editing,setEditing]=useState<{line:number;caret:Caret}>();const focusItem=useFocusItem(root,text);
-  const drag=useItemDrag(root,()=>latest.current,onChange);useRowMotion(root,text);
+  const drag=useItemDrag(root,()=>latest.current,onChange);useListMotion(root,text,rowKeys);
   const change=onChange&&((next:string)=>{if(next===latest.current)return;latest.current=next;onChange(next);});
   const ctx:Ctx={get:()=>latest.current,change,drag,editing,
     edit:(line,caret='end')=>setEditing({line,caret}),

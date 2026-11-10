@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, type RefObject } from 'react';
 // FLIP for the tab strip: items that stay slide from where they were painted,
 // new ones fade/scale in, and removed ones leave a fading ghost. Short and
 // decelerating so a click still feels immediate.
-const EASE='cubic-bezier(.2,0,0,1)',MOVE=170,ENTER=150,EXIT=120;
+export const EASE='cubic-bezier(.2,0,0,1)',MOVE=170;const ENTER=150,EXIT=120;
 const ITEMS='[data-tab-id],[data-group-key],.tab-add';
 type Snapshot=Map<string,{el:HTMLElement;rect:DOMRect}>;
 const keyOf=(el:HTMLElement)=>el.dataset.tabId?`t:${el.dataset.tabId}`:el.dataset.groupKey?`g:${el.dataset.groupKey}`:'add';
