@@ -350,7 +350,7 @@ test('agent status icons distinguish working, attention, completion and errors; 
   await page.screenshot({path:'test-results/screenshots/22b-closed-chat-no-icon.png'});
   await page.getByRole('button',{name:'Settings',exact:true}).first().click();await page.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Status icons',exact:true}).click();
   const closedGuide=page.locator('.icon-guide-row').filter({hasText:'Closed'});await expect(closedGuide.locator('svg')).toHaveCount(0);await expect(closedGuide).toContainText('No icon.');
-  await expect(page.locator('.icon-guide-row svg')).toHaveCount(9);
+  await expect(page.locator('.icon-guide-row svg')).toHaveCount(10);await expect(page.locator('.icon-guide-row').filter({hasText:'Interrupted'}).locator('.chat-activity.interrupted svg')).toHaveCount(1);
   await page.screenshot({path:'test-results/screenshots/22c-icon-guide-closed.png'});
   await page.keyboard.press('Meta+w');await expect(page.locator('.icon-guide')).toHaveCount(0);
   const toggle=page.getByRole('switch',{name:'Hide all closed chats'});await toggle.focus();await page.keyboard.press('Space');await expect(toggle).toBeChecked();

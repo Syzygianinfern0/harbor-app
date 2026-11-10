@@ -2,7 +2,7 @@ import type { Session } from './types';
 
 export const activityLabel = {
   starting: 'Starting', working: 'Working', attention: 'Needs input or approval',
-  background: 'Waiting on background work',
+  background: 'Waiting on background work', interrupted: 'Interrupted',
   completed: 'Turn finished — waiting for next prompt', idle: 'Ready',
   error: 'Agent error', closed: 'Closed', unknown: 'Status unavailable', external: 'Running elsewhere'
 };

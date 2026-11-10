@@ -54,6 +54,8 @@ test('rollup reports the most urgent status first',()=>{
   assert.deepEqual(rollup(items,i=>i.s),{activity:'attention',item:items[3],count:2});
   assert.equal(rollup([{s:'working'},{s:'completed'}],i=>i.s)?.activity,'completed');
   assert.equal(rollup([{s:'idle'},{s:'closed'}],i=>i.s),undefined);
+  assert.equal(rollup([{s:'working'},{s:'completed'},{s:'interrupted'}],i=>i.s)?.activity,'interrupted');
+  assert.equal(rollup([{s:'error'},{s:'interrupted'}],i=>i.s)?.activity,'error');
 });
 
 test('pruning, colors and restore validate persisted state',()=>{
