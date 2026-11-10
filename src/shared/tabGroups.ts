@@ -101,7 +101,7 @@ export function assignProjectColors(state:TabGroups,projectIds:string[]):TabGrou
   return {...state,projectColors:colors};
 }
 /** The one status worth reporting for a folded group: the most urgent, then the item that has it. */
-export const ROLLUP_ORDER=['attention','error','completed','background','working','starting'] as const;
+export const ROLLUP_ORDER=['attention','error','interrupted','completed','background','working','starting'] as const;
 export function rollup<T>(items:T[],activity:(item:T)=>string) {
   for(const status of ROLLUP_ORDER){const hits=items.filter(i=>activity(i)===status);if(hits.length)return {activity:status,item:hits[0],count:hits.length};}
   return undefined;

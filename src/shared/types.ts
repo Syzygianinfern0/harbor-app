@@ -2,7 +2,7 @@ import type { OpenAppId, OpenInPreferences } from './openIn';
 export type Launcher = 'shell' | 'codex' | 'claude' | 'custom';
 export type PermissionMode = 'standard' | 'read-only' | 'accept-edits' | 'plan' | 'full-access';
 export type TabShortcut = number | 'next' | 'previous';
-export type Activity = 'starting' | 'working' | 'attention' | 'background' | 'idle' | 'closed' | 'error' | 'unknown';
+export type Activity = 'starting' | 'working' | 'attention' | 'background' | 'interrupted' | 'idle' | 'closed' | 'error' | 'unknown';
 export interface Project { id: string; name: string; cwd: string; hostId?: string; hostLabel: string; connection: Connection; createdAt: string; hidden?: boolean; historyError?: string; note?: string }
 /** inputTokens includes cache reads and writes; outputTokens includes reasoning (Codex only). */
 export interface TokenUsage { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens?: number; totalTokens: number }

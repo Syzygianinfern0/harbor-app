@@ -1165,6 +1165,12 @@ def codex_activity(status):
     if kind == 'idle': return 'idle', ''
     return 'unknown', 'Codex runtime status is unavailable'
 
+def codex_turn_interrupted(ws, thread):
+    # Esc idles a Codex thread exactly like a finished turn; only the last turn's status tells them apart.
+    try: turns = ws.rpc('thread/turns/list', {'threadId': thread, 'limit': 1, 'sortDirection': 'desc', 'itemsView': 'notLoaded'}).get('data') or []
+    except RuntimeError: turns = (ws.rpc('thread/read', {'threadId': thread, 'includeTurns': True})['thread'].get('turns') or [])[-1:]  # Older Codex.
+    return bool(turns) and isinstance(turns[0], dict) and turns[0].get('status') == 'interrupted'
+
 def artifact_watch(task):
     # Claude flags artifact live-update watchers ambient, not activity: they wait indefinitely for comments or republishes.
     return str(task.get('description') or '').startswith('live updates for artifact ')
@@ -1188,6 +1194,30 @@ def claude_background_idle(pid):
         parts = row.split(None, 2)
         if len(parts) >= 2 and parts[1] == str(pid) and not (len(parts) > 2 and parts[2].split()[0].endswith('caffeinate')): return False
     return True
+
+CLAUDE_INTERRUPTS = ('[Request interrupted by user]', '[Request interrupted by user for tool use]')
+
+def claude_interrupt_marker(file):
+    # Claude records Esc as a main-chain user message; it runs no Stop hook and no PostToolUse for the cut-off tool.
+    try:
+        with open(file, 'rb') as f:
+            f.seek(0, 2); f.seek(max(0, f.tell() - 262144)); lines = f.read().splitlines()
+    except (OSError, TypeError): return False
+    for line in reversed(lines):
+        try: record = json.loads(line)
+        except (ValueError, UnicodeError): continue
+        if not isinstance(record, dict) or record.get('type') not in ('user', 'assistant') or record.get('isSidechain') or record.get('isMeta'): continue
+        content = (record.get('message') or {}).get('content')
+        texts = [content] if isinstance(content, str) else [c.get('text') for c in content if isinstance(c, dict) and c.get('type') == 'text'] if isinstance(content, list) else []
+        return any(str(text).strip() in CLAUDE_INTERRUPTS for text in texts)
+    return False
+
+def claude_interrupted(meta, live, transcript):
+    # Interrupted: hooks last said working, Claude's own session file went idle after the last hook, and the turn ends in an interrupt marker.
+    if meta.get('activity') not in ('working', 'attention') or live.get('status') != 'idle': return False
+    try: changed = float(live.get('statusUpdatedAt')) / 1000
+    except (TypeError, ValueError): return False
+    return changed > float(meta.get('hookAt') or 0) + 1 and claude_interrupt_marker(transcript)
 
 def claude_activity(event):
     kind = event.get('hook_event_name')
@@ -1214,7 +1244,7 @@ def run(args):
         if stop.is_set(): return
         previous = meta.get('activity'); meta.update(values); meta['updatedAt'] = time.time()
         if values.get('activity') in ('attention','error') and previous != values['activity']: meta['attentionAt'] = time.time()
-        if values.get('activity') == 'idle' and previous in ('working','background'): meta['completedAt'] = time.time()
+        if values.get('activity') == 'idle' and previous in ('working','background','interrupted'): meta['completedAt'] = time.time()
         atomic(meta_file, meta)
     def shutdown(_signum=None, _frame=None):
         stop.set()
@@ -1247,6 +1277,7 @@ def run(args):
                         record = codex_thread(records, meta.get('conversationId'), args.fork)
                         if not record: continue
                         activity, reason = codex_activity(record.get('status', {}))
+                        if activity == 'idle' and meta.get('activity') in ('working','attention','interrupted') and codex_turn_interrupted(ws, record['id']): activity = 'interrupted'
                         if activity == 'idle':
                             try: terminals = ws.rpc('thread/backgroundTerminals/list', {'threadId': record['id']}).get('data') or []
                             except (RuntimeError, TimeoutError): terminals = []  # Older Codex without the experimental method.
@@ -1282,6 +1313,8 @@ def run(args):
                     current = live_claude().get(identity, {})
                     records = history('claude', os.getcwd(), identity)
                     record = next((r for r in records if r['conversationId'] == identity), {})
+                    if claude_interrupted(latest, current, record.get('transcript')):
+                        patch_metadata(meta_file, generation, {'activity':'interrupted','reason':'','updatedAt':time.time()}, lambda m: (m.get('activity'), m.get('hookAt')) == (latest.get('activity'), latest.get('hookAt')))
                     patch = {'updatedAt': time.time()}
                     if record:
                         patch.update(name=record['name'], resumable=True)
@@ -1303,11 +1336,11 @@ def run(args):
                 except ProcessLookupError: pass
         if ws: ws.sock.close()
 
-def patch_metadata(file, generation, patch):
+def patch_metadata(file, generation, patch, unchanged=None):
     with open(file.with_suffix('.lock'), 'a') as guard:
         os.chmod(guard.name, 0o600); fcntl.flock(guard, fcntl.LOCK_EX)
         meta = read(file, {})
-        if meta.get('generation') == generation:
+        if meta.get('generation') == generation and (unchanged is None or unchanged(meta)):
             meta.update(patch); atomic(file, meta)
         fcntl.flock(guard, fcntl.LOCK_UN)
 
@@ -1319,15 +1352,17 @@ def hook(chat_id, generation):
         if meta.get('generation') != generation: return
         kind = event.get('hook_event_name'); activity, reason = claude_activity(event)
         # Idle reminders arrive while Claude waits on background work; that wait is still pending.
-        if kind == 'Notification' and activity == 'idle' and meta.get('activity') == 'background': activity, reason = 'background', meta.get('reason', '')
+        # An interrupted turn stays interrupted too: the reminder is not a finished turn.
+        if kind == 'Notification' and activity == 'idle' and meta.get('activity') in ('background','interrupted'): activity, reason = meta['activity'], meta.get('reason', '')
         if activity:
             if activity in ('attention','error'): meta['attentionAt'] = time.time()
             if kind == 'UserPromptSubmit': meta['hasMessages'] = True
             if kind == 'Stop' and activity == 'idle': meta['completedAt'] = time.time()
             if activity == 'background': meta['backgroundKinds'] = sorted({str(t.get('type') or 'task') for t in running_background(event)})
             if kind == 'Notification' and activity == 'idle' and not meta.get('completedAt'): meta['completedAt'] = time.time()
-            meta.update(activity=activity, conversationId=event.get('session_id') or meta.get('conversationId'), updatedAt=time.time(), reason=reason)
-            patch_metadata(file, generation, {key:meta[key] for key in ('activity','conversationId','updatedAt','reason','attentionAt','completedAt','hasMessages','backgroundKinds') if key in meta})
+            # hookAt is the last hook's time; the monitor rewrites updatedAt every poll.
+            meta.update(activity=activity, conversationId=event.get('session_id') or meta.get('conversationId'), updatedAt=time.time(), hookAt=time.time(), reason=reason)
+            patch_metadata(file, generation, {key:meta[key] for key in ('activity','conversationId','updatedAt','hookAt','reason','attentionAt','completedAt','hasMessages','backgroundKinds') if key in meta})
     except Exception: pass
 
 if __name__ == '__main__':

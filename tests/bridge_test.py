@@ -59,6 +59,49 @@ class BridgeTests(unittest.TestCase):
    watching=send({'hook_event_name':'Stop','background_tasks':[watch]})
    self.assertEqual(watching['activity'],'idle');self.assertEqual(watching['reason'],'');self.assertGreater(watching['completedAt'],done['completedAt'])
    self.assertEqual(send({'hook_event_name':'Stop','background_tasks':[watch,task]})['reason'],'1 background task running: Run the test suite')
+ def test_claude_interrupt_is_not_completion_and_survives_idle_reminder(self):
+  with tempfile.TemporaryDirectory() as d, patch.object(bridge,'ROOT',pathlib.Path(d)):
+   file=pathlib.Path(d)/'chats/chat/metadata.json';file.parent.mkdir(parents=True)
+   file.write_text(json.dumps({'generation':'current','activity':'idle'}))
+   def send(event):
+    with patch.object(bridge.sys,'stdin',io.StringIO(json.dumps(event))): bridge.hook('chat','current')
+    return json.loads(file.read_text())
+   working=send({'hook_event_name':'UserPromptSubmit'});self.assertGreater(working['hookAt'],0)
+   transcript=pathlib.Path(d)/'chat.jsonl'
+   write=lambda path,rows: path.write_text('\n'.join(json.dumps(row) for row in rows)+'\n')
+   line=lambda kind,content,**kw: {'type':kind,'isSidechain':False,'message':{'role':kind,'content':content},**kw}
+   write(transcript,[line('user','run it'),line('assistant',[{'type':'tool_use','id':'t1'}]),line('user',[{'type':'tool_result','tool_use_id':'t1'}]),line('user',[{'type':'text','text':'[Request interrupted by user for tool use]'}]),{'type':'last-prompt'},{'type':'file-history-snapshot'}])
+   idle=lambda delay: {'status':'idle','statusUpdatedAt':(working['hookAt']+delay)*1000}
+   self.assertTrue(bridge.claude_interrupted(working,idle(3),transcript))
+   self.assertFalse(bridge.claude_interrupted(working,idle(0.5),transcript),'idle before the last hook is not an interrupt')
+   self.assertFalse(bridge.claude_interrupted(working,{**idle(3),'status':'busy'},transcript))
+   self.assertFalse(bridge.claude_interrupted({**working,'activity':'idle'},idle(3),transcript))
+   self.assertFalse(bridge.claude_interrupted(working,idle(3),None));self.assertFalse(bridge.claude_interrupted(working,{'status':'idle'},transcript))
+   write(transcript,[line('user','[Request interrupted by user]'),line('user','next prompt')])
+   self.assertFalse(bridge.claude_interrupt_marker(transcript),'a later prompt ends the interrupted turn')
+   write(transcript,[line('user','[Request interrupted by user]'),{**line('assistant','sidechain'),'isSidechain':True}])
+   self.assertTrue(bridge.claude_interrupt_marker(transcript))
+   # The monitor's write only lands when no hook moved the chat meanwhile.
+   bridge.patch_metadata(file,'current',{'activity':'interrupted'},lambda m: m.get('hookAt')==working['hookAt']-1)
+   self.assertEqual(json.loads(file.read_text())['activity'],'working')
+   bridge.patch_metadata(file,'current',{'activity':'interrupted'},lambda m: m.get('hookAt')==working['hookAt'])
+   reminder=send({'hook_event_name':'Notification','notification_type':'idle_prompt'})
+   self.assertEqual(reminder['activity'],'interrupted');self.assertNotIn('completedAt',reminder);self.assertNotIn('attentionAt',reminder)
+   self.assertEqual(send({'hook_event_name':'UserPromptSubmit'})['activity'],'working')
+ def test_codex_interrupted_turn_reads_last_turn_status(self):
+  class Socket:
+   def __init__(self,turns,paged=True): self.turns=turns;self.paged=paged;self.calls=[]
+   def rpc(self,method,params):
+    self.calls.append(method)
+    if method=='thread/turns/list':
+     if not self.paged: raise RuntimeError('unknown method')
+     return {'data':list(reversed(self.turns))[:params['limit']]}
+    return {'thread':{'id':params['threadId'],'turns':self.turns}}
+  self.assertTrue(bridge.codex_turn_interrupted(Socket([{'status':'completed'},{'status':'interrupted'}]),'t'))
+  self.assertFalse(bridge.codex_turn_interrupted(Socket([{'status':'interrupted'},{'status':'completed'}]),'t'))
+  old=Socket([{'status':'completed'},{'status':'interrupted'}],paged=False)
+  self.assertTrue(bridge.codex_turn_interrupted(old,'t'));self.assertEqual(old.calls,['thread/turns/list','thread/read'])
+  self.assertFalse(bridge.codex_turn_interrupted(Socket([]),'t'))
  def test_background_reason_and_codex_wording(self):
   self.assertEqual(bridge.background_reason([{'command':'sleep 40; echo done\nmore'}],resumes=False),'Turn finished; 1 background terminal still running: sleep 40; echo done')
   self.assertTrue(bridge.background_reason([{'type':'shell'}]*5).endswith('; +2 more'))

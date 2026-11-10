@@ -291,7 +291,7 @@ export class HarborEngine extends EventEmitter {
             completedAt=previous==='idle'?Math.max(Number(completedAt||0),Number(session.completedAt||0))||meta.updatedAt:Math.max(Number(completedAt||0),Number(meta.updatedAt||0));
             activity='idle';reason='';
           }
-          if(session.status !== 'closed' && activity && ['starting','working','attention','background','idle','closed','error','unknown'].includes(activity)) session.activity=activity;
+          if(session.status !== 'closed' && activity && ['starting','working','attention','background','interrupted','idle','closed','error','unknown'].includes(activity)) session.activity=activity;
           session.activityDetail=reason; session.activityAt=meta.updatedAt;
           const attention=Number(meta.attentionAt||0)>Number(session.attentionAt||0), completed=Number((settled?meta.completedAt:completedAt)||0)>Number(session.completedAt||0);
           if(session.status==='running'&&previousAt&&(attention||completed)) this.emit('attention',{session:structuredClone(session),completed:!attention&&completed});
