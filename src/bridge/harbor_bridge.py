@@ -607,13 +607,20 @@ def epoch(value):
         except ValueError: return None
     return None
 
-def limit_window(used, minutes=None, resets=None):
+def limit_window(used, minutes=None, resets=None, scope=None):
+    """`scope` names the model a window applies to (Claude's per-model weekly limits); None means every model."""
     if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used): return None
     window = {'usedPercent': max(0.0, min(100.0, float(used)))}
     if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) and math.isfinite(minutes) and minutes > 0: window['windowMinutes'] = int(minutes)
     reset = epoch(resets)
     if reset: window['resetsAt'] = reset
+    if scope: window['scope'] = scope
     return window
+
+def label(value, size=30):
+    """A model name or scope from another program, reduced to plain display text."""
+    value = re.sub(r'[^A-Za-z0-9 ._+()-]', '', str(value or '')).strip()[:size].strip()
+    return value or None
 
 def plan_name(value):
     value = str(value or '').strip()
@@ -904,8 +911,9 @@ def merge_limits(old, new):
     wins; a window missing from one snapshot is kept from the other. Each window keeps its own time."""
     if not isinstance(old, dict) or not isinstance(old.get('windows'), list): return new
     if not isinstance(new, dict) or not isinstance(new.get('windows'), list): return old
+    # A model-scoped window (Claude's weekly Fable limit) is a separate limit from the all-models one of the same length.
     def windows(snapshot):
-        return {w.get('windowMinutes'): {**w, 'at': w.get('at', snapshot.get('at', 0)), 'timed': 'at' in w} for w in snapshot['windows'] if isinstance(w, dict)}
+        return {(w.get('windowMinutes'), w.get('scope')): {**w, 'at': w.get('at', snapshot.get('at', 0)), 'timed': 'at' in w} for w in snapshot['windows'] if isinstance(w, dict)}
     merged = windows(old)
     for key, window in windows(new).items():
         kept = merged.get(key)
@@ -920,7 +928,7 @@ def merge_limits(old, new):
         elif a and b: merged[key] = {**kept, 'usedPercent': max(kept['usedPercent'], window['usedPercent']), 'resetsAt': max(a, b), 'at': max(kept['at'], window['at']), 'timed': kept['timed'] or window['timed']}
         else: merged[key] = window if window['at'] > kept['at'] or (window['at'] == kept['at'] and window['timed']) else kept
     for window in merged.values(): window.pop('timed', None)
-    result = {**old, **new, 'windows': sorted(merged.values(), key=lambda w: w.get('windowMinutes') or 0)}
+    result = {**old, **new, 'windows': sorted(merged.values(), key=lambda w: (w.get('windowMinutes') or 0, w.get('scope') or ''))}
     result['at'] = max(w['at'] for w in result['windows']) if result['windows'] else max(old.get('at', 0), new.get('at', 0))
     return result
 
@@ -936,41 +944,153 @@ def reading_time(event, now):
         except (OSError, ValueError): pass
     return now
 
-def claude_host_limits():
+# Claude's status line reports only the 5-hour and all-models weekly windows. Its per-model weekly limits (such as
+# Fable's) come from the CLI's own usage read: the structured /usage data its SDK mode answers for `get_usage`.
+CLAUDE_PROBE_INTERVAL = 300  # at most one short-lived `claude` usage read per Claude config folder every 5 minutes
+CLAUDE_PROBE_DEADLINE = 8    # seconds for the answer, including start-up
+# Markers of a running Claude Code session: a probe started from inside one must not look like its child.
+CLAUDE_SESSION_ENV = ('CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_EXECPATH', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_SESSION_ATTENDED',
+                      'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'AI_AGENT')
+# SDK mode with no prompt, no saved session, no tools, and none of the user's hooks, plugins, MCP servers or CLAUDE.md.
+CLAUDE_PROBE_ARGS = ('-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence',
+                     '--safe-mode', '--strict-mcp-config', '--tools', '', '--disable-slash-commands')
+
+# Probe readings live in their own file: bridges from before scoped windows existed merge claude-v2.json by window
+# length alone, so a weekly Fable window there would collide with the all-models weekly one.
+def claude_usage_file():
+    return limits_dir() / 'claude-usage.json'
+
+def claude_usage_limits(rate_limits, now):
+    """The plan windows in a get_usage answer: 5-hour, weekly, and each per-model weekly window (model_scoped).
+    An answer rebuilt from an older saved copy (when the usage endpoint fails) lacks the raw `limits` rows and
+    is not taken as a fresh reading."""
+    if not isinstance(rate_limits, dict) or not isinstance(rate_limits.get('limits'), list): return None
+    windows = [limit_window(raw.get('utilization'), minutes, raw.get('resets_at')) for name, minutes in (('five_hour', 300), ('seven_day', 10080))
+               for raw in [rate_limits.get(name)] if isinstance(raw, dict)]
+    scoped = rate_limits.get('model_scoped') if isinstance(rate_limits.get('model_scoped'), list) else []
+    windows += [limit_window(raw.get('utilization'), 10080, raw.get('resets_at'), label(raw.get('display_name'))) for raw in scoped[:4] if isinstance(raw, dict) and label(raw.get('display_name'))]
+    windows = [{**window, 'at': now} for window in windows if window]
+    return {'windows': windows, 'at': now, 'source': 'live'} if windows else None
+
+def claude_probe(plan, now=None):
+    """Read the account's limits from a short-lived `claude` in SDK mode (the get_usage control request, no prompt,
+    so no model call and no session file), at most every CLAUDE_PROBE_INTERVAL per Claude config folder and never
+    twice at once. Claude reads its own login; Harbor never touches the OAuth token. Skipped without Claude or a
+    subscription. Returns True when it stored a reading."""
+    now = time.time() if now is None else now; home = str(home_for('claude'))
+    if plan.get('mode') != 'subscription': return False
+    executable = shutil.which('claude')
+    if not executable: return False
+    limits_dir().mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(limits_dir() / 'claude-probe.lock', 'a') as guard:
+        os.chmod(guard.name, 0o600)
+        try: fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError: return False  # another limits call is already reading
+        try:
+            stamps = read(limits_dir() / 'claude-probe.json', {}) or {}
+            if not isinstance(stamps, dict): stamps = {}
+            last = stamps.get(home, 0)
+            if isinstance(last, (int, float)) and now - last < CLAUDE_PROBE_INTERVAL: return False
+            # Stamp before starting, so a failing or hanging Claude is also retried only every interval.
+            stamps[home] = now; atomic(limits_dir() / 'claude-probe.json', stamps)
+            limits = claude_probe_read(executable)
+            if not limits: return False
+            key = home + '|' + (plan.get('account') or '')
+            def save(state):
+                state = {k: v for k, v in state.items() if isinstance(v, dict) and limits['at'] - v.get('at', 0) < 30 * 86400}
+                state[key] = {'limits': limits, 'at': limits['at']}; return state  # one read sees every window, so it replaces the last
+            locked_json(claude_usage_file(), save); return True
+        finally: fcntl.flock(guard, fcntl.LOCK_UN)
+
+def claude_probe_read(executable):
+    """Ask `claude` for get_usage over stream-json from an empty temporary folder, then stop it and its process group."""
+    import tempfile
+    deadline = time.monotonic() + CLAUDE_PROBE_DEADLINE
+    env = {key: value for key, value in os.environ.items() if key not in CLAUDE_SESSION_ENV}
+    env['DISABLE_AUTOUPDATER'] = '1'  # a usage read never starts an update of the user's Claude
+    folder = tempfile.mkdtemp(prefix='harbor-claude-usage-')
+    try:
+        try: process = subprocess.Popen([executable, *CLAUDE_PROBE_ARGS], cwd=folder, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError: return None
+        try:
+            client = StdioRPC(process, deadline)
+            client.send({'type': 'control_request', 'request_id': 'harbor-usage', 'request': {'subtype': 'get_usage', 'skip_behaviors': True}})
+            while True:
+                try: message = json.loads(client.line())
+                except ValueError: continue
+                if not isinstance(message, dict) or message.get('type') != 'control_response': continue
+                response = message.get('response') if isinstance(message.get('response'), dict) else {}
+                if response.get('request_id') != 'harbor-usage': continue
+                body = response.get('response') if response.get('subtype') == 'success' and isinstance(response.get('response'), dict) else {}
+                return claude_usage_limits(body.get('rate_limits'), time.time())
+        except (OSError, ValueError, EOFError, RuntimeError, TimeoutError): return None
+        finally: stop_child(process)
+    finally: shutil.rmtree(folder, ignore_errors=True)
+
+def claude_host_limits(now=None):
+    now = time.time() if now is None else now
     result = {'agent': 'claude', **claude_plan()}
     if result['mode'] == 'api': return result
-    stored = read(claude_limits_file(), {}) or {}
     prefix = str(home_for('claude')) + '|'
-    candidates = [entry for key, entry in stored.items() if isinstance(entry, dict) and key.startswith(prefix) and (not result.get('account') or key in (prefix + result['account'], prefix))]
     limits = None
-    for entry in candidates: limits = merge_limits(limits, entry.get('limits'))
+    for file in (claude_limits_file(), claude_usage_file()):
+        stored = read(file, {}) or {}
+        if not isinstance(stored, dict): continue
+        for key, entry in stored.items():
+            if isinstance(entry, dict) and key.startswith(prefix) and (not result.get('account') or key in (prefix + result['account'], prefix)): limits = merge_limits(limits, entry.get('limits'))
+    if limits and limits.get('windows'):
+        # A per-model window only the probe reports is dropped once it resets: the next read says whether it still exists.
+        limits = {**limits, 'windows': [w for w in limits['windows'] if not w.get('scope') or (w.get('resetsAt') or now + 1) > now]}
     if limits and limits.get('windows'):
         result['limits'] = limits
         if result['mode'] == 'unknown': result['mode'] = 'subscription'
     return result
 
 def host_limits():
+    # The Claude usage read runs beside Codex's, so the limits command stays well inside the engine's timeout.
+    probe = None
+    try:
+        plan = claude_plan()
+        if plan.get('mode') == 'subscription' and shutil.which('claude'):
+            def read_claude():
+                try: claude_probe(plan)
+                except Exception: pass
+            probe = threading.Thread(target=read_claude, daemon=True); probe.start()
+    except Exception: pass
     agents = []
     for agent, reader in (('codex', codex_host_limits), ('claude', claude_host_limits)):
+        if agent == 'claude' and probe: probe.join(CLAUDE_PROBE_DEADLINE + 6)
         try: agents.append(reader())
         except Exception as error: agents.append({'agent': agent, 'mode': 'unknown', 'error': type(error).__name__})
     return {'agents': agents}
 
+def claude_model(event):
+    """The chat's current model as its status line names it ("Fable", "Opus 4.5"), else its ID."""
+    model = event.get('model') if isinstance(event, dict) else None
+    if isinstance(model, dict): model = model.get('display_name') or model.get('id')
+    return label(model, 40) if isinstance(model, str) else None
+
 def store_claude_limits(chat_id, generation, event):
-    """Merge the plan-limit reading from Claude's status line input into the chat's and the account's."""
-    limits = event.get('rate_limits') if isinstance(event, dict) else None
-    if not isinstance(limits, dict) or not UUID.match(chat_id) or not UUID.match(generation): return
+    """Merge the plan-limit reading from Claude's status line input into the chat's and the account's, and note the
+    chat's model so a per-model limit applies only to chats using that model."""
+    if not isinstance(event, dict) or not UUID.match(chat_id) or not UUID.match(generation): return
+    limits = event.get('rate_limits') if isinstance(event.get('rate_limits'), dict) else {}
     windows = [window for window in (limit_window((limits.get(name) or {}).get('used_percentage'), minutes, (limits.get(name) or {}).get('resets_at'))
                                      for name, minutes in (('five_hour', 300), ('seven_day', 10080)) if isinstance(limits.get(name), dict)) if window]
-    if not windows: return
-    now = time.time(); at = reading_time(event, now)
-    snapshot = {'windows': [{**window, 'at': at} for window in windows], 'at': at, 'source': 'statusline'}
+    model = claude_model(event)
+    if not windows and not model: return
     file = ROOT / 'chats' / chat_id / 'metadata.json'; meta = read(file, {})
     if meta.get('generation') != generation: return
+    billing = meta.get('billing') if isinstance(meta.get('billing'), dict) else {}
+    patch = {}
+    if model and billing.get('model') != model: billing = {**billing, 'model': model}; patch['billing'] = billing
+    now = time.time(); at = reading_time(event, now)
+    snapshot = {'windows': [{**window, 'at': at} for window in windows], 'at': at, 'source': 'statusline'}
     previous = meta.get('limits') if isinstance(meta.get('limits'), dict) else None
     merged = merge_limits(previous, snapshot)
-    billing = meta.get('billing') if isinstance(meta.get('billing'), dict) else {}
-    if merged == previous and billing.get('mode') == 'subscription': return
+    if not windows or (merged == previous and billing.get('mode') == 'subscription'):
+        if patch: patch_metadata(file, generation, patch)
+        return
     # A chat that reports plan limits is on a subscription, whatever its launch environment suggested.
     patch_metadata(file, generation, {'limits': merged, 'billing': {**billing, 'mode': 'subscription'}})
     key = str(home_for('claude')) + '|' + (billing.get('account') or '')

@@ -304,6 +304,118 @@ class ClaudeReadings(unittest.TestCase):
             for event in ({}, {'transcript_path': str(h.claude)}, {'transcript_path': str(h.claude / 'missing')}, {'transcript_path': 7}):
                 self.assertEqual(bridge.reading_time(event, now), now)
 
+# A stand-in `claude` in SDK mode. It records how it was started, can hang or leave a grandchild behind, and
+# answers get_usage the way Claude Code 2.1 does: 5-hour and weekly windows plus per-model weekly windows.
+FAKE_CLAUDE = r"""#!%s
+import json, os, subprocess, sys, time
+here = os.path.dirname(os.path.abspath(__file__)); mode = open(os.path.join(here, 'mode')).read().strip()
+with open(os.path.join(here, 'launches'), 'a') as f:
+    f.write(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd(), 'nested': 'CLAUDECODE' in os.environ, 'updater': os.environ.get('DISABLE_AUTOUPDATER')}) + '\n')
+open('scratch.txt', 'w').write('left in the working folder')
+if mode in ('hang', 'orphan'):
+    child = subprocess.Popen(['sleep', '60']); open(os.path.join(here, 'grandchild'), 'w').write(str(child.pid))
+if mode == 'hang': time.sleep(60)
+usage = {'session': {'total_cost_usd': 0, 'model_usage': {}}, 'subscription_type': 'max', 'rate_limits_available': True,
+         'rate_limits': {'five_hour': {'utilization': 30, 'resets_at': '2030-03-17T17:46:40+00:00'}, 'seven_day': {'utilization': 40, 'resets_at': '2030-03-21T09:00:00.1234+00:00'},
+                         'seven_day_opus': None, 'model_scoped': [{'display_name': 'Fable', 'utilization': 93, 'resets_at': '2030-03-21T09:00:00.5+00:00'}, {'display_name': '<b>x</b>', 'utilization': None, 'resets_at': None}],
+                         'limits': [{'kind': 'weekly_scoped', 'percent': 93, 'scope': {'model': {'display_name': 'Fable'}}}]}, 'behaviors': None}
+if mode == 'seeded': del usage['rate_limits']['limits']
+for line in sys.stdin:
+    request = json.loads(line)
+    print('{"type":"system","subtype":"noise"}', flush=True); print('not json', flush=True)
+    if mode == 'error': reply = {'subtype': 'error', 'request_id': request['request_id'], 'error': 'get_usage is not supported in this context'}
+    else: reply = {'subtype': 'success', 'request_id': request['request_id'], 'response': usage}
+    print(json.dumps({'type': 'control_response', 'response': reply}), flush=True)
+""" % sys.executable
+
+class ClaudeUsageProbe(unittest.TestCase):
+    def fake(self, h, mode='ok'):
+        folder = h.root.parent / 'bin'; folder.mkdir(exist_ok=True)
+        script = h.write(folder / 'claude', FAKE_CLAUDE); script.chmod(0o755); h.write(folder / 'mode', mode)
+        h.patches.append(patch.object(bridge.shutil, 'which', side_effect=lambda name: str(script) if name == 'claude' else None)); h.patches[-1].start()
+        return folder
+    def launches(self, folder):
+        file = folder / 'launches'; return [json.loads(line) for line in file.read_text().splitlines()] if file.exists() else []
+    def subscription(self, h):
+        h.write(h.claude / '.claude.json', {'oauthAccount': {'organizationType': 'claude_max', 'accountUuid': 'raw-acct', 'emailAddress': 'alice@example.invalid'}})
+        h.write(h.claude / '.credentials.json', {'claudeAiOauth': {'accessToken': 'secret-token', 'refreshToken': 'secret-refresh'}})
+    def windows(self, result):
+        return {(w['windowMinutes'], w.get('scope')): w for w in result['limits']['windows']}
+
+    def test_reads_per_model_weekly_limits_from_a_short_lived_claude(self):
+        with Homes() as h, patch.dict(os.environ, {'CLAUDECODE': '1'}):
+            self.subscription(h); folder = self.fake(h)
+            claude = next(a for a in bridge.host_limits()['agents'] if a['agent'] == 'claude')
+            windows = self.windows(claude)
+            self.assertEqual({key: w['usedPercent'] for key, w in windows.items()}, {(300, None): 30.0, (10080, None): 40.0, (10080, 'Fable'): 93.0})
+            self.assertEqual((claude['limits']['source'], windows[(10080, 'Fable')]['resetsAt']), ('live', 1900314000.5))
+            self.assertLess(time.time() - windows[(10080, 'Fable')]['at'], 60)
+            [launch] = self.launches(folder)
+            for flag in ('-p', '--input-format', '--no-session-persistence', '--safe-mode', '--strict-mcp-config'): self.assertIn(flag, launch['args'])
+            self.assertEqual((launch['nested'], launch['updater']), (False, '1'))
+            self.assertFalse(os.path.exists(launch['cwd']), 'the temporary working folder is removed')
+            stored = (h.root / 'limits/claude-usage.json').read_text() + json.dumps(bridge.host_limits())
+            for secret in ('alice', 'raw-acct', 'secret-token', 'secret-refresh', '<b>'): self.assertNotIn(secret, stored)
+            # A status-line reading of the all-models weekly window never replaces the Fable one, or the reverse.
+            meta = h.write(h.root / 'chats' / CHAT / 'metadata.json', {'generation': GEN, 'billing': {'mode': 'subscription', 'account': bridge.claude_plan({})['account']}})
+            bridge.store_claude_limits(CHAT, GEN, {'model': {'id': 'claude-fable-1', 'display_name': 'Fable'}, 'rate_limits': {'seven_day': {'used_percentage': 45, 'resets_at': 1900314000}}})
+            windows = self.windows(bridge.claude_host_limits())
+            self.assertEqual((windows[(10080, None)]['usedPercent'], windows[(10080, 'Fable')]['usedPercent']), (45.0, 93.0))
+            self.assertEqual(json.loads(meta.read_text())['billing']['model'], 'Fable')
+            # Older bridges merge claude-v2.json by window length alone, so no scoped window is ever written there.
+            self.assertNotIn('scope', (h.root / 'limits/claude-v2.json').read_text())
+
+    def test_throttled_per_claude_folder_never_concurrent_and_skipped_without_a_subscription(self):
+        with Homes() as h:
+            self.subscription(h); folder = self.fake(h); plan = bridge.claude_plan({}); now = time.time()
+            self.assertTrue(bridge.claude_probe(plan, now)); self.assertFalse(bridge.claude_probe(plan, now + 60)); self.assertEqual(len(self.launches(folder)), 1)
+            self.assertTrue(bridge.claude_probe(plan, now + bridge.CLAUDE_PROBE_INTERVAL + 1)); self.assertEqual(len(self.launches(folder)), 2)
+            with open(h.root / 'limits/claude-probe.lock', 'a') as guard:
+                fcntl.flock(guard, fcntl.LOCK_EX)  # another limits call is mid-read
+                self.assertFalse(bridge.claude_probe(plan, now + 10 * bridge.CLAUDE_PROBE_INTERVAL))
+            for other in ({'mode': 'api'}, {'mode': 'unknown'}): self.assertFalse(bridge.claude_probe(other, now + 20 * bridge.CLAUDE_PROBE_INTERVAL))
+            self.assertEqual(len(self.launches(folder)), 2)
+        with Homes() as h:
+            self.subscription(h); self.assertFalse(bridge.claude_probe(bridge.claude_plan({})))  # Claude not installed
+            h.write(h.claude / 'settings.json', {'env': {'ANTHROPIC_API_KEY': 'sk-ant-test'}}); folder = self.fake(h)
+            bridge.host_limits(); self.assertEqual(self.launches(folder), [])
+
+    def test_answers_without_live_rows_or_with_an_error_are_not_stored(self):
+        for mode in ('seeded', 'error'):
+            with Homes() as h:
+                self.subscription(h); self.fake(h, mode)
+                self.assertFalse(bridge.claude_probe(bridge.claude_plan({})), mode)
+                self.assertNotIn('limits', bridge.claude_host_limits()); self.assertFalse((h.root / 'limits/claude-usage.json').exists())
+
+    def test_a_hanging_claude_and_its_children_are_stopped_in_time(self):
+        with Homes() as h:
+            self.subscription(h); folder = self.fake(h, 'hang'); started = time.monotonic()
+            self.assertFalse(bridge.claude_probe(bridge.claude_plan({})))
+            self.assertLess(time.monotonic() - started, bridge.CLAUDE_PROBE_DEADLINE + 6)
+            grandchild = int((folder / 'grandchild').read_text()); time.sleep(0.2)
+            with self.assertRaises(ProcessLookupError): os.kill(grandchild, 0)
+            self.assertFalse(bridge.claude_probe(bridge.claude_plan({}))); self.assertEqual(len(self.launches(folder)), 1)  # throttled too
+
+    def test_a_model_window_that_reset_is_dropped_until_the_next_read(self):
+        with Homes() as h:
+            self.subscription(h); self.fake(h); bridge.claude_probe(bridge.claude_plan({}))
+            self.assertIn((10080, 'Fable'), self.windows(bridge.claude_host_limits(now=1900313600)))
+            later = self.windows(bridge.claude_host_limits(now=1900314001))
+            self.assertNotIn((10080, 'Fable'), later); self.assertIn((10080, None), later)
+
+    def test_scoped_and_all_models_windows_merge_separately(self):
+        week = lambda used, scope=None, at=100.0: {**bridge.limit_window(used, 10080, 1900314000, scope), 'at': at}
+        merged = bridge.merge_limits({'windows': [week(40), week(93, 'Fable')], 'at': 100.0}, {'windows': [week(45, at=200.0)], 'at': 200.0})
+        self.assertEqual([(w.get('scope'), w['usedPercent'], w['at']) for w in merged['windows']], [(None, 45.0, 200.0), ('Fable', 93.0, 100.0)])
+
+    def test_status_line_records_the_chats_model_even_before_limits_arrive(self):
+        with Homes() as h:
+            meta = h.write(h.root / 'chats' / CHAT / 'metadata.json', {'generation': GEN, 'billing': {'mode': 'subscription'}})
+            bridge.store_claude_limits(CHAT, GEN, {'model': {'id': 'claude-opus-5', 'display_name': 'Opus 5 <script>'}})
+            saved = json.loads(meta.read_text()); self.assertEqual(saved['billing'], {'mode': 'subscription', 'model': 'Opus 5 script'}); self.assertNotIn('limits', saved)
+            bridge.store_claude_limits(CHAT, GEN, {'model': {'id': 'claude-fable-1'}, 'rate_limits': {'five_hour': {'used_percentage': 5, 'resets_at': 1900000000}}})
+            saved = json.loads(meta.read_text()); self.assertEqual(saved['billing']['model'], 'claude-fable-1'); self.assertEqual(saved['limits']['windows'][0]['usedPercent'], 5.0)
+
 class StatusLineChaining(unittest.TestCase):
     def run_line(self, h, event, stdout_path):
         with open(stdout_path, 'wb') as out:
