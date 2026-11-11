@@ -11,6 +11,7 @@ import '@xterm/xterm/css/xterm.css';
 import { terminalColors } from '../shared/terminalTheme';
 import { osc52Text } from '../shared/osc52';
 import { measureGlyphsExactly } from './terminalGlyphs';
+import { WheelAccumulator, wheelSequence } from './terminalWheel';
 
 export function TerminalPane({ session, onClose, onReconnect, report, preferences, reconnectKey = 0, showHeader = false, active = true }: { session: Session; onClose?: () => void; onReconnect?: () => void; report: (message: string) => void; preferences: Preferences['terminal']; reconnectKey?: number; showHeader?: boolean; active?: boolean }) {
   const activeRef=useRef(active);activeRef.current=active;
@@ -37,6 +38,12 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate, linkHandler));
     // OSC 52 writes (Claude Code /copy over SSH; local copies use pbcopy) go to the Mac clipboard. Queries are swallowed.
     terminal.parser.registerOscHandler(52, data => { const { text, error } = osc52Text(data); if (text !== undefined) void window.harbor.copyText(text).catch(err => reportRef.current(err.message)); else if (error) reportRef.current(error); return true; });
+    // xterm.js keeps the mouse encoding private; follow SGR (1006), which full-screen agents use, for wheel reports.
+    let sgrMouse = false;
+    const sgrMode = (on: boolean) => (params: (number | number[])[]) => { if (params.includes(1006)) sgrMouse = on; return false; };
+    terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, sgrMode(true));
+    terminal.parser.registerCsiHandler({ prefix: '?', final: 'l' }, sgrMode(false));
+    terminal.parser.registerEscHandler({ final: 'c' }, () => { sgrMouse = false; return false; });
     terminal.open(element.current!); measureGlyphsExactly(terminal); fit.fit();
     let disposed = false; let connected = false; let connecting = false; let attempts = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -48,7 +55,7 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
     const connect = async () => {
       if (disposed || connecting) return;
       clearTimeout(timer); connecting = true; connected = false;
-      setState('Connecting'); setError(''); terminal.reset(); fit.fit();
+      setState('Connecting'); setError(''); terminal.reset(); sgrMouse = false; fit.fit();
       try {
         await window.harbor.attach(session.id, terminal.cols, terminal.rows);
         if (disposed) return;
@@ -64,14 +71,37 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
       else { connected = false; setState('Disconnected'); setError(event.data); retry(); }
     });
     let inputQueue = Promise.resolve();
-    const input = terminal.onData(data => {
-      if (!connected) return;
-      inputQueue = inputQueue.then(() => window.harbor.input(session.id, data)).catch(err => reportRef.current(err.message));
+    // Input typed or scrolled while a send is in flight joins one pending send, so a burst of wheel reports
+    // costs one tmux round trip (one network round trip over SSH) instead of one each.
+    let batch: { data: string } | null = null;
+    const send = (data: string) => {
+      if (batch) { batch.data += data; return; }
+      const next = { data }; batch = next;
+      inputQueue = inputQueue.then(() => { if (batch === next) batch = null; return window.harbor.input(session.id, next.data); }).catch(err => reportRef.current(err.message));
+    };
+    // Anything queued another way (paste, file drop, special keys) starts a new batch, keeping input in order.
+    const enqueue = (task: () => Promise<unknown>) => { batch = null; inputQueue = inputQueue.then(task).then(() => {}).catch(err => reportRef.current(err.message)); };
+    const input = terminal.onData(data => { if (connected) send(data); });
+    const wheel = new WheelAccumulator();
+    terminal.attachCustomWheelEventHandler(event => {
+      if (event.shiftKey || !connected) return true;
+      const tracking = ['vt200', 'drag', 'any'].includes(terminal.modes.mouseTrackingMode);
+      const alternate = terminal.buffer.active.type === 'alternate';
+      if (!tracking && !alternate) { wheel.reset(); return true; }
+      const screen = surface.querySelector('.xterm-screen')?.getBoundingClientRect();
+      if (!screen?.height || !screen.width) return true;
+      const col = Math.min(terminal.cols, Math.max(1, Math.floor((event.clientX - screen.left) / (screen.width / terminal.cols)) + 1));
+      const row = Math.min(terminal.rows, Math.max(1, Math.floor((event.clientY - screen.top) / (screen.height / terminal.rows)) + 1));
+      const sequence = wheelSequence(wheel.rows(event, screen.height / terminal.rows, terminal.rows), { tracking, sgr: sgrMouse, alternate, applicationCursor: terminal.modes.applicationCursorKeysMode }, event, col, row);
+      if (sequence === undefined) return true;
+      event.preventDefault();
+      if (sequence) send(sequence);
+      return false;
     });
     const paste = (event: ClipboardEvent) => {
       event.preventDefault(); event.stopImmediatePropagation();
       const text = event.clipboardData?.getData('text/plain');
-      if (text && connected) inputQueue = inputQueue.then(() => window.harbor.paste(session.id, text)).catch(err => reportRef.current(err.message));
+      if (text && connected) enqueue(() => window.harbor.paste(session.id, text));
     };
     const surface = element.current!; surface.addEventListener('paste', paste, true);
     const dragOver = (event: DragEvent) => {
@@ -87,12 +117,12 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
       if (!connected) { reportRef.current('Reconnect the terminal before dropping files.'); return; }
       const files = Array.from(event.dataTransfer.files);
       // Queue synchronously so subsequent typing cannot overtake the upload/paste.
-      inputQueue = inputQueue.then(async () => {
+      enqueue(async () => {
         if (disposed) return;
         setDropping(true);
         try { await window.harbor.dropFiles(session.id, files); }
         finally { if (!disposed) { setDropping(false); terminal.focus(); } }
-      }).catch(err => reportRef.current(err.message));
+      });
     };
     surface.addEventListener('dragover', dragOver);
     surface.addEventListener('dragleave', dragLeave);
@@ -102,17 +132,17 @@ export function TerminalPane({ session, onClose, onReconnect, report, preference
       // Agents read modified Enter as CSI u (Shift = newline, Ctrl = distinct Ctrl+Enter); xterm would send a bare CR.
       if (event.key==='Enter' && event.shiftKey!==event.ctrlKey && !event.metaKey && !event.altKey && (session.launcher==='codex'||session.launcher==='claude')) {
         event.preventDefault();
-        if(event.type==='keydown' && connected) inputQueue=inputQueue.then(()=>window.harbor.input(session.id,event.ctrlKey?'\x1b[13;5u':'\x1b[13;2u')).catch(err=>reportRef.current(err.message));
+        if(event.type==='keydown' && connected) send(event.ctrlKey?'\x1b[13;5u':'\x1b[13;2u');
         return false;
       }
       if (tabShortcut(event)!==undefined || groupShortcut(event)!==undefined) return false;
       if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
         event.preventDefault();
-        if (event.type === 'keydown' && connected) inputQueue = inputQueue.then(() => window.harbor.input(session.id, event.key === 'ArrowLeft' ? '\x01' : '\x05')).catch(err => reportRef.current(err.message));
+        if (event.type === 'keydown' && connected) send(event.key === 'ArrowLeft' ? '\x01' : '\x05');
         return false;
       }
       if (event.metaKey && event.key === 'Backspace') {
-        if (event.type === 'keydown' && connected) inputQueue = inputQueue.then(() => window.harbor.input(session.id, '\u0015')).catch(err => reportRef.current(err.message));
+        if (event.type === 'keydown' && connected) send('\u0015');
         event.preventDefault(); return false;
       }
       // macOS app shortcuts use Command; Control belongs to the terminal (e.g. Codex Ctrl+T).

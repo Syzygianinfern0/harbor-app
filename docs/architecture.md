@@ -10,6 +10,10 @@ Harbor is an Electron app with a UI-agnostic Node engine. Every chat is a tmux s
 - `src/shared/` — types and pure logic shared by the engine and UI.
 - `src/bridge/harbor_bridge.py` — the host adapter, deployed to each host.
 
+## Terminal attach and input
+
+Each terminal attaches through tmux control mode (`src/engine/control.ts`). On attach Harbor replays the pane's screen and the modes xterm.js can't read back from tmux: alternate screen, cursor, keypad, insert, bracketed paste, wrap, and mouse tracking and encoding (`mouse_*_flag`). Input goes in with `send-keys -H`. In the renderer, input that arrives while a send is in flight joins one pending send, so a burst of wheel reports costs one tmux round trip (one network round trip over SSH). Paste and file drops start a new batch, so order is kept. xterm.js sends at most one damped wheel report per wheel event, so `src/renderer/terminalWheel.ts` takes over wheel events whenever the app tracks the mouse with SGR encoding or sits in the alternate screen. It turns each row's worth of motion into one SGR wheel report (or arrow key), like Ghostty. The normal screen still scrolls xterm's own scrollback.
+
 ## Agent integration
 
 Each new Codex chat has a private local app-server socket on its host and the normal Codex TUI. Harbor reads the exact thread ID, title, and runtime activity through the [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server). No network listener, separate account, or API key is added.
