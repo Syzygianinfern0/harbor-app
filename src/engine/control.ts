@@ -87,15 +87,15 @@ export class ControlClient extends EventEmitter {
     // Commands execute together on tmux's event loop: capture, cursor, then turn live output on.
     this.child.stdin.cork();
     const history = this.command(`capture-pane -p -e -t ${this.pane} -S -2000`);
-    const position = this.command(`display-message -p -t ${this.pane} '#{cursor_x},#{cursor_y},#{pane_height},#{alternate_on},#{cursor_flag},#{keypad_cursor_flag},#{insert_flag},#{bracket_paste_flag},#{wrap_flag}'`);
+    const position = this.command(`display-message -p -t ${this.pane} '#{cursor_x},#{cursor_y},#{pane_height},#{alternate_on},#{cursor_flag},#{keypad_cursor_flag},#{insert_flag},#{bracket_paste_flag},#{wrap_flag},#{mouse_standard_flag},#{mouse_button_flag},#{mouse_all_flag},#{mouse_sgr_flag},#{mouse_utf8_flag}'`);
     const enable = this.command('refresh-client -f !no-output');
     this.child.stdin.uncork();
     // Queue the snapshot and enable in one batch; buffer live events until the snapshot is emitted.
     const [text, coordinates] = await Promise.all([history, position, enable]);
-    const [x, y, height, alternate, cursor, keypad, insert, paste, wrap] = coordinates.split(',').map(Number);
+    const [x, y, height, alternate, cursor, keypad, insert, paste, wrap, mouseStandard, mouseButton, mouseAll, mouseSgr, mouseUtf8] = coordinates.split(',').map(Number);
     const lines = text.split('\n');
     const prefix = alternate ? '\x1b[?1049h' : '';
-    this.emit('data', Buffer.from(prefix + '\x1b[2J\x1b[H' + lines.join('\r\n') + `\x1b[${Math.max(1, rows - height + y + 1)};${x + 1}H` + `\x1b[?25${cursor ? 'h' : 'l'}\x1b[?1${keypad ? 'h' : 'l'}\x1b[4${insert ? 'h' : 'l'}\x1b[?2004${paste ? 'h' : 'l'}\x1b[?7${wrap ? 'h' : 'l'}`));
+    this.emit('data', Buffer.from(prefix + '\x1b[2J\x1b[H' + lines.join('\r\n') + `\x1b[${Math.max(1, rows - height + y + 1)};${x + 1}H` + `\x1b[?25${cursor ? 'h' : 'l'}\x1b[?1${keypad ? 'h' : 'l'}\x1b[4${insert ? 'h' : 'l'}\x1b[?2004${paste ? 'h' : 'l'}\x1b[?7${wrap ? 'h' : 'l'}` + mouseModes(mouseStandard, mouseButton, mouseAll, mouseSgr, mouseUtf8)));
     this.priming = false;
     for (const bytes of this.buffered.splice(0)) this.emit('data', bytes);
   }
@@ -113,4 +113,11 @@ export class ControlClient extends EventEmitter {
     for (const request of this.requests.splice(0)) { clearTimeout(request.timer); request.reject(new Error(message)); }
     this.emit('disconnected', message);
   }
+}
+
+// Mouse tracking the pane's app asked for (full-screen Claude Code, vim…), so wheel and clicks keep reaching it after a reattach.
+// Older tmux leaves unknown formats empty, which reads as off.
+export function mouseModes(standard: number, button: number, all: number, sgr: number, utf8: number) {
+  const tracking = all ? 1003 : button ? 1002 : standard ? 1000 : 0;
+  return (tracking ? `\x1b[?${tracking}h` : '') + (sgr ? '\x1b[?1006h' : '') + (utf8 ? '\x1b[?1005h' : '');
 }
